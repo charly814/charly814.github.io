@@ -1,8 +1,79 @@
-<p>Hello 大家好</p>
-<p>我是霸都丶傲天，这是我的个人网站。 </p>
-<p>很高兴你来到这里, 你可以在以下的网站找到我</p>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menú Restaurante Platet</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f8f8;
+        }
+        h1 { color: #2c3e50; text-align: center; }
+        h2 { color: #34495e; border-bottom: 2px solid #3498db; }
+        h3 { color: #7f8c8d; }
+        .menu-section { margin-bottom: 30px; }
+        .item { 
+            display: flex;
+            justify-content: space-between;
+            margin: 5px 0;
+        }
+        .price { color: #e74c3c; font-weight: bold; }
+        .note { font-size: 0.9em; color: #95a5a6; }
+        .allergen-warning { 
+            background-color: #f2dede;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Menú Restaurante Platet</h1>
+    <p style="text-align: center;"><strong>C/Jose García Ferrandez, 2 Elx</strong></p>
 
-<ul>
-  <li> <a href="https://www.zhihu.com/people/AJLoveChina">知乎</a> </li>
-  <li> <a href="http://hejie.nigeerhuo.com">我的博客(已经不更细了,现在在知乎写文章)</a> </li>
-</ul>
+    <!-- Entradas Frias -->
+    <div class="menu-section">
+        <h2>🍽️ Entradas Frías</h2>
+        <div class="item"><span>Pan con ajo y tomate</span><span class="price">1,80€</span></div>
+        <div class="item"><span>Tabla de jamón y queso</span><span class="price">10,00€</span></div>
+        <!-- 其他项目依此类推 -->
+    </div>
+
+    <!-- Ensaladas -->
+    <div class="menu-section">
+        <h2>🥗 Ensaladas</h2>
+        <div class="item"><span>Ensalada mixta</span><span class="price">4,50€</span></div>
+        <div class="item"><span>Ensalada capellan</span><span class="price">7,00€</span></div>
+        <!-- 其他项目依此类推 -->
+    </div>
+
+    <!-- Pescados -->
+    <div class="menu-section">
+        <h2>🐟 Pescados</h2>
+        <div class="item"><span>Merluza a la plancha o romana</span><span class="price">8,00€</span></div>
+        <div class="note">* Con guarnición de patatas fritas</div>
+    </div>
+
+    <!-- 其他菜单部分结构类似 -->
+
+    <!-- 过敏原声明 -->
+    <div class="allergen-warning">
+        <h3>⚠️ Declaración de Alérgenos</h3>
+        <p>Según Reglamento (UE) No. 1169/2011: Debido a las características de nuestras instalaciones, todos nuestros productos pueden contener trazas de alérgenos por contaminación cruzada.</p>
+    </div>
+
+    <!-- 汉堡部分示例 -->
+    <div class="menu-section">
+        <h2>🍔 Hamburguesas</h2>
+        <div class="item"><span>Hamburguesa Básica</span><span class="price">4,80€</span></div>
+        <div class="note">(Carne, lechuga, tomate, queso, patatas)</div>
+        <div class="item"><span>Hamburguesa Supersónica</span><span class="price">5,80€</span></div>
+        <div class="note">(Carne, lechuga, tomate, queso, bacon, huevo, patatas)</div>
+    </div>
+
+</body>
+</html>
