@@ -3,76 +3,168 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Menú Restaurante Platet</title>
+    <title>Menú Completo - Restaurante Platet</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             max-width: 800px;
             margin: 0 auto;
-            padding: 20px;
-            background-color: #f8f8f8;
+            padding: 25px;
+            background-color: #f5f6fa;
         }
-        h1 { color: #2c3e50; text-align: center; }
-        h2 { color: #34495e; border-bottom: 2px solid #3498db; }
-        h3 { color: #7f8c8d; }
-        .menu-section { margin-bottom: 30px; }
-        .item { 
+        h1 { 
+            color: #2f3640; 
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        h2 {
+            color: #40739e;
+            border-left: 5px solid #487eb0;
+            padding-left: 10px;
+            margin: 25px 0;
+        }
+        .menu-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        .item {
             display: flex;
             justify-content: space-between;
-            margin: 5px 0;
+            margin: 12px 0;
+            padding: 8px 0;
+            border-bottom: 1px dotted #ddd;
         }
-        .price { color: #e74c3c; font-weight: bold; }
-        .note { font-size: 0.9em; color: #95a5a6; }
-        .allergen-warning { 
-            background-color: #f2dede;
+        .price {
+            color: #e84118;
+            font-weight: 600;
+            min-width: 80px;
+            text-align: right;
+        }
+        .note {
+            font-size: 0.85em;
+            color: #7f8fa6;
+            margin-left: 15px;
+        }
+        .warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffeeba;
             padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        .emoji-icon {
+            margin-right: 10px;
         }
     </style>
 </head>
 <body>
-    <h1>Menú Restaurante Platet</h1>
-    <p style="text-align: center;"><strong>C/Jose García Ferrandez, 2 Elx</strong></p>
+    <h1>🍴 Restaurante Platet</h1>
+    <p style="text-align: center; color: #718093;">C/Jose García Ferrandez, 2 Elx</p>
 
-    <!-- Entradas Frias -->
+    <!-- Entradas Frías -->
     <div class="menu-section">
-        <h2>🍽️ Entradas Frías</h2>
+        <h2><span class="emoji-icon">🥶</span>Entradas Frías</h2>
         <div class="item"><span>Pan con ajo y tomate</span><span class="price">1,80€</span></div>
         <div class="item"><span>Tabla de jamón y queso</span><span class="price">10,00€</span></div>
-        <!-- 其他项目依此类推 -->
+        <div class="item"><span>Ensaladilla rusa</span><span class="price">2,00€</span></div>
+        <div class="item"><span>Jamón</span><span class="price">8,00€</span></div>
+        <div class="item"><span>Queso</span><span class="price">4,00€</span></div>
+        <div class="item"><span>Boquerones en vinagre y patatas</span><span class="price">4,30€</span></div>
     </div>
 
     <!-- Ensaladas -->
     <div class="menu-section">
-        <h2>🥗 Ensaladas</h2>
+        <h2><span class="emoji-icon">🥗</span>Ensaladas</h2>
         <div class="item"><span>Ensalada mixta</span><span class="price">4,50€</span></div>
         <div class="item"><span>Ensalada capellan</span><span class="price">7,00€</span></div>
-        <!-- 其他项目依此类推 -->
+        <div class="item"><span>Ensalada murciana</span><span class="price">4,50€</span></div>
     </div>
 
     <!-- Pescados -->
     <div class="menu-section">
-        <h2>🐟 Pescados</h2>
+        <h2><span class="emoji-icon">🐟</span>Pescados</h2>
         <div class="item"><span>Merluza a la plancha o romana</span><span class="price">8,00€</span></div>
+        <div class="item"><span>Lenguado a la romana</span><span class="price">8,00€</span></div>
         <div class="note">* Con guarnición de patatas fritas</div>
     </div>
 
-    <!-- 其他菜单部分结构类似 -->
-
-    <!-- 过敏原声明 -->
-    <div class="allergen-warning">
-        <h3>⚠️ Declaración de Alérgenos</h3>
-        <p>Según Reglamento (UE) No. 1169/2011: Debido a las características de nuestras instalaciones, todos nuestros productos pueden contener trazas de alérgenos por contaminación cruzada.</p>
+    <!-- Carnes -->
+    <div class="menu-section">
+        <h2><span class="emoji-icon">🍖</span>Carnes</h2>
+        <div class="item"><span>Pechuga de pollo a la plancha/romana</span><span class="price">7,00€</span></div>
+        <div class="item"><span>Pechuga rellena (jamón york + queso)</span><span class="price">8,00€</span></div>
+        <div class="item"><span>Lomo a la plancha/romana</span><span class="price">7,00€</span></div>
+        <div class="item"><span>Filete de ternera</span><span class="price">8,00€</span></div>
+        <div class="item"><span>Chuleta de cordero</span><span class="price">12,00€</span></div>
+        <div class="note">* Con guarnición de patatas fritas</div>
     </div>
 
-    <!-- 汉堡部分示例 -->
+    <!-- Entradas Calientes -->
     <div class="menu-section">
-        <h2>🍔 Hamburguesas</h2>
+        <h2><span class="emoji-icon">🔥</span>Entradas Calientes</h2>
+        <div class="item"><span>Camillona</span><span class="price">4,50€</span></div>
+        <div class="item"><span>Queso frito</span><span class="price">4,50€</span></div>
+        <div class="item"><span>Queso plancha</span><span class="price">4,50€</span></div>
+        <div class="item"><span>Habas con jamón</span><span class="price">3,80€</span></div>
+        <div class="item"><span>Croqueta de jamón (mín. 3)</span><span class="price">0,80€/ud</span></div>
+        <div class="item"><span>Muslito de mar (mín. 3)</span><span class="price">0,80€/ud</span></div>
+        <div class="item"><span>Alita de pollo (mín. 3)</span><span class="price">1,30€/ud</span></div>
+        <div class="item"><span>Tigre (mín. 3)</span><span class="price">1,00€/ud</span></div>
+        <div class="item"><span>Brocheta de pollo</span><span class="price">2,20€</span></div>
+        <div class="item"><span>Magra con tomate</span><span class="price">4,50€</span></div>
+    </div>
+
+    <!-- Especialidades -->
+    <div class="menu-section">
+        <h2><span class="emoji-icon">🍳</span>Especialidades</h2>
+        <div class="item"><span>Parrillada de carne</span><span class="price">18,00€</span></div>
+        <div class="item"><span>Huevos rotos con jamón</span><span class="price">7,00€</span></div>
+        <div class="item"><span>Rabo de toro</span><span class="price">14,00€</span></div>
+        <div class="item"><span>Mejillones al vapor</span><span class="price">5,00€</span></div>
+        <div class="item"><span>Patatas bravas</span><span class="price">4,50€</span></div>
+        <div class="item"><span>Patatas con alloil</span><span class="price">4,50€</span></div>
+        <div class="item"><span>Patatas cheddar con bacon</span><span class="price">5,80€</span></div>
+        <div class="item"><span>Gambas al ajillo</span><span class="price">9,00€</span></div>
+        <div class="item"><span>Calamares a la romana</span><span class="price">8,00€</span></div>
+        <div class="item"><span>Sepia rebaza</span><span class="price">7,50€</span></div>
+        <div class="item"><span>Almejas marineras</span><span class="price">5,50€</span></div>
+    </div>
+
+    <!-- Tostadas -->
+    <div class="menu-section">
+        <h2><span class="emoji-icon">🍞</span>Tostadas</h2>
+        <div class="item"><span>1/2 Con tomate</span><span class="price">1,20€</span></div>
+        <div class="item"><span>1/2 Jamón serrano</span><span class="price">2,50€</span></div>
+        <div class="item"><span>1/2 Sobrasada y queso</span><span class="price">3,80€</span></div>
+        <!-- 全部toast选项依此结构添加 -->
+    </div>
+
+    <!-- Bocadillos -->
+    <div class="menu-section">
+        <h2><span class="emoji-icon">🥪</span>Bocadillos</h2>
+        <div class="item"><span>Pechuga de pollo</span><span class="price">3,80€</span></div>
+        <div class="item"><span>Calamares a la romana</span><span class="price">4,00€</span></div>
+        <div class="item"><span>Jamón serrano y queso fresco</span><span class="price">5,00€</span></div>
+        <!-- 全部三明治选项 -->
+    </div>
+
+    <!-- Hamburguesas -->
+    <div class="menu-section">
+        <h2><span class="emoji-icon">🍔</span>Hamburguesas</h2>
         <div class="item"><span>Hamburguesa Básica</span><span class="price">4,80€</span></div>
         <div class="note">(Carne, lechuga, tomate, queso, patatas)</div>
         <div class="item"><span>Hamburguesa Supersónica</span><span class="price">5,80€</span></div>
         <div class="note">(Carne, lechuga, tomate, queso, bacon, huevo, patatas)</div>
+    </div>
+
+    <!-- Alérgenos -->
+    <div class="warning">
+        <h3>⚠️ Declaración de Alérgenos</h3>
+        <p>Según Reglamento (UE) 1169/2011: Nuestros productos pueden contener trazas de alérgenos debido a procesos de elaboración compartidos.</p>
     </div>
 
 </body>
