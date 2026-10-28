@@ -59,6 +59,14 @@
     render();
     if (modal.dataset.kind === 'orders') openOrders();
   });
+  // En modo nube, lo que aprende un móvil lo aprenden todos.
+  var voiceSync = false;
+  Voice.onMemChange = function (m) { if (!voiceSync && Store.mode === 'cloud') Store.set('voice', m); };
+  Store.on('voice', function (v) {
+    if (!v || Store.mode !== 'cloud') return;
+    voiceSync = true; Voice.importMem(v, true); voiceSync = false;
+  });
+
   window.addEventListener('platet-conn', function (e) {
     if (S.conn !== e.detail) { S.conn = e.detail; render(); }
   });
@@ -208,7 +216,7 @@
       var sub = [P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
       return '<div class="tk-line' + (i === S.sel ? ' sel' : '') + '" data-act="sel-line" data-i="' + i + '">' +
         '<span>' + fmtQty(l.qty) + '</span>' +
-        '<span>' + esc(lineName(l)) + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
+        '<span>' + esc(lineName(l)) + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.src === 'voice' ? '<i class="tag voice">🎤</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
         (l.sent ? '<i class="tag sent">✓ ' + t('tk.kitchen') + '</i>' : '') +
         (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
         '<span>' + fmt(l.price).replace(' €', '') + '</span><span>' + fmt(l.price * l.qty).replace(' €', '') + '</span></div>';
@@ -240,7 +248,8 @@
       '<button class="act pay" data-act="pay"><b>💶</b>' + t('act.pay') + ' ' + fmt(tot.total) + '</button></nav>' +
       '</section>' +
       '<section class="tk-right">' +
-      '<div class="m-bar"><button class="btn" data-act="go" data-v="map">← ' + t('tb.tables') + '</button><b>' + esc(tableLabel(S.table)) + '</b>' +
+      '<div class="m-bar"><button class="btn" data-act="go" data-v="map">←</button><b>' + esc(tableLabel(S.table)) + '</b>' +
+      '<button class="btn voice-btn" data-act="voice">🎤</button>' +
       '<button class="btn primary" data-act="show-ticket">🧾 ' + fmtQty(count) + ' · ' + fmt(tot.total) + '</button></div>' +
       '<div class="cats">' + S.menu.map(function (c) {
         return '<button class="cat' + (c.id === S.cat ? ' on' : '') + '" data-act="cat" data-id="' + esc(c.id) + '"><b>' + esc(c.icon || '🍽️') + '</b>' + esc(P.tr(c, I.lang)) + '</button>';
@@ -253,6 +262,7 @@
       (pendingOrders().length ? act('orders', '📲', t('tb.orders') + ' (' + pendingOrders().length + ')', '', 'alert-act') : '') +
       act('print-ticket', '🖨️', t('act.print')) +
       act('kitchen', '👨‍🍳', t('act.kitchen')) +
+      act('voice', '🎤', t('act.voice'), '', 'voice-act') +
       act('mods', '✏️', t('act.mod')) +
       act('free', '✎', t('act.free')) +
       act('qty-minus', '➖', t('act.minus')) +
@@ -320,10 +330,10 @@
   function time(ts) { return new Date(ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }
 
   function viewAdmin() {
-    var tabs = '<div class="tabs">' + [['productos', 'admin.products'], ['mods', 'admin.mods'], ['usuarios', 'admin.users'], ['ajustes', 'admin.settings']].map(function (x) {
+    var tabs = '<div class="tabs">' + [['productos', 'admin.products'], ['mods', 'admin.mods'], ['voz', 'admin.voice'], ['usuarios', 'admin.users'], ['ajustes', 'admin.settings']].map(function (x) {
       return '<button class="' + (S.adminTab === x[0] ? 'on' : '') + '" data-act="admin-tab" data-t="' + x[0] + '">' + t(x[1]) + '</button>';
     }).join('') + '</div>';
-    var body = { productos: adminProducts, mods: adminMods, usuarios: adminUsers, ajustes: adminSettings }[S.adminTab]();
+    var body = { productos: adminProducts, mods: adminMods, voz: adminVoice, usuarios: adminUsers, ajustes: adminSettings }[S.adminTab]();
     return topbar(t('admin.title')) + '<div class="page">' + tabs + body + '</div>';
   }
 
@@ -371,6 +381,26 @@
           '<div class="btn-row" style="margin-top:10px"><button class="btn primary" data-act="mod-add" data-type="' + type + '">＋ ' + t('add') + '</button></div></div>';
       }).join('') +
       '<div class="card"><button class="btn danger" data-act="mods-reset">' + t('admin.resetMods') + '</button></div>';
+  }
+
+  function aiAuto() {
+    try { return localStorage.getItem('platet-ai-auto') !== '0'; } catch (e) { return true; }
+  }
+
+  function adminVoice() {
+    var st = Voice.stats();
+    var key = Voice.aiKey();
+    return '<div class="card"><h3>' + t('admin.v.memTitle') + '</h3><p class="muted">' + t('admin.v.memNote') + '</p>' +
+      '<p>' + t('v.stats', { a: st.aliases, u: st.utter, c: st.ai }) + '</p>' +
+      '<div class="btn-row"><button class="btn" data-act="vmem-export">' + t('admin.v.export') + '</button>' +
+      '<button class="btn" data-act="vmem-import">' + t('admin.v.import') + '</button>' +
+      '<button class="btn danger" data-act="vmem-clear">' + t('admin.v.clear') + '</button></div></div>' +
+      '<div class="card"><h3>' + t('admin.v.aiTitle') + '</h3><p class="muted">' + t('admin.v.aiNote') + '</p>' +
+      (key
+        ? '<p>' + t('admin.v.keySet') + ' <code>…' + esc(key.slice(-4)) + '</code> <button class="btn" data-act="ai-key-remove">' + t('admin.v.keyRemove') + '</button></p>'
+        : '<div class="field"><label>' + t('admin.v.key') + '</label><input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-..."></div>' +
+          '<button class="btn primary" data-act="ai-key-save">' + t('save') + '</button>') +
+      '<label style="display:block;margin-top:12px"><input type="checkbox" data-act="ai-auto" ' + (aiAuto() ? 'checked' : '') + '> ' + t('admin.v.auto') + '</label></div>';
   }
 
   function adminUsers() {
@@ -498,6 +528,36 @@
       }
     },
     free: function () { openFree(); },
+    voice: function () { openVoice(); },
+    'ai-key-save': function () {
+      var k = document.getElementById('ai-key').value.trim();
+      if (k) { Voice.setAiKey(k); render(); }
+    },
+    'ai-key-remove': function () { Voice.setAiKey(''); render(); },
+    'ai-auto': function (d, el) {
+      try { localStorage.setItem('platet-ai-auto', el.checked ? '1' : '0'); } catch (e) { /* ignorar */ }
+    },
+    'vmem-export': function () {
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([Voice.exportMem()], { type: 'application/json' }));
+      a.download = 'memoria-voz-platet.json';
+      document.body.appendChild(a); a.click(); a.remove();
+    },
+    'vmem-import': function () {
+      var inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'application/json,.json';
+      inp.onchange = function () {
+        var f = inp.files[0];
+        if (!f) return;
+        f.text().then(function (txt) { Voice.importMem(txt, true); toast(t('admin.v.imported')); render(); })
+          .catch(function () { toast('JSON ✗'); });
+      };
+      inp.click();
+    },
+    'vmem-clear': function () {
+      if (!confirm(t('admin.v.clearConfirm'))) return;
+      Voice.clear(); render();
+    },
     mods: function () {
       if (!ticketOf(S.table).lines[S.sel]) return toast(t('msg.selectLine'));
       openMods(S.sel);
@@ -810,6 +870,185 @@
     });
   }
 
+  // ---------------------------------------------------------------- pedido por voz
+
+  function modObjs(ids) {
+    return (ids || []).map(function (id) { return P.findMod(S.mods, id); }).filter(Boolean)
+      .map(function (m) { return { id: m.id, type: m.type, name: m.name, en: m.en || '', zh: m.zh || '', price: m.price || 0 }; });
+  }
+
+  function voiceLang() {
+    try { return localStorage.getItem('platet-voice-lang') || I.lang; } catch (e) { return I.lang; }
+  }
+
+  function openVoice() {
+    var st = { lang: voiceLang(), text: '', listening: false, res: null, picking: -1, q: '', busy: false, err: '' };
+    var lines = function () { return st.res ? st.res.lines : []; };
+
+    function itemName(pid) { var it = P.findItem(S.menu, pid); return it ? P.tr(it, I.lang) : '?'; }
+
+    function pickList(i) {
+      var l = lines()[i];
+      var pids = st.q ? Voice.search(st.q, S.menu, S.mods) : (l && l.candidates) || [];
+      return pids.map(function (pid) {
+        return '<button data-k="set:' + i + ':' + esc(pid) + '">' + esc(itemName(pid)) + '</button>';
+      }).join('');
+    }
+
+    function row(l, i) {
+      var sub = [P.modsText(modObjs(l.mods), I.lang)].concat(l.notes || []).filter(Boolean).join(' · ');
+      var picker = st.picking === i
+        ? '<div class="v-pick"><input id="v-q" type="text" placeholder="' + t('v.searchPh') + '" value="' + esc(st.q) + '"><div class="chips-sel" id="v-pick-list">' + pickList(i) + '</div></div>'
+        : '';
+      var del = '<button class="btn" data-k="del:' + i + '">✕</button>';
+      var qty = '<div class="stepper-row"><button class="btn" data-k="q:' + i + ':-1">−</button><b>' + l.qty + '</b><button class="btn" data-k="q:' + i + ':1">+</button></div>';
+      if (l.pid) {
+        return '<div class="v-row">' + qty + '<div class="v-main"><button class="v-name" data-k="pick:' + i + '">' + esc(itemName(l.pid)) + ' ▾</button>' +
+          (sub ? '<small>' + esc(sub) + '</small>' : '') + '</div><span class="v-badge">' + t('v.src.' + l.src) + '</span>' + del + '</div>' + picker;
+      }
+      return '<div class="v-row unk">' + qty + '<div class="v-main"><b>❓ «' + esc(l.raw || l.phrase) + '»</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') +
+        '<div class="chips-sel">' + (l.candidates || []).map(function (pid) {
+          return '<button data-k="set:' + i + ':' + esc(pid) + '">' + esc(itemName(pid)) + '</button>';
+        }).join('') +
+        '<button data-k="pick:' + i + '">🔍 ' + t('v.search') + '</button>' +
+        (Voice.aiKey() && navigator.onLine ? '<button data-k="ai:' + i + '">🤖 ' + t('v.askAi') + '</button>' : '') +
+        (i > 0 ? '<button data-k="note:' + i + '">💬 ' + t('v.asNote') + '</button>' : '') +
+        '</div></div>' + del + '</div>' + picker;
+    }
+
+    function draw() {
+      var ls = lines();
+      var ok = ls.filter(function (l) { return l.pid; }).length;
+      var vs = Voice.stats();
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>' + t('v.title', { t: esc(tableLabel(S.table)) }) + '</h2>' +
+        '<div class="v-top"><button class="mic' + (st.listening ? ' on' : '') + '" data-k="mic"' + (Voice.canListen ? '' : ' disabled') + '>' + (st.listening ? '⏹' : '🎤') + '</button>' +
+        '<div class="v-help"><span class="lang">' + Object.keys(I.LANGS).map(function (l) {
+          return '<button class="' + (st.lang === l ? 'on' : '') + '" data-k="vl:' + l + '">' + I.LANGS[l] + '</button>';
+        }).join('') + '</span><p class="muted">' + (st.listening ? t('v.listening') : Voice.canListen ? t('v.tap') : t('v.noMic')) + '</p></div></div>' +
+        '<div class="field"><textarea id="v-text" rows="2" placeholder="' + t('v.textPh') + '">' + esc(st.text) + '</textarea></div>' +
+        '<div class="btn-row"><button class="btn" data-k="parse">' + t('v.parse') + '</button></div>' +
+        (st.err ? '<p class="warn">' + esc(st.err) + '</p>' : '') +
+        (st.busy ? '<p class="muted">' + t('v.aiBusy') + '</p>' : '') +
+        '<div class="v-lines">' + ls.map(row).join('') + '</div>' +
+        (ok < ls.length ? '<p class="muted">' + t('v.skipped') + (!navigator.onLine ? ' ' + t('v.offline') : '') + '</p>' : '') +
+        '<p class="muted v-stats">' + t('v.stats', { a: vs.aliases, u: vs.utter, c: vs.ai }) + '</p>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button>' +
+        '<button class="btn ok" data-k="OK" style="flex:1"' + (ok ? '' : ' disabled') + '>' + t('v.add', { n: ok }) + '</button></div>';
+      document.getElementById('v-text').oninput = function (e) { st.text = e.target.value; };
+      var q = document.getElementById('v-q');
+      if (q) {
+        q.oninput = function () { st.q = q.value; document.getElementById('v-pick-list').innerHTML = pickList(st.picking); };
+        q.focus();
+      }
+    }
+
+    // De varias alternativas del reconocedor, la que mejor encaja con la carta.
+    function best(alts) {
+      var top = null;
+      alts.forEach(function (a) {
+        var r = Voice.parse(a, S.menu, S.mods);
+        var good = r.lines.filter(function (l) { return l.pid; }).length;
+        var sc = good * 2 - (r.lines.length - good) * 3;
+        if (!top || sc > top.sc) top = { sc: sc, text: a, res: r };
+      });
+      return top;
+    }
+
+    function interpret() {
+      st.res = Voice.parse(st.text, S.menu, S.mods);
+      st.picking = -1; st.err = '';
+      draw();
+      autoAi();
+    }
+
+    function autoAi() {
+      if (!aiAuto() || !Voice.aiKey() || !navigator.onLine) return;
+      var idxs = [];
+      lines().forEach(function (l, i) { if (!l.pid && l.src === 'unknown') idxs.push(i); });
+      if (idxs.length) askAi(idxs);
+    }
+
+    function askAi(idxs) {
+      st.busy = true; st.err = ''; draw();
+      var segs = idxs.map(function (i) { return { i: i, text: lines()[i].raw || lines()[i].phrase }; });
+      Voice.ai(segs, st.text, S.menu, S.mods).then(function (res) {
+        res.forEach(function (r) {
+          var l = lines()[r.segment];
+          if (!l || l.pid || !r.pid || !P.findItem(S.menu, r.pid)) return;
+          l.pid = r.pid; l.src = 'ai';
+          if (r.qty > 0) l.qty = Math.min(50, r.qty);
+          (r.mods || []).forEach(function (id) { if (l.mods.indexOf(id) < 0) l.mods.push(id); });
+          if (r.note) l.notes.push(String(r.note).slice(0, 80));
+        });
+      }).catch(function (e) {
+        st.err = t('v.aiErr', { e: e.message });
+      }).then(function () { st.busy = false; if (modal.dataset.kind === 'voice') draw(); });
+    }
+
+    function startMic() {
+      st.listening = true; st.err = ''; draw();
+      Voice.listen(st.lang, function (partial) {
+        st.text = partial;
+        var ta = document.getElementById('v-text');
+        if (ta) ta.value = partial;
+      }).then(function (alts) {
+        st.listening = false;
+        if (!alts.length) return draw();
+        var b = best(alts);
+        st.text = b.text; st.res = b.res; st.picking = -1;
+        draw();
+        autoAi();
+      }).catch(function (e) {
+        st.listening = false;
+        st.err = t('v.micErr', { e: e.message });
+        draw();
+      });
+    }
+
+    openModal('voice', draw, function (k) {
+      var p = k.split(':'), cmd = p[0], i = +p[1], ls = lines(), l = ls[i];
+      switch (cmd) {
+        case 'X': Voice.stop(); return closeModal();
+        case 'mic': return st.listening ? Voice.stop() : startMic();
+        case 'vl':
+          st.lang = p[1];
+          try { localStorage.setItem('platet-voice-lang', st.lang); } catch (e) { /* ignorar */ }
+          return draw();
+        case 'parse': return interpret();
+        case 'q':
+          l.qty = Math.min(50, l.qty + Number(p[2]));
+          if (l.qty <= 0) ls.splice(i, 1);
+          return draw();
+        case 'del': ls.splice(i, 1); st.picking = -1; return draw();
+        case 'pick': st.picking = st.picking === i ? -1 : i; st.q = ''; return draw();
+        case 'set':
+          var pid = p.slice(2).join(':');
+          // la misma frase sin resolver en otras líneas (p. ej. una unidad separada) toma el mismo producto
+          ls.forEach(function (x) { if (x === l || (!x.pid && x.phrase === l.phrase)) { x.pid = pid; x.src = 'manual'; } });
+          st.picking = -1;
+          return draw();
+        case 'ai': return askAi([i]);
+        case 'note':
+          var prev = ls.slice(0, i).reverse().filter(function (x) { return x.pid; })[0];
+          if (prev) prev.notes.push(l.raw || l.phrase);
+          ls.splice(i, 1);
+          return draw();
+        case 'OK':
+          var ok = ls.filter(function (x) { return x.pid && P.findItem(S.menu, x.pid); });
+          if (!ok.length) return;
+          Voice.learn(st.res.key, ok);
+          closeModal();
+          addLines(S.table, ok.map(function (x) {
+            var it = P.findItem(S.menu, x.pid);
+            return { pid: it.id, name: it.name, base: it.price, qty: x.qty, mods: modObjs(x.mods), note: (x.notes || []).join(' · ').slice(0, 120), src: 'voice' };
+          }));
+          toast(t('v.added', { n: ok.length }));
+          if (navigator.vibrate) navigator.vibrate(20);
+      }
+    });
+  }
+
   // ---------------------------------------------------------------- PIN
 
   function askPin(user) {
@@ -1107,7 +1346,8 @@
   document.addEventListener('keydown', function (e) {
     if (modal.dataset.kind === 'pin' && /^[0-9]$/.test(e.key)) modalHandler(e.key);
     else if (modal.dataset.kind === 'pin' && e.key === 'Backspace') modalHandler('⌫');
-    else if (e.key === 'Escape' && modalHandler) closeModal();
+    else if (e.key === 'Escape' && modalHandler) { Voice.stop(); closeModal(); }
+    else if (e.key === 'Enter' && modal.dataset.kind === 'voice' && e.target.id === 'v-text') { e.preventDefault(); modalHandler('parse'); }
   });
 
   var toastTimer;
