@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>Códigos QR de mesas</title>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 16px; background: #f5f6fa; color: #2f3640; }
+    .controls { max-width: 1000px; margin: 0 auto 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .controls input { flex: 1; min-width: 240px; padding: 8px 10px; border: 1px solid #dcdde1; border-radius: 6px; font: inherit; }
+    .controls button { padding: 8px 14px; border: 0; border-radius: 6px; background: #40739e; color: #fff; font: inherit; cursor: pointer; }
+    .controls label { font-size: 14px; }
+    .grid { max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+    .card { background: #fff; border: 1px dashed #b2bec3; border-radius: 12px; padding: 16px; text-align: center; break-inside: avoid; }
+    .card h2 { margin: 0; font-size: 15px; letter-spacing: 1px; text-transform: uppercase; }
+    .card .mesa { font-size: 30px; font-weight: 700; margin: 4px 0 8px; }
+    .card .qr { display: inline-block; padding: 6px; background: #fff; }
+    .card .qr img, .card .qr canvas { display: block; }
+    .card p { margin: 8px 0 0; font-size: 13px; color: #555; }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .controls { display: none; }
+      .grid { grid-template-columns: repeat(3, 1fr); gap: 6mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <input id="base" aria-label="Dirección de la página de pedidos">
+    <label><input type="checkbox" id="stools"> Incluir taburetes de barra (B1–B8)</label>
+    <button id="regen">Actualizar</button>
+    <button onclick="window.print()">🖨️ Imprimir</button>
+  </div>
+  <div class="grid" id="grid"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="js/common.js"></script>
+  <script>
+    (function () {
+      var base = document.getElementById('base');
+      var stools = document.getElementById('stools');
+      base.value = new URL('pedir.html', location.href).href;
+
+      function draw() {
+        var grid = document.getElementById('grid');
+        grid.innerHTML = '';
+        Platet.LAYOUT.filter(function (t) { return stools.checked || t.shape !== 'stool'; }).forEach(function (t) {
+          var url = base.value.trim() + '?mesa=' + encodeURIComponent(t.id);
+          var card = document.createElement('div');
+          card.className = 'card';
+          card.innerHTML = '<h2>🍴 Restaurante Platet</h2><div class="mesa"></div><div class="qr"></div><p>Escanea para ver la carta y pedir desde tu móvil</p>';
+          card.querySelector('.mesa').textContent = 'Mesa ' + t.id;
+          grid.appendChild(card);
+          new QRCode(card.querySelector('.qr'), { text: url, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+        });
+      }
+      document.getElementById('regen').onclick = draw;
+      stools.onchange = draw;
+      draw();
+    })();
+  </script>
+</body>
+</html>

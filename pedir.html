@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Pedir · Restaurante Platet</title>
+  <style>
+    :root { --bg: #f5f6fa; --ink: #2f3640; --muted: #7f8fa6; --accent: #40739e; --price: #e84118; --ok: #27ae60; --line: #e4e6eb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--ink); padding-bottom: 96px; }
+    button { font: inherit; cursor: pointer; }
+    header.top { background: #fff; padding: 16px; text-align: center; border-bottom: 1px solid var(--line); }
+    header.top h1 { margin: 0; font-size: 22px; letter-spacing: 1px; text-transform: uppercase; }
+    header.top p { margin: 4px 0 0; color: var(--muted); }
+    .table-pill { display: inline-block; margin-top: 8px; background: var(--accent); color: #fff; border-radius: 999px; padding: 4px 14px; font-weight: 600; }
+    .chips { position: sticky; top: 0; z-index: 5; display: flex; gap: 8px; overflow-x: auto; padding: 10px 16px; background: var(--bg); border-bottom: 1px solid var(--line); scrollbar-width: none; }
+    .chips a { flex: 0 0 auto; text-decoration: none; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 14px; white-space: nowrap; }
+    main { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+    .quick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 16px 0; }
+    .quick button { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+    section.cat { background: #fff; border-radius: 12px; padding: 4px 16px; margin: 16px 0; box-shadow: 0 1px 4px rgba(0,0,0,.06); scroll-margin-top: 64px; }
+    section.cat h2 { color: var(--accent); font-size: 18px; border-left: 4px solid var(--accent); padding-left: 10px; }
+    .item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px dotted var(--line); }
+    .item .name { flex: 1; }
+    .item .price { color: var(--price); font-weight: 600; white-space: nowrap; }
+    .stepper { display: flex; align-items: center; gap: 6px; }
+    .stepper button { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--accent); background: #fff; color: var(--accent); font-size: 20px; line-height: 1; }
+    .stepper button.add { background: var(--accent); color: #fff; }
+    .stepper b { min-width: 18px; text-align: center; }
+    .cartbar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: transparent; z-index: 10; }
+    .cartbar button { width: 100%; max-width: 720px; display: flex; justify-content: space-between; margin: 0 auto; background: var(--ok); color: #fff; border: 0; border-radius: 14px; padding: 16px 18px; font-size: 17px; font-weight: 600; box-shadow: 0 6px 18px rgba(0,0,0,.2); }
+    .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
+    .sheet { background: #fff; width: 100%; max-width: 720px; max-height: 88vh; overflow: auto; border-radius: 18px 18px 0 0; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); }
+    .sheet h2 { margin: 0 0 8px; }
+    .sheet textarea { width: 100%; min-height: 70px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; }
+    .total { display: flex; justify-content: space-between; font-size: 20px; font-weight: 700; margin: 14px 0; }
+    .btn { width: 100%; border: 0; border-radius: 12px; padding: 14px; font-size: 16px; font-weight: 600; background: var(--ok); color: #fff; }
+    .btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); margin-top: 8px; }
+    .btn:disabled { opacity: .6; }
+    .status { background: #fff; border-radius: 12px; padding: 12px 16px; margin: 16px 0; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+    .status h3 { margin: 4px 0 8px; font-size: 16px; }
+    .st { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+    .st .s-new { color: #e1a100; } .st .s-accepted, .st .s-done { color: var(--ok); } .st .s-rejected { color: var(--price); }
+    .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+    .warning { background: #fff3cd; border-left: 4px solid #ffeeba; padding: 12px 15px; margin: 24px 0; border-radius: 4px; font-size: 14px; }
+    .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 999px; z-index: 30; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>🍴 Restaurante Platet</h1>
+    <p>C/ José García Ferrández, 2 · Elx</p>
+    <span class="table-pill" id="table-pill"></span>
+  </header>
+  <nav class="chips" id="chips"></nav>
+  <main id="main"></main>
+  <div class="cartbar hidden" id="cartbar"><button id="cart-btn"></button></div>
+  <div class="sheet-bg hidden" id="sheet-bg"><div class="sheet" id="sheet"></div></div>
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/common.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var P = window.Platet, fmt = P.fmt, esc = P.esc;
+    var params = new URLSearchParams(location.search);
+    var table = String(params.get('mesa') || '').toUpperCase();
+    var validTable = P.LAYOUT.some(function (t) { return t.id === table; });
+
+    var menu = P.DEFAULT_MENU;
+    var cart = {};          // pid -> qty
+    var note = '';
+    var MY_KEY = 'platet-my-orders:' + table;
+    var mine = [];          // [{id, type, createdAt, status, reason}]
+    try { mine = JSON.parse(sessionStorage.getItem(MY_KEY)) || []; } catch (e) { mine = []; }
+    var subs = {};
+
+    var main = document.getElementById('main');
+    var chips = document.getElementById('chips');
+    var cartbar = document.getElementById('cartbar');
+    var sheetBg = document.getElementById('sheet-bg');
+    var sheet = document.getElementById('sheet');
+
+    if (!validTable) {
+      document.getElementById('table-pill').classList.add('hidden');
+      main.innerHTML = '<div class="empty"><p style="font-size:40px">📷</p><p>Escanea el código QR de tu mesa para pedir.</p><p><a href="index.html">Ver la carta</a></p></div>';
+      return;
+    }
+    document.getElementById('table-pill').textContent = 'Mesa ' + table;
+
+    Store.on('menu', function (v) { menu = v || P.DEFAULT_MENU; render(); });
+    mine.forEach(watch);
+
+    function visibleCats() {
+      return menu.map(function (c) {
+        return Object.assign({}, c, { items: (c.items || []).filter(function (i) { return i.available !== false; }) });
+      }).filter(function (c) { return c.items.length; });
+    }
+
+    function render() {
+      var cats = visibleCats();
+      chips.innerHTML = cats.map(function (c) {
+        return '<a href="#c-' + esc(c.id) + '">' + esc(c.icon || '') + ' ' + esc(c.name) + '</a>';
+      }).join('');
+      main.innerHTML = statusHtml() +
+        '<div class="quick"><button data-a="waiter">🙋 Llamar al camarero</button><button data-a="bill">🧾 Pedir la cuenta</button></div>' +
+        cats.map(function (c) {
+          return '<section class="cat" id="c-' + esc(c.id) + '"><h2>' + esc(c.icon || '') + ' ' + esc(c.name) + '</h2>' +
+            c.items.map(function (it) {
+              var q = cart[it.id] || 0;
+              return '<div class="item"><span class="name">' + esc(it.name) + '</span><span class="price">' + fmt(it.price) + '</span>' +
+                '<span class="stepper">' + (q ? '<button data-a="minus" data-id="' + esc(it.id) + '" aria-label="Quitar">−</button><b>' + q + '</b>' : '') +
+                '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="Añadir">+</button></span></div>';
+            }).join('') + '</section>';
+        }).join('') +
+        '<div class="warning"><b>⚠️ Alérgenos</b><br>Según Reglamento (UE) 1169/2011: nuestros productos pueden contener trazas de alérgenos. Indícanos cualquier alergia en la nota del pedido.</div>';
+      renderCartBar();
+    }
+
+    var LABEL = { 'new': '⏳ Enviado, esperando confirmación', accepted: '✅ Confirmado', rejected: '❌ No aceptado', done: '✅ Atendido' };
+    var TYPE = { order: 'Pedido', waiter: 'Llamada al camarero', bill: 'Petición de cuenta' };
+
+    function statusHtml() {
+      if (!mine.length) return '';
+      return '<div class="status"><h3>Tus avisos en esta mesa</h3>' + mine.slice().reverse().map(function (o) {
+        return '<div class="st"><span>' + TYPE[o.type] + ' · ' + new Date(o.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) + '</span>' +
+          '<span class="s-' + esc(o.status) + '">' + (LABEL[o.status] || esc(o.status)) + (o.reason ? ' — ' + esc(o.reason) : '') + '</span></div>';
+      }).join('') + '</div>';
+    }
+
+    function cartLines() {
+      return Object.keys(cart).map(function (pid) {
+        return { item: P.findItem(menu, pid), qty: cart[pid] };
+      }).filter(function (l) { return l.item && l.qty > 0; });
+    }
+    function cartTotal() { return cartLines().reduce(function (s, l) { return s + l.item.price * l.qty; }, 0); }
+    function cartCount() { return cartLines().reduce(function (s, l) { return s + l.qty; }, 0); }
+
+    function renderCartBar() {
+      var n = cartCount();
+      cartbar.classList.toggle('hidden', !n);
+      document.getElementById('cart-btn').innerHTML = '<span>Ver pedido (' + n + ')</span><span>' + fmt(cartTotal()) + '</span>';
+    }
+
+    function openSheet() {
+      var lines = cartLines();
+      if (!lines.length) return closeSheet();
+      sheet.innerHTML = '<h2>Tu pedido · Mesa ' + esc(table) + '</h2>' +
+        lines.map(function (l) {
+          return '<div class="item"><span class="name">' + esc(l.item.name) + '</span><span class="price">' + fmt(l.item.price * l.qty) + '</span>' +
+            '<span class="stepper"><button data-a="minus" data-id="' + esc(l.item.id) + '">−</button><b>' + l.qty + '</b><button class="add" data-a="plus" data-id="' + esc(l.item.id) + '">+</button></span></div>';
+        }).join('') +
+        '<p><label for="note">Nota para cocina (alergias, sin cebolla, punto de la carne...)</label></p>' +
+        '<textarea id="note" maxlength="120">' + esc(note) + '</textarea>' +
+        '<div class="total"><span>Total</span><span>' + fmt(cartTotal()) + '</span></div>' +
+        '<button class="btn" data-a="send">Enviar pedido a cocina</button>' +
+        '<button class="btn ghost" data-a="close">Seguir mirando la carta</button>';
+      document.getElementById('note').oninput = function (e) { note = e.target.value; };
+      sheetBg.classList.remove('hidden');
+    }
+    function closeSheet() { sheetBg.classList.add('hidden'); }
+
+    function send(type, lines) {
+      var last = mine.filter(function (o) { return o.type === type; }).slice(-1)[0];
+      if (type !== 'order' && last && last.status === 'new' && Date.now() - last.createdAt < 60000) {
+        toast('Ya lo hemos avisado, enseguida vamos 🙂');
+        return Promise.resolve(false);
+      }
+      var id = Store.newId();
+      var order = {
+        id: id, type: type, table: table, status: 'new', createdAt: Date.now(),
+        lines: lines || [], note: type === 'order' ? note.trim().slice(0, 120) : ''
+      };
+      return Store.set('orders/' + id, order).then(function () {
+        mine.push({ id: id, type: type, createdAt: order.createdAt, status: 'new' });
+        saveMine();
+        watch(mine[mine.length - 1]);
+        render();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return true;
+      }).catch(function () {
+        toast('No se ha podido enviar. Revisa la conexión o avisa al camarero.');
+        return false;
+      });
+    }
+
+    function watch(o) {
+      if (subs[o.id] || o.status !== 'new') return;
+      subs[o.id] = Store.on('orders/' + o.id, function (v) {
+        if (!v) return;
+        o.status = v.status; o.reason = v.reason || '';
+        if (v.status !== 'new') {
+          if (v.status === 'accepted') toast('✅ ¡Tu pedido ha sido confirmado!');
+          if (v.status === 'rejected') toast('❌ Tu pedido no se ha podido aceptar');
+          if (subs[o.id]) { subs[o.id](); delete subs[o.id]; }
+        }
+        saveMine();
+        render();
+      });
+    }
+
+    function saveMine() {
+      try { sessionStorage.setItem(MY_KEY, JSON.stringify(mine.slice(-20))); } catch (e) { /* ignorar */ }
+    }
+
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-a]');
+      if (b) {
+        var a = b.dataset.a, id = b.dataset.id;
+        if (a === 'plus') { cart[id] = Math.min(20, (cart[id] || 0) + 1); }
+        else if (a === 'minus') { cart[id] = Math.max(0, (cart[id] || 0) - 1); if (!cart[id]) delete cart[id]; }
+        else if (a === 'close') return closeSheet();
+        else if (a === 'send') {
+          b.disabled = true;
+          b.textContent = 'Enviando…';
+          send('order', cartLines().map(function (l) { return { pid: l.item.id, name: l.item.name, qty: l.qty }; }))
+            .then(function (ok) {
+              if (!ok) { b.disabled = false; b.textContent = 'Enviar pedido a cocina'; return; }
+              cart = {}; note = ''; closeSheet(); render();
+            });
+          return;
+        } else if (a === 'waiter' || a === 'bill') {
+          if (confirm(a === 'bill' ? '¿Pedir la cuenta?' : '¿Llamar al camarero?')) {
+            send(a).then(function (ok) { if (ok) toast('Aviso enviado 👍'); });
+          }
+          return;
+        }
+        render();
+        if (!sheetBg.classList.contains('hidden')) openSheet();
+        return;
+      }
+      if (e.target.closest('#cart-btn')) openSheet();
+      else if (e.target === sheetBg) closeSheet();
+    });
+
+    var tt;
+    function toast(msg) {
+      var el = document.getElementById('toast');
+      el.textContent = msg; el.classList.remove('hidden');
+      clearTimeout(tt); tt = setTimeout(function () { el.classList.add('hidden'); }, 3000);
+    }
+
+    if (Store.mode === 'local') console.warn('Modo local: los pedidos solo llegan al TPV si se abre en el mismo navegador.');
+  })();
+  </script>
+</body>
+</html>
