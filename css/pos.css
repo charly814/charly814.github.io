@@ -238,3 +238,67 @@ code { background: #f5f6fa; padding: 1px 5px; border-radius: 4px; user-select: t
   #print-area .big { font-size: 18px; font-weight: 700; }
   #print-area .kitchen td { font-size: 16px; font-weight: 700; }
 }
+
+/* ---------- idioma ---------- */
+.lang { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.lang button { border: 0; background: #fff; padding: 0 10px; min-height: 42px; font-size: 13px; }
+.lang button.on { background: var(--dark); color: #fff; }
+
+/* ---------- modificadores / artículo libre ---------- */
+.mod-h { margin: 12px 0 6px; font-size: 13px; letter-spacing: 1px; color: var(--muted); }
+.mod-h.sin { color: var(--alert); }
+.mod-h.extra { color: var(--ok); }
+.chips-sel { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips-sel button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px; min-height: 40px; font-size: 14px; }
+.chips-sel button.on { background: var(--dark); color: #fff; border-color: var(--dark); }
+.stepper-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stepper-row b { min-width: 24px; text-align: center; font-size: 18px; }
+.tag.free { background: #ede9fe; color: #6d28d9; }
+.hint { padding: 0 14px; margin: 4px 0; font-size: 12px; }
+.mods-txt { color: var(--muted); }
+.tk-line em { color: #b45309; }
+
+/* ---------- ajustes ---------- */
+.scroll-x { overflow-x: auto; }
+.form-row.prod-row { grid-template-columns: minmax(160px, 1.5fr) minmax(120px, 1fr) minmax(100px, 1fr) 90px 80px 44px; min-width: 680px; }
+.form-row.mod-row { grid-template-columns: minmax(140px, 1.3fr) minmax(120px, 1fr) minmax(100px, 1fr) 90px 44px; min-width: 560px; }
+.form-row.cat-row { grid-template-columns: 70px 1.3fr 1fr 1fr auto auto; min-width: 640px; }
+.form-row.mod-row input, .form-row.prod-row input[type=text], .form-row.cat-row input { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; user-select: text; }
+
+/* ---------- solo móvil (comandero) ---------- */
+.tbl-list, .m-bar, .m-ticket-actions { display: none; }
+.tl { position: relative; height: 72px; border: 1px solid var(--line); border-radius: 10px; background: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.tl b { font-size: 18px; }
+.tl small { font-weight: 700; }
+.tl.busy { background: var(--busy); color: #fff; border-color: var(--busy); }
+.tl.qr { border: 3px solid var(--alert); }
+.tl .alert { position: absolute; top: -8px; right: -6px; background: var(--alert); color: #fff; font-style: normal; border-radius: 999px; padding: 1px 6px; font-size: 11px; font-weight: 700; }
+
+@media (max-width: 860px) {
+  .topbar h1 { font-size: 20px; }
+  .tb-btn { padding: 6px 10px; font-size: 14px; }
+  .floor-wrap { display: none; }
+  .tbl-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; padding: 12px; }
+
+  .ticket-view { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+  .tk-left { display: none; }
+  .ticket-view.show .tk-left { display: flex; position: fixed; inset: 0; z-index: 40; overflow: auto; }
+  .tk-lines { max-height: none; }
+  .tk-right { flex: 1; }
+  .m-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; background: #fff; border-bottom: 1px solid var(--line); }
+  .cats { display: flex; overflow-x: auto; flex-wrap: nowrap; padding: 8px; scrollbar-width: none; }
+  .cat { flex: 0 0 auto; min-width: 84px; }
+  .prods { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 78px; }
+  .actions .act:not(.pay):not([data-act="free"]):not([data-act="mods"]):not([data-act="kitchen"]) { display: none; }
+  .actions { position: sticky; bottom: 0; }
+  .m-ticket-actions { display: flex; gap: 4px; padding: 8px; overflow-x: auto; background: #fff; border-top: 1px solid var(--line); position: sticky; bottom: 0; }
+  .m-ticket-actions .act { min-width: 64px; }
+}
+.act.alert-act { background: var(--alert); color: #fff; }
+@media (max-width: 860px) { .actions .act.alert-act { display: flex !important; } }
+@media (max-width: 860px) {
+  .m-ticket-actions { flex-wrap: wrap; }
+  .m-ticket-actions .act { flex: 1 1 30%; }
+  .m-ticket-actions .act.pay { flex-basis: 100%; flex-direction: row; justify-content: center; gap: 8px; min-height: 52px; }
+  .toast { top: 12px; bottom: auto; }
+}

@@ -45,10 +45,28 @@
     .warning { background: #fff3cd; border-left: 4px solid #ffeeba; padding: 12px 15px; margin: 24px 0; border-radius: 4px; font-size: 14px; }
     .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 999px; z-index: 30; }
     .hidden { display: none !important; }
+    .lang { position: absolute; top: 10px; right: 10px; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+    .lang button { border: 0; background: #fff; padding: 6px 9px; font-size: 13px; }
+    .lang button.on { background: var(--accent); color: #fff; }
+    header.top { position: relative; }
+    .item .name { cursor: pointer; }
+    .item .name small { display: block; color: var(--muted); font-size: 12px; }
+    .item .name u { text-decoration: none; color: var(--accent); font-size: 12px; white-space: nowrap; }
+    .hint { color: var(--muted); font-size: 13px; text-align: center; margin: 8px 0 0; }
+    .cart-line .name em { display: block; font-style: normal; font-size: 12px; color: #b45309; }
+    .mod-h { margin: 14px 0 6px; font-size: 13px; letter-spacing: 1px; color: var(--muted); }
+    .mod-h.sin { color: var(--price); } .mod-h.extra { color: var(--ok); }
+    .chips-sel { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chips-sel button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 12px; font-size: 14px; }
+    .chips-sel button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .sheet input[type=text] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; }
+    .qty-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 16px 0; }
+    .qty-row b { font-size: 20px; }
   </style>
 </head>
 <body>
   <header class="top">
+    <span class="lang" id="lang"></span>
     <h1>🍴 Restaurante Platet</h1>
     <p>C/ José García Ferrández, 2 · Elx</p>
     <span class="table-pill" id="table-pill"></span>
@@ -62,21 +80,28 @@
   <script src="config.js"></script>
   <script src="js/store.js"></script>
   <script src="js/common.js"></script>
+  <script src="js/i18n.js"></script>
   <script>
   (function () {
     'use strict';
     var P = window.Platet, fmt = P.fmt, esc = P.esc;
+    var I = I18N.init('platet-lang');
+    var t = function (k, v) { return I.t(k, v); };
     var params = new URLSearchParams(location.search);
     var table = String(params.get('mesa') || '').toUpperCase();
-    var validTable = P.LAYOUT.some(function (t) { return t.id === table; });
+    var validTable = P.LAYOUT.some(function (x) { return x.id === table; });
 
     var menu = P.DEFAULT_MENU;
-    var cart = {};          // pid -> qty
+    var mods = P.DEFAULT_MODS;
+    // Carrito: líneas {key, pid, qty, mods: [ids], note}. Las líneas sin
+    // personalizar usan key = pid; las personalizadas, una key propia.
+    var cart = [];
     var note = '';
     var MY_KEY = 'platet-my-orders:' + table;
     var mine = [];          // [{id, type, createdAt, status, reason}]
     try { mine = JSON.parse(sessionStorage.getItem(MY_KEY)) || []; } catch (e) { mine = []; }
     var subs = {};
+    var sheetMode = null;   // 'cart' | {custom state}
 
     var main = document.getElementById('main');
     var chips = document.getElementById('chips');
@@ -84,14 +109,28 @@
     var sheetBg = document.getElementById('sheet-bg');
     var sheet = document.getElementById('sheet');
 
+    function drawLang() {
+      document.getElementById('lang').innerHTML = Object.keys(I.LANGS).map(function (l) {
+        return '<button class="' + (I.lang === l ? 'on' : '') + '" data-a="lang" data-l="' + l + '">' + I.LANGS[l] + '</button>';
+      }).join('');
+    }
+    drawLang();
+
     if (!validTable) {
       document.getElementById('table-pill').classList.add('hidden');
-      main.innerHTML = '<div class="empty"><p style="font-size:40px">📷</p><p>Escanea el código QR de tu mesa para pedir.</p><p><a href="index.html">Ver la carta</a></p></div>';
+      main.innerHTML = '<div class="empty"><p style="font-size:40px">📷</p><p>' + t('c.scan') + '</p><p><a href="index.html">' + t('c.seeMenu') + '</a></p></div>';
+      document.addEventListener('click', function (e) {
+        var b = e.target.closest('[data-a="lang"]');
+        if (b) { I.set(b.dataset.l); location.reload(); }
+      });
       return;
     }
-    document.getElementById('table-pill').textContent = 'Mesa ' + table;
 
     Store.on('menu', function (v) { menu = v || P.DEFAULT_MENU; render(); });
+    Store.on('mods', function (v) {
+      // En modo nube los modificadores son privados del TPV; si no se pueden leer, se usan los de serie.
+      mods = v || P.DEFAULT_MODS; render();
+    });
     mine.forEach(watch);
 
     function visibleCats() {
@@ -100,79 +139,122 @@
       }).filter(function (c) { return c.items.length; });
     }
 
+    function plainQty(pid) {
+      var l = cart.filter(function (x) { return x.key === pid; })[0];
+      return l ? l.qty : 0;
+    }
+
     function render() {
+      document.getElementById('table-pill').textContent = t('table', { t: table });
       var cats = visibleCats();
       chips.innerHTML = cats.map(function (c) {
-        return '<a href="#c-' + esc(c.id) + '">' + esc(c.icon || '') + ' ' + esc(c.name) + '</a>';
+        return '<a href="#c-' + esc(c.id) + '">' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</a>';
       }).join('');
       main.innerHTML = statusHtml() +
-        '<div class="quick"><button data-a="waiter">🙋 Llamar al camarero</button><button data-a="bill">🧾 Pedir la cuenta</button></div>' +
+        '<div class="quick"><button data-a="waiter">' + t('c.waiter') + '</button><button data-a="bill">' + t('c.bill') + '</button></div>' +
+        '<p class="hint">' + t('c.customizeHint') + '</p>' +
         cats.map(function (c) {
-          return '<section class="cat" id="c-' + esc(c.id) + '"><h2>' + esc(c.icon || '') + ' ' + esc(c.name) + '</h2>' +
+          return '<section class="cat" id="c-' + esc(c.id) + '"><h2>' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</h2>' +
             c.items.map(function (it) {
-              var q = cart[it.id] || 0;
-              return '<div class="item"><span class="name">' + esc(it.name) + '</span><span class="price">' + fmt(it.price) + '</span>' +
-                '<span class="stepper">' + (q ? '<button data-a="minus" data-id="' + esc(it.id) + '" aria-label="Quitar">−</button><b>' + q + '</b>' : '') +
-                '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="Añadir">+</button></span></div>';
+              var q = plainQty(it.id);
+              var es = I.lang !== 'es' && P.tr(it, I.lang) !== it.name ? '<small>' + esc(it.name) + '</small>' : '';
+              return '<div class="item"><span class="name" data-a="custom" data-id="' + esc(it.id) + '">' + esc(P.tr(it, I.lang)) + ' <u>✏️</u>' + es + '</span>' +
+                '<span class="price">' + fmt(it.price) + '</span>' +
+                '<span class="stepper">' + (q ? '<button data-a="minus" data-key="' + esc(it.id) + '" aria-label="−">−</button><b>' + q + '</b>' : '') +
+                '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="+">+</button></span></div>';
             }).join('') + '</section>';
         }).join('') +
-        '<div class="warning"><b>⚠️ Alérgenos</b><br>Según Reglamento (UE) 1169/2011: nuestros productos pueden contener trazas de alérgenos. Indícanos cualquier alergia en la nota del pedido.</div>';
+        '<p class="hint">' + t('c.other') + '</p>' +
+        '<div class="warning"><b>' + t('c.allergensT') + '</b><br>' + t('c.allergens') + '</div>';
       renderCartBar();
     }
 
-    var LABEL = { 'new': '⏳ Enviado, esperando confirmación', accepted: '✅ Confirmado', rejected: '❌ No aceptado', done: '✅ Atendido' };
-    var TYPE = { order: 'Pedido', waiter: 'Llamada al camarero', bill: 'Petición de cuenta' };
-
     function statusHtml() {
       if (!mine.length) return '';
-      return '<div class="status"><h3>Tus avisos en esta mesa</h3>' + mine.slice().reverse().map(function (o) {
-        return '<div class="st"><span>' + TYPE[o.type] + ' · ' + new Date(o.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) + '</span>' +
-          '<span class="s-' + esc(o.status) + '">' + (LABEL[o.status] || esc(o.status)) + (o.reason ? ' — ' + esc(o.reason) : '') + '</span></div>';
+      return '<div class="status"><h3>' + t('c.mine') + '</h3>' + mine.slice().reverse().map(function (o) {
+        return '<div class="st"><span>' + t('c.t.' + o.type) + ' · ' + new Date(o.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) + '</span>' +
+          '<span class="s-' + esc(o.status) + '">' + t('c.s.' + o.status) + (o.reason ? ' — ' + esc(o.reason) : '') + '</span></div>';
       }).join('') + '</div>';
     }
 
-    function cartLines() {
-      return Object.keys(cart).map(function (pid) {
-        return { item: P.findItem(menu, pid), qty: cart[pid] };
-      }).filter(function (l) { return l.item && l.qty > 0; });
+    function modObjs(ids) { return (ids || []).map(function (id) { return P.findMod(mods, id); }).filter(Boolean); }
+    function unitPrice(l) {
+      var it = P.findItem(menu, l.pid);
+      if (!it) return 0;
+      return it.price + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0);
     }
-    function cartTotal() { return cartLines().reduce(function (s, l) { return s + l.item.price * l.qty; }, 0); }
-    function cartCount() { return cartLines().reduce(function (s, l) { return s + l.qty; }, 0); }
+    function validLines() { return cart.filter(function (l) { return P.findItem(menu, l.pid) && l.qty > 0; }); }
+    function cartTotal() { return validLines().reduce(function (s, l) { return s + unitPrice(l) * l.qty; }, 0); }
+    function cartCount() { return validLines().reduce(function (s, l) { return s + l.qty; }, 0); }
 
     function renderCartBar() {
       var n = cartCount();
       cartbar.classList.toggle('hidden', !n);
-      document.getElementById('cart-btn').innerHTML = '<span>Ver pedido (' + n + ')</span><span>' + fmt(cartTotal()) + '</span>';
+      document.getElementById('cart-btn').innerHTML = '<span>' + t('c.view', { n: n }) + '</span><span>' + fmt(cartTotal()) + '</span>';
     }
 
-    function openSheet() {
-      var lines = cartLines();
+    function openCart() {
+      sheetMode = 'cart';
+      var lines = validLines();
       if (!lines.length) return closeSheet();
-      sheet.innerHTML = '<h2>Tu pedido · Mesa ' + esc(table) + '</h2>' +
+      sheet.innerHTML = '<h2>' + t('c.yourOrder', { t: esc(t('table', { t: table })) }) + '</h2>' +
         lines.map(function (l) {
-          return '<div class="item"><span class="name">' + esc(l.item.name) + '</span><span class="price">' + fmt(l.item.price * l.qty) + '</span>' +
-            '<span class="stepper"><button data-a="minus" data-id="' + esc(l.item.id) + '">−</button><b>' + l.qty + '</b><button class="add" data-a="plus" data-id="' + esc(l.item.id) + '">+</button></span></div>';
+          var it = P.findItem(menu, l.pid);
+          var sub = [P.modsText(modObjs(l.mods), I.lang), l.note].filter(Boolean).join(' · ');
+          return '<div class="item cart-line"><span class="name">' + esc(P.tr(it, I.lang)) + (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
+            '<span class="price">' + fmt(unitPrice(l) * l.qty) + '</span>' +
+            '<span class="stepper"><button data-a="minus" data-key="' + esc(l.key) + '">−</button><b>' + l.qty + '</b><button class="add" data-a="inc" data-key="' + esc(l.key) + '">+</button></span></div>';
         }).join('') +
-        '<p><label for="note">Nota para cocina (alergias, sin cebolla, punto de la carne...)</label></p>' +
+        '<p><label for="note">' + t('c.note') + '</label></p>' +
         '<textarea id="note" maxlength="120">' + esc(note) + '</textarea>' +
-        '<div class="total"><span>Total</span><span>' + fmt(cartTotal()) + '</span></div>' +
-        '<button class="btn" data-a="send">Enviar pedido a cocina</button>' +
-        '<button class="btn ghost" data-a="close">Seguir mirando la carta</button>';
+        '<div class="total"><span>' + t('total') + '</span><span>' + fmt(cartTotal()) + '</span></div>' +
+        '<button class="btn" data-a="send">' + t('c.send') + '</button>' +
+        '<button class="btn ghost" data-a="close">' + t('c.keep') + '</button>';
       document.getElementById('note').oninput = function (e) { note = e.target.value; };
       sheetBg.classList.remove('hidden');
     }
-    function closeSheet() { sheetBg.classList.add('hidden'); }
+
+    function chipsFor(type, st) {
+      return '<div class="chips-sel">' + mods.filter(function (m) { return m.type === type; }).map(function (m) {
+        return '<button class="' + (st.sel[m.id] ? 'on' : '') + '" data-a="mod" data-id="' + esc(m.id) + '">' + esc(P.tr(m, I.lang)) + (m.price ? ' +' + fmt(m.price) : '') + '</button>';
+      }).join('') + '</div>';
+    }
+
+    function openCustom(pid) {
+      var it = P.findItem(menu, pid);
+      if (!it) return;
+      sheetMode = sheetMode && sheetMode.pid === pid ? sheetMode : { pid: pid, sel: {}, note: '', qty: 1 };
+      var st = sheetMode;
+      var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
+      var price = unitPrice({ pid: pid, mods: ids }) * st.qty;
+      sheet.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + '</h2>' +
+        '<h4 class="mod-h sin">' + t('mod.sin') + '</h4>' + chipsFor('sin', st) +
+        '<h4 class="mod-h extra">' + t('mod.extra') + '</h4>' + chipsFor('extra', st) +
+        '<h4 class="mod-h">' + t('mod.prep') + '</h4>' + chipsFor('prep', st) +
+        '<h4 class="mod-h">' + t('c.itemNote') + '</h4><input type="text" id="item-note" maxlength="80" value="' + esc(st.note) + '">' +
+        '<div class="qty-row"><span class="stepper"><button data-a="cqty" data-d="-1">−</button><b>' + st.qty + '</b><button class="add" data-a="cqty" data-d="1">+</button></span></div>' +
+        '<button class="btn" data-a="cadd">' + t('c.addToOrder', { n: fmt(price) }) + '</button>' +
+        '<button class="btn ghost" data-a="close">' + t('cancel') + '</button>';
+      document.getElementById('item-note').oninput = function (e) { st.note = e.target.value; };
+      sheetBg.classList.remove('hidden');
+    }
+
+    function closeSheet() { sheetMode = null; sheetBg.classList.add('hidden'); }
+    function refreshSheet() {
+      if (sheetMode === 'cart') openCart();
+      else if (sheetMode) openCustom(sheetMode.pid);
+    }
 
     function send(type, lines) {
       var last = mine.filter(function (o) { return o.type === type; }).slice(-1)[0];
       if (type !== 'order' && last && last.status === 'new' && Date.now() - last.createdAt < 60000) {
-        toast('Ya lo hemos avisado, enseguida vamos 🙂');
+        toast(t('c.already'));
         return Promise.resolve(false);
       }
       var id = Store.newId();
       var order = {
         id: id, type: type, table: table, status: 'new', createdAt: Date.now(),
-        lines: lines || [], note: type === 'order' ? note.trim().slice(0, 120) : ''
+        lines: lines || [], note: type === 'order' ? note.trim().slice(0, 120) : '', lang: I.lang
       };
       return Store.set('orders/' + id, order).then(function () {
         mine.push({ id: id, type: type, createdAt: order.createdAt, status: 'new' });
@@ -182,7 +264,7 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
         return true;
       }).catch(function () {
-        toast('No se ha podido enviar. Revisa la conexión o avisa al camarero.');
+        toast(t('c.fail'));
         return false;
       });
     }
@@ -193,8 +275,8 @@
         if (!v) return;
         o.status = v.status; o.reason = v.reason || '';
         if (v.status !== 'new') {
-          if (v.status === 'accepted') toast('✅ ¡Tu pedido ha sido confirmado!');
-          if (v.status === 'rejected') toast('❌ Tu pedido no se ha podido aceptar');
+          if (v.status === 'accepted') toast(t('c.confirmed'));
+          if (v.status === 'rejected') toast(t('c.rejected'));
           if (subs[o.id]) { subs[o.id](); delete subs[o.id]; }
         }
         saveMine();
@@ -206,34 +288,63 @@
       try { sessionStorage.setItem(MY_KEY, JSON.stringify(mine.slice(-20))); } catch (e) { /* ignorar */ }
     }
 
+    function lineByKey(key) { return cart.filter(function (l) { return l.key === key; })[0]; }
+
     document.addEventListener('click', function (e) {
+      if (e.target === sheetBg) return closeSheet();
+      if (e.target.closest('#cart-btn')) return openCart();
       var b = e.target.closest('[data-a]');
-      if (b) {
-        var a = b.dataset.a, id = b.dataset.id;
-        if (a === 'plus') { cart[id] = Math.min(20, (cart[id] || 0) + 1); }
-        else if (a === 'minus') { cart[id] = Math.max(0, (cart[id] || 0) - 1); if (!cart[id]) delete cart[id]; }
-        else if (a === 'close') return closeSheet();
-        else if (a === 'send') {
+      if (!b) return;
+      var a = b.dataset.a, l;
+      switch (a) {
+        case 'lang': I.set(b.dataset.l); drawLang(); render(); return refreshSheet();
+        case 'plus':
+          l = lineByKey(b.dataset.id);
+          if (l) l.qty = Math.min(20, l.qty + 1);
+          else cart.push({ key: b.dataset.id, pid: b.dataset.id, qty: 1, mods: [], note: '' });
+          break;
+        case 'inc':
+          l = lineByKey(b.dataset.key);
+          if (l) l.qty = Math.min(20, l.qty + 1);
+          break;
+        case 'minus':
+          l = lineByKey(b.dataset.key);
+          if (l) { l.qty--; if (l.qty <= 0) cart.splice(cart.indexOf(l), 1); }
+          break;
+        case 'custom': sheetMode = null; return openCustom(b.dataset.id);
+        case 'mod': sheetMode.sel[b.dataset.id] = !sheetMode.sel[b.dataset.id]; return openCustom(sheetMode.pid);
+        case 'cqty': sheetMode.qty = Math.min(20, Math.max(1, sheetMode.qty + Number(b.dataset.d))); return openCustom(sheetMode.pid);
+        case 'cadd':
+          var st = sheetMode;
+          var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
+          var n = st.note.trim().slice(0, 80);
+          if (!ids.length && !n) {
+            l = lineByKey(st.pid);
+            if (l) l.qty = Math.min(20, l.qty + st.qty);
+            else cart.push({ key: st.pid, pid: st.pid, qty: st.qty, mods: [], note: '' });
+          } else {
+            cart.push({ key: st.pid + '~' + Store.newId(), pid: st.pid, qty: st.qty, mods: ids, note: n });
+          }
+          closeSheet(); render(); return;
+        case 'close': return closeSheet();
+        case 'send':
           b.disabled = true;
-          b.textContent = 'Enviando…';
-          send('order', cartLines().map(function (l) { return { pid: l.item.id, name: l.item.name, qty: l.qty }; }))
-            .then(function (ok) {
-              if (!ok) { b.disabled = false; b.textContent = 'Enviar pedido a cocina'; return; }
-              cart = {}; note = ''; closeSheet(); render();
-            });
+          b.textContent = t('c.sending');
+          send('order', validLines().map(function (x) {
+            return { pid: x.pid, name: P.findItem(menu, x.pid).name, qty: x.qty, mods: x.mods, note: x.note };
+          })).then(function (ok) {
+            if (!ok) { b.disabled = false; b.textContent = t('c.send'); return; }
+            cart = []; note = ''; closeSheet(); render();
+          });
           return;
-        } else if (a === 'waiter' || a === 'bill') {
-          if (confirm(a === 'bill' ? '¿Pedir la cuenta?' : '¿Llamar al camarero?')) {
-            send(a).then(function (ok) { if (ok) toast('Aviso enviado 👍'); });
+        case 'waiter': case 'bill':
+          if (confirm(t(a === 'bill' ? 'c.confirmBill' : 'c.confirmWaiter'))) {
+            send(a).then(function (ok) { if (ok) toast(t('c.sent')); });
           }
           return;
-        }
-        render();
-        if (!sheetBg.classList.contains('hidden')) openSheet();
-        return;
       }
-      if (e.target.closest('#cart-btn')) openSheet();
-      else if (e.target === sheetBg) closeSheet();
+      render();
+      if (sheetMode === 'cart') openCart();
     });
 
     var tt;

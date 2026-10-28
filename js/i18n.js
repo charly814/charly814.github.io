@@ -1,0 +1,277 @@
+// Textos de la interfaz en español, inglés y chino.
+// I18N.t('clave', {var: valor}) devuelve el texto en el idioma activo.
+(function () {
+  'use strict';
+
+  var D = {
+    // ---- comunes
+    cancel: ['Cancelar', 'Cancel', '取消'],
+    close: ['Cerrar', 'Close', '关闭'],
+    save: ['Guardar', 'Save', '保存'],
+    add: ['Añadir', 'Add', '添加'],
+    open: ['Abrir', 'Open', '打开'],
+    yes: ['sí', 'yes', '是'],
+    total: ['Total', 'Total', '合计'],
+    subtotal: ['Subtotal', 'Subtotal', '小计'],
+    discount: ['Descuento', 'Discount', '折扣'],
+    table: ['Mesa {t}', 'Table {t}', '{t} 号桌'],
+    quickSale: ['Venta rápida', 'Quick sale', '快速销售'],
+    language: ['Idioma', 'Language', '语言'],
+
+    // ---- TPV: acceso
+    'login.title': ['Seleccionar Usuario', 'Select user', '选择用户'],
+    'login.local': ['Modo local: los datos se guardan solo en este dispositivo.', 'Local mode: data is stored on this device only.', '本地模式：数据只保存在这台设备上。'],
+    'login.cloud': ['Modo nube: sincronizado con los pedidos QR.', 'Cloud mode: synced with QR orders.', '云端模式：与扫码点餐实时同步。'],
+    'login.connErr': ['No se puede conectar con la nube. Revisa internet o la clave secreta.', 'Cannot reach the cloud. Check the internet or the secret key.', '无法连接云端，请检查网络或密钥。'],
+    'login.changeKey': ['Cambiar clave', 'Change key', '更换密钥'],
+    'setup.title': ['Configurar TPV (modo nube)', 'Set up POS (cloud mode)', '设置收银台（云端模式）'],
+    'setup.p1': ['Introduce la clave secreta de tu Firebase Realtime Database (Configuración del proyecto → Cuentas de servicio → Secretos de la base de datos).', 'Enter the secret key of your Firebase Realtime Database (Project settings → Service accounts → Database secrets).', '请输入 Firebase Realtime Database 的密钥（项目设置 → 服务账号 → 数据库密钥）。'],
+    'setup.p2': ['Se guarda solo en este dispositivo. Sin ella, nadie puede ver ventas, usuarios ni PIN; los clientes solo pueden leer la carta y enviar pedidos.', 'It is stored on this device only. Without it nobody can see sales, users or PINs; customers can only read the menu and send orders.', '密钥只保存在这台设备上。没有它，别人看不到销售额、员工和 PIN；顾客只能看菜单和下单。'],
+    'setup.placeholder': ['Clave secreta', 'Secret key', '密钥'],
+    'setup.save': ['Guardar y entrar', 'Save and continue', '保存并进入'],
+    'setup.enterKey': ['Introduce la clave', 'Enter the key', '请输入密钥'],
+    'setup.resetConfirm': ['¿Borrar la clave secreta guardada en este dispositivo?', 'Remove the secret key stored on this device?', '删除这台设备上保存的密钥？'],
+    'pin.enter': ['Introduce tu PIN', 'Enter your PIN', '请输入 PIN'],
+    'pin.wrong': ['PIN incorrecto', 'Wrong PIN', 'PIN 错误'],
+
+    // ---- TPV: barra superior y plano
+    'conn.local': ['● Modo local', '● Local mode', '● 本地模式'],
+    'conn.err': ['● Sin conexión', '● Offline', '● 未连接'],
+    'conn.ok': ['● Nube conectada', '● Cloud connected', '● 云端已连接'],
+    'tb.orders': ['Pedidos QR', 'QR orders', '扫码订单'],
+    'tb.tables': ['Mesas', 'Tables', '桌位'],
+    'tb.caja': ['Caja', 'Till', '收银'],
+    'tb.admin': ['Ajustes', 'Settings', '设置'],
+    'tb.logout': ['Salir', 'Log out', '退出'],
+    'map.title': ['Seleccionar Mesa', 'Select table', '选择桌位'],
+    'map.move': ['Elige la mesa de destino para {t} (si está ocupada, se juntan los tickets).', 'Choose the destination table for {t} (if it is busy, the tickets are merged).', '请选择 {t} 要换到的桌子（如果已有账单，会合并）。'],
+    'map.quickOpen': ['Hay una venta rápida abierta: {n}', 'A quick sale is open: {n}', '有一笔未结的快速销售：{n}'],
+    'legend.free': ['Libre', 'Free', '空闲'],
+    'legend.busy': ['Ocupada', 'Busy', '有客'],
+    'legend.qr': ['Pedido QR pendiente', 'QR order pending', '有扫码订单待处理'],
+
+    // ---- TPV: ticket
+    'tk.units': ['Uds', 'Qty', '数量'],
+    'tk.product': ['Producto', 'Item', '商品'],
+    'tk.price': ['Precio', 'Price', '单价'],
+    'tk.empty': ['Ticket vacío. Toca un producto para añadirlo.', 'Empty ticket. Tap an item to add it.', '账单为空，点商品即可添加。'],
+    'tk.numHint': ['cantidad / importe', 'quantity / amount', '数量 / 金额'],
+    'tk.tapAgain': ['Toca otra vez la línea para modificarla (sin, extra...)', 'Tap the line again to modify it (no…, extra…)', '再点一次这一行可修改（不要…、加…）'],
+    'tk.kitchen': ['cocina', 'kitchen', '已送厨'],
+    'act.print': ['Imprimir', 'Print', '打印'],
+    'act.kitchen': ['Marchar', 'Send to kitchen', '送厨房'],
+    'act.minus': ['Quitar 1', 'Remove 1', '减 1'],
+    'act.plus': ['Añadir 1', 'Add 1', '加 1'],
+    'act.del': ['Borrar línea', 'Delete line', '删除行'],
+    'act.mod': ['Modificar', 'Modify', '修改'],
+    'act.free': ['Artículo libre', 'Custom item', '菜单外商品'],
+    'act.move': ['Cambiar mesa', 'Move table', '换桌'],
+    'act.cancel': ['Cancelar ticket', 'Void ticket', '取消账单'],
+    'act.pay': ['Cobrar', 'Pay', '收款'],
+    'act.ticket': ['Ticket', 'Ticket', '账单'],
+    'act.back': ['Seguir pidiendo', 'Keep ordering', '继续点单'],
+
+    'msg.selectLine': ['Selecciona una línea', 'Select a line', '请先选中一行'],
+    'msg.sentAdmin': ['Línea ya enviada a cocina: solo un administrador puede cambiarla', 'Already sent to the kitchen: only an admin can change it', '已送厨房：只有管理员可以修改'],
+    'msg.empty': ['El ticket está vacío', 'The ticket is empty', '账单为空'],
+    'msg.adminOnly': ['Solo un administrador puede hacerlo', 'Only an admin can do this', '只有管理员可以操作'],
+    'msg.cancelConfirm': ['¿Cancelar el ticket de {t}? Se borrarán todas las líneas.', 'Void the ticket of {t}? All lines will be deleted.', '取消 {t} 的账单？所有商品都会删除。'],
+    'msg.noKitchen': ['No hay líneas nuevas para cocina', 'Nothing new for the kitchen', '没有新的菜需要送厨房'],
+    'msg.discPct': ['Descuento {n}% aplicado', '{n}% discount applied', '已打 {n}% 折扣'],
+    'msg.discEur': ['Descuento {n} aplicado', '{n} discount applied', '已优惠 {n}'],
+    'msg.discOff': ['Descuento quitado', 'Discount removed', '已取消折扣'],
+    'msg.max100': ['Descuento máximo 100%', 'Maximum discount 100%', '折扣最多 100%'],
+    'msg.numFirst': ['Escribe el número y selecciona una línea antes', 'Type the number and select a line first', '请先输入数字并选中一行'],
+    'msg.newAlert': ['📲 Nuevo aviso de {t}', '📲 New request from {t}', '📲 {t} 有新消息'],
+    'msg.paid': ['Cobrado {n}', 'Paid {n}', '已收款 {n}'],
+    'msg.change': ['cambio {n}', 'change {n}', '找零 {n}'],
+    'msg.givenLow': ['El importe entregado es menor que el total', 'Amount given is less than the total', '收到的金额少于合计'],
+    'msg.pinFormat': ['El PIN debe tener de 4 a 6 números', 'The PIN must have 4 to 6 digits', 'PIN 必须是 4 到 6 位数字'],
+    'msg.needAdmin': ['Debe quedar al menos un administrador', 'At least one admin is required', '至少要保留一个管理员'],
+    'msg.selfDel': ['No puedes borrar tu propio usuario', 'You cannot delete your own user', '不能删除自己'],
+    'msg.added': ['+{q} {n}', '+{q} {n}', '+{q} {n}'],
+
+    // ---- TPV: modificadores y artículo libre
+    'mod.title': ['Modificar: {n}', 'Modify: {n}', '修改：{n}'],
+    'mod.sin': ['SIN', 'WITHOUT', '不要'],
+    'mod.extra': ['EXTRA / CON', 'EXTRA / WITH', '加料'],
+    'mod.prep': ['PREPARACIÓN', 'PREPARATION', '做法'],
+    'mod.note': ['Otra nota (texto libre)', 'Other note (free text)', '其他备注（自由填写）'],
+    'mod.units': ['Aplicar a cuántas unidades', 'Apply to how many units', '应用到几份'],
+    'mod.unitsHint': ['de {n}. Si eliges menos, la línea se separa.', 'of {n}. If you choose fewer, the line is split.', '共 {n} 份。选少一点，这一行会拆开。'],
+    'mod.apply': ['Aplicar', 'Apply', '确定'],
+    'mod.clear': ['Quitar todo', 'Clear all', '全部清除'],
+    'free.title': ['Artículo libre (fuera de carta)', 'Custom item (not on the menu)', '菜单外商品'],
+    'free.name': ['Descripción', 'Description', '名称'],
+    'free.namePh': ['Ej.: Huevo frito, Tortilla especial...', 'E.g. fried egg, special omelette…', '例如：煎蛋、特制煎饼…'],
+    'free.price': ['Precio unidad €', 'Unit price €', '单价 €'],
+    'free.qty': ['Cantidad', 'Quantity', '数量'],
+    'free.needName': ['Escribe una descripción', 'Enter a description', '请填写名称'],
+
+    // ---- TPV: cobro
+    'pay.title': ['Cobrar · {t}', 'Payment · {t}', '收款 · {t}'],
+    'pay.given': ['Entregado por el cliente', 'Amount given', '顾客付款'],
+    'pay.change': ['Cambio:', 'Change:', '找零：'],
+    'pay.missing': ['Faltan {n}', '{n} missing', '还差 {n}'],
+    'pay.print': ['Imprimir ticket', 'Print receipt', '打印小票'],
+    'pay.confirm': ['Confirmar cobro', 'Confirm payment', '确认收款'],
+    'm.efectivo': ['💵 Efectivo', '💵 Cash', '💵 现金'],
+    'm.tarjeta': ['💳 Tarjeta', '💳 Card', '💳 刷卡'],
+    'm.bizum': ['📱 Bizum', '📱 Bizum', '📱 Bizum'],
+
+    // ---- TPV: pedidos QR
+    'orders.title': ['📲 Pedidos y avisos QR', '📲 QR orders and requests', '📲 扫码订单和呼叫'],
+    'orders.bill': ['🧾 Pide la cuenta', '🧾 Asks for the bill', '🧾 要买单'],
+    'orders.waiter': ['🙋 Llama al camarero', '🙋 Calls the waiter', '🙋 呼叫服务员'],
+    'orders.done': ['Atendido', 'Done', '已处理'],
+    'orders.openBill': ['Abrir cuenta', 'Open bill', '打开账单'],
+    'orders.notFound': ['producto no encontrado, se ignorará', 'item not found, it will be ignored', '找不到该商品，将忽略'],
+    'orders.soldOut': ['agotado', 'sold out', '已售罄'],
+    'orders.accept': ['✓ Aceptar y añadir a la mesa', '✓ Accept and add to table', '✓ 接受并加入账单'],
+    'orders.acceptPrint': ['✓ Aceptar + imprimir cocina', '✓ Accept + print kitchen', '✓ 接受并打印厨房单'],
+    'orders.reject': ['Rechazar', 'Reject', '拒绝'],
+    'orders.none': ['No hay pedidos pendientes.', 'No pending orders.', '没有待处理的订单。'],
+    'orders.localWarn': ['Modo local: solo se reciben pedidos hechos en este mismo navegador. Configura Firebase para recibir los de los móviles.', 'Local mode: only orders made in this same browser arrive. Set up Firebase to receive orders from phones.', '本地模式：只能收到这台浏览器上下的单。要接收顾客手机的订单，请设置 Firebase。'],
+    'orders.reason': ['Motivo del rechazo (lo verá el cliente, opcional):', 'Reason for rejecting (the customer will see it, optional):', '拒绝原因（顾客能看到，可不填）：'],
+    'orders.noValid': ['El pedido no tiene productos válidos', 'The order has no valid items', '订单里没有有效商品'],
+    'orders.added': ['Pedido añadido a {t}', 'Order added to {t}', '订单已加入 {t}'],
+
+    // ---- TPV: caja
+    'caja.title': ['Caja', 'Till', '收银'],
+    'caja.shift': ['Turno actual (desde el último cierre)', 'Current shift (since the last close)', '当前班次（自上次日结起）'],
+    'caja.sold': ['Total vendido', 'Total sales', '销售总额'],
+    'caja.tickets': ['Tickets cobrados', 'Paid tickets', '已结账单'],
+    'caja.open': ['Mesas abiertas', 'Open tables', '未结桌数'],
+    'caja.byUser': ['Por camarero', 'By waiter', '按员工'],
+    'caja.printX': ['🖨️ Imprimir X (informe)', '🖨️ Print X (report)', '🖨️ 打印 X 报表'],
+    'caja.closeZ': ['Cerrar caja (Z)', 'Close till (Z)', '日结 (Z)'],
+    'caja.csv': ['⬇️ Exportar CSV (gestoría)', '⬇️ Export CSV (accountant)', '⬇️ 导出 CSV（给会计）'],
+    'caja.time': ['Hora', 'Time', '时间'],
+    'caja.invoice': ['Nº factura', 'Invoice no.', '发票号'],
+    'caja.waiter': ['Camarero', 'Waiter', '员工'],
+    'caja.method': ['Pago', 'Payment', '付款'],
+    'caja.noSales': ['Todavía no hay ventas en este turno.', 'No sales in this shift yet.', '本班次还没有销售。'],
+    'caja.prev': ['Cierres anteriores', 'Previous closes', '历史日结'],
+    'caja.date': ['Fecha', 'Date', '日期'],
+    'caja.by': ['Por', 'By', '操作人'],
+    'caja.none': ['Sin cierres.', 'No closes.', '没有日结记录。'],
+    'caja.nothing': ['No hay ventas que cerrar', 'No sales to close', '没有可日结的销售'],
+    'caja.openWarn': ['Hay mesas abiertas sin cobrar. ¿Cerrar la caja de todos modos? (las mesas siguen abiertas)', 'There are unpaid open tables. Close the till anyway? (the tables stay open)', '还有未结账的桌子。仍然要日结吗？（这些桌子会保留）'],
+    'caja.zConfirm': ['¿Cerrar caja (Z)? Total: {n}', 'Close till (Z)? Total: {n}', '确认日结 (Z)？合计：{n}'],
+
+    // ---- TPV: ajustes
+    'admin.title': ['Ajustes', 'Settings', '设置'],
+    'admin.products': ['Productos', 'Products', '商品'],
+    'admin.mods': ['Modificadores', 'Modifiers', '修改项'],
+    'admin.users': ['Usuarios', 'Users', '员工'],
+    'admin.settings': ['Ajustes y QR', 'Settings & QR', '设置和二维码'],
+    'admin.cats': ['Categorías', 'Categories', '分类'],
+    'admin.newCat': ['Nueva', 'New', '新建'],
+    'admin.delCat': ['Borrar categoría', 'Delete category', '删除分类'],
+    'admin.nameEs': ['Nombre (español)', 'Name (Spanish)', '名称（西班牙语）'],
+    'admin.priceEur': ['Precio €', 'Price €', '价格 €'],
+    'admin.available': ['Disponible', 'Available', '有货'],
+    'admin.addProduct': ['＋ Añadir producto', '＋ Add product', '＋ 添加商品'],
+    'admin.newProduct': ['Nuevo producto', 'New product', '新商品'],
+    'admin.soldOutNote': ['Los productos no disponibles (agotados) no aparecen en la carta QR. Si dejas vacíos EN / 中文, se muestra el nombre en español.', 'Unavailable (sold out) items are hidden from the QR menu. If EN / 中文 are empty, the Spanish name is shown.', '没货的商品不会出现在扫码菜单里。EN / 中文 留空时显示西班牙语名称。'],
+    'admin.resetMenu': ['Restaurar carta por defecto', 'Restore default menu', '恢复默认菜单'],
+    'admin.newCatPrompt': ['Nombre de la nueva categoría:', 'Name of the new category:', '新分类名称：'],
+    'admin.delCatConfirm': ['¿Borrar la categoría "{n}" y todos sus productos?', 'Delete the category "{n}" and all its products?', '删除分类「{n}」及其所有商品？'],
+    'admin.delConfirm': ['¿Borrar "{n}"?', 'Delete "{n}"?', '删除「{n}」？'],
+    'admin.resetConfirm': ['¿Restaurar la carta por defecto? Se perderán los cambios de productos y precios.', 'Restore the default menu? Product and price changes will be lost.', '恢复默认菜单？商品和价格的修改都会丢失。'],
+    'admin.resetMods': ['Restaurar modificadores por defecto', 'Restore default modifiers', '恢复默认修改项'],
+    'admin.modsNote': ['Aparecen al modificar una línea en el TPV y al personalizar un plato en la carta QR. Los extras suman su precio a la línea.', 'They appear when modifying a line in the POS and when customising a dish on the QR menu. Extras add their price to the line.', '在收银台修改菜品、以及顾客扫码定制菜品时显示。加料会把价格加到这一行。'],
+    'admin.users': ['Usuarios', 'Users', '员工'],
+    'admin.name': ['Nombre', 'Name', '姓名'],
+    'admin.admin': ['Admin', 'Admin', '管理员'],
+    'admin.addUser': ['＋ Añadir usuario', '＋ Add user', '＋ 添加员工'],
+    'admin.adminNote': ['Los administradores pueden cancelar tickets, cerrar caja y entrar en Ajustes.', 'Admins can void tickets, close the till and open Settings.', '管理员可以取消账单、日结和进入设置。'],
+    'admin.delUser': ['¿Borrar el usuario {n}?', 'Delete user {n}?', '删除员工 {n}？'],
+    'admin.ticketData': ['Datos del ticket / factura', 'Receipt / invoice details', '小票 / 发票信息'],
+    'admin.f.name': ['Nombre del local', 'Business name', '店名'],
+    'admin.f.address': ['Dirección', 'Address', '地址'],
+    'admin.f.nif': ['NIF/CIF', 'Tax ID (NIF/CIF)', '税号 (NIF/CIF)'],
+    'admin.f.vat': ['IVA incluido (%)', 'VAT included (%)', '含税 IVA (%)'],
+    'admin.f.footer': ['Pie del ticket', 'Receipt footer', '小票底部文字'],
+    'admin.f.series': ['Serie de facturas simplificadas', 'Simplified invoice series', '简易发票编号前缀'],
+    'admin.seriesNote': ['La numeración es correlativa por serie (T2026-000001, T2026-000002...). Úsala en un solo TPV por serie.', 'Numbering is sequential per series (T2026-000001, T2026-000002…). Use one POS per series.', '每个前缀下编号连续（T2026-000001、T2026-000002…）。一个前缀只在一台收银台使用。'],
+    'admin.qr': ['Pedidos con QR', 'QR ordering', '扫码点餐'],
+    'admin.mode': ['Modo actual: {m}', 'Current mode: {m}', '当前模式：{m}'],
+    'admin.local': ['LOCAL', 'LOCAL', '本地'],
+    'admin.cloud': ['NUBE (Firebase)', 'CLOUD (Firebase)', '云端 (Firebase)'],
+    'admin.localWarn': ['En modo local los pedidos de los móviles de los clientes no llegan a este TPV. Para activarlo, configura Firebase en config.js (ver TPV-LEEME.md).', 'In local mode orders from customers\' phones do not reach this POS. To enable it, set up Firebase in config.js (see TPV-LEEME.md).', '本地模式下，顾客手机的订单到不了这台收银台。请在 config.js 里设置 Firebase（见 TPV-LEEME.md）。'],
+    'admin.cloudOk': ['Los pedidos de los clientes llegan aquí en tiempo real.', 'Customer orders arrive here in real time.', '顾客订单会实时到达这里。'],
+    'admin.changeKey': ['Cambiar clave secreta de este TPV', 'Change this POS secret key', '更换这台收银台的密钥'],
+    'admin.printQr': ['🔳 Imprimir códigos QR de las mesas', '🔳 Print table QR codes', '🔳 打印桌位二维码'],
+    'admin.testQr': ['Probar carta QR (mesa T1)', 'Try the QR menu (table T1)', '试用扫码菜单（T1 桌）'],
+
+    // ---- carta QR del cliente
+    'c.scan': ['Escanea el código QR de tu mesa para pedir.', 'Scan the QR code on your table to order.', '请扫描桌上的二维码点餐。'],
+    'c.seeMenu': ['Ver la carta', 'See the menu', '查看菜单'],
+    'c.waiter': ['🙋 Llamar al camarero', '🙋 Call the waiter', '🙋 呼叫服务员'],
+    'c.bill': ['🧾 Pedir la cuenta', '🧾 Ask for the bill', '🧾 买单'],
+    'c.allergensT': ['⚠️ Alérgenos', '⚠️ Allergens', '⚠️ 过敏原'],
+    'c.allergens': ['Según Reglamento (UE) 1169/2011: nuestros productos pueden contener trazas de alérgenos. Indícanos cualquier alergia en la nota del pedido.', 'Under Regulation (EU) 1169/2011 our products may contain traces of allergens. Please tell us about any allergy in the order note.', '根据欧盟法规 1169/2011，我们的菜品可能含有过敏原。如有过敏，请在订单备注中注明。'],
+    'c.mine': ['Tus avisos en esta mesa', 'Your requests at this table', '本桌的订单和呼叫'],
+    'c.s.new': ['⏳ Enviado, esperando confirmación', '⏳ Sent, waiting for confirmation', '⏳ 已发送，等待确认'],
+    'c.s.accepted': ['✅ Confirmado', '✅ Confirmed', '✅ 已确认'],
+    'c.s.rejected': ['❌ No aceptado', '❌ Not accepted', '❌ 未接受'],
+    'c.s.done': ['✅ Atendido', '✅ Done', '✅ 已处理'],
+    'c.t.order': ['Pedido', 'Order', '订单'],
+    'c.t.waiter': ['Llamada al camarero', 'Waiter call', '呼叫服务员'],
+    'c.t.bill': ['Petición de cuenta', 'Bill request', '买单请求'],
+    'c.view': ['Ver pedido ({n})', 'View order ({n})', '查看订单（{n}）'],
+    'c.yourOrder': ['Tu pedido · {t}', 'Your order · {t}', '你的订单 · {t}'],
+    'c.note': ['Nota general (alergias, para compartir, qué sale primero...)', 'General note (allergies, to share, what comes first…)', '整体备注（过敏、分享、上菜顺序…）'],
+    'c.send': ['Enviar pedido a cocina', 'Send order to the kitchen', '提交订单'],
+    'c.sending': ['Enviando…', 'Sending…', '发送中…'],
+    'c.keep': ['Seguir mirando la carta', 'Keep browsing the menu', '继续看菜单'],
+    'c.already': ['Ya lo hemos avisado, enseguida vamos 🙂', 'We have already been notified, coming soon 🙂', '已经通知了，马上就来 🙂'],
+    'c.fail': ['No se ha podido enviar. Revisa la conexión o avisa al camarero.', 'Could not send. Check your connection or tell the waiter.', '发送失败。请检查网络或告诉服务员。'],
+    'c.sent': ['Aviso enviado 👍', 'Request sent 👍', '已发送 👍'],
+    'c.confirmBill': ['¿Pedir la cuenta?', 'Ask for the bill?', '确认买单？'],
+    'c.confirmWaiter': ['¿Llamar al camarero?', 'Call the waiter?', '确认呼叫服务员？'],
+    'c.confirmed': ['✅ ¡Tu pedido ha sido confirmado!', '✅ Your order has been confirmed!', '✅ 你的订单已确认！'],
+    'c.rejected': ['❌ Tu pedido no se ha podido aceptar', '❌ Your order could not be accepted', '❌ 你的订单未被接受'],
+    'c.customize': ['Personalizar', 'Customise', '定制'],
+    'c.addToOrder': ['Añadir al pedido · {n}', 'Add to order · {n}', '加入订单 · {n}'],
+    'c.itemNote': ['Nota para este plato', 'Note for this dish', '这道菜的备注'],
+    'c.customizeHint': ['¿Sin algo o con extra? Toca el nombre del plato.', 'Without something or with an extra? Tap the dish name.', '要去掉或加料？点菜名即可定制。'],
+    'c.other': ['¿Quieres algo que no está en la carta? Escríbelo en la nota o pídelo al camarero.', 'Want something not on the menu? Write it in the note or ask the waiter.', '想要菜单上没有的？写在备注里或者问服务员。']
+  };
+
+  var LANGS = { es: 'ES', en: 'EN', zh: '中文' };
+  var IDX = { es: 0, en: 1, zh: 2 };
+
+  function detect(storeKey) {
+    var saved = '';
+    try { saved = localStorage.getItem(storeKey) || ''; } catch (e) { /* sin almacenamiento */ }
+    if (IDX[saved] !== undefined) return saved;
+    var nav = (navigator.language || 'es').slice(0, 2).toLowerCase();
+    return IDX[nav] !== undefined ? nav : (storeKey === 'platet-lang-pos' ? 'es' : 'en');
+  }
+
+  var I18N = {
+    LANGS: LANGS,
+    lang: 'es',
+    init: function (storeKey) {
+      this.key = storeKey;
+      this.lang = detect(storeKey);
+      document.documentElement.lang = this.lang;
+      return this;
+    },
+    set: function (lang) {
+      if (IDX[lang] === undefined) return;
+      this.lang = lang;
+      document.documentElement.lang = lang;
+      try { localStorage.setItem(this.key, lang); } catch (e) { /* ignorar */ }
+    },
+    t: function (key, vars) {
+      var row = D[key];
+      var s = row ? (row[IDX[this.lang]] || row[0]) : key;
+      if (vars) Object.keys(vars).forEach(function (k) { s = s.split('{' + k + '}').join(vars[k]); });
+      return s;
+    }
+  };
+  window.I18N = I18N;
+})();
