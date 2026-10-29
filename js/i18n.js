@@ -245,6 +245,18 @@
     'admin.v.keyRemove': ['Quitar clave', 'Remove key', '删除密钥'],
     'admin.v.auto': ['Preguntar a la IA automáticamente lo que no se entienda', 'Automatically ask the AI about anything not understood', '听不懂的自动问 AI'],
 
+    // ---- TPV: apagones y sincronización
+    'rec.title': ['⚡ El TPV se apagó de golpe a las {t}', '⚡ The POS shut down suddenly at {t}', '⚡ 收银台在 {t} 意外关闭'],
+    'rec.body': ['Corte de luz o cierre forzado. Todo lo guardado se ha recuperado: {n} mesas abiertas ({s}).', 'Power cut or forced shutdown. Everything saved has been recovered: {n} open tables ({s}).', '可能是跳闸或强制关机。已保存的数据都恢复了：{n} 张桌子未结账（{s}）。'],
+    'rec.pending': ['{n} cambios todavía sin enviar a la nube: se enviarán solos cuando vuelva internet.', '{n} changes not yet sent to the cloud: they will be sent automatically when the internet is back.', '还有 {n} 个改动没同步到云端，网络恢复后会自动发送。'],
+    'rec.prints': ['Comandas enviadas a cocina justo antes del corte. Comprueba en cocina que salieron en papel; si no, reimprímelas (saldrán marcadas «REIMPRESIÓN»):', 'Kitchen tickets sent just before the shutdown. Check they came out on paper; if not, reprint them (marked "REIMPRESIÓN"):', '断电前刚送厨房的单子。请到厨房确认是否打印出来了；没有的话点「重打」（单子上会标注 REIMPRESIÓN）：'],
+    'rec.ok': ['Entendido', 'OK', '知道了'],
+    'k.title': ['Últimas comandas de cocina', 'Latest kitchen tickets', '最近的厨房单'],
+    'k.none': ['Todavía no hay comandas.', 'No kitchen tickets yet.', '还没有厨房单。'],
+    'k.reprint': ['Reimprimir', 'Reprint', '重打'],
+    'sync.pending': ['⏳ {n} sin enviar', '⏳ {n} not sent', '⏳ {n} 个未同步'],
+    'sync.storageErr': ['¡No se puede guardar en este dispositivo! ({e})', 'Cannot save on this device! ({e})', '无法保存到这台设备！（{e}）'],
+
     // ---- carta QR del cliente
     'c.scan': ['Escanea el código QR de tu mesa para pedir.', 'Scan the QR code on your table to order.', '请扫描桌上的二维码点餐。'],
     'c.seeMenu': ['Ver la carta', 'See the menu', '查看菜单'],

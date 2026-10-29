@@ -31,8 +31,33 @@
     tickets: {},
     orders: {},
     sales: {},
-    closures: {}
+    closures: {},
+    prints: {},
+    counters: {},
+    pending: Store.pending(),
+    recovery: null
   };
+
+  // ---------------------------------------------------------------- apagones
+  // Mientras el TPV está abierto deja un "latido" cada 5 s. Si al arrancar el
+  // latido sigue ahí (y no es de otra pestaña viva), el TPV se apagó de golpe:
+  // corte de luz, cuelgue o cierre forzado.
+  var ALIVE = 'platet-alive';
+  (function () {
+    try {
+      var prev = JSON.parse(localStorage.getItem(ALIVE) || 'null');
+      if (prev && prev.at && Date.now() - prev.at > 8000) S.recovery = { at: prev.at };
+    } catch (e) { /* ignorar */ }
+    var beat = function () { try { localStorage.setItem(ALIVE, JSON.stringify({ at: Date.now() })); } catch (e) { /* ignorar */ } };
+    beat();
+    setInterval(beat, 5000);
+    window.addEventListener('pagehide', function () { try { localStorage.removeItem(ALIVE); } catch (e) { /* ignorar */ } });
+  })();
+  window.addEventListener('platet-pending', function (e) {
+    if (S.pending !== e.detail) { S.pending = e.detail; render(); }
+  });
+  window.addEventListener('platet-storage-error', function (e) { toast(t('sync.storageErr', { e: e.detail })); });
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* sin modo offline */ });
 
   var app = document.getElementById('app');
   var modal = document.getElementById('modal');
@@ -47,7 +72,20 @@
   Store.on('settings', function (v) { S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {}); render(); });
   Store.on('tickets', function (v) { S.tickets = v || {}; render(); });
   Store.on('sales', function (v) { S.sales = v || {}; render(); });
-  Store.on('closures', function (v) { S.closures = v || {}; render(); });
+  Store.on('closures', function (v) {
+    S.closures = v || {};
+    // Cierres antiguos que aún llevan todas las ventas dentro: se pasan al archivo.
+    Object.keys(S.closures).forEach(function (k) {
+      var c = S.closures[k];
+      if (!c.sales || archiving[k]) return;
+      archiving[k] = true;
+      Store.archive(k, { id: k, closedAt: c.closedAt, sales: c.sales }).then(function () { Store.remove('closures/' + k + '/sales'); });
+    });
+    render();
+  });
+  var archiving = {};
+  Store.on('prints', function (v) { S.prints = v || {}; render(); });
+  Store.on('counters', function (v) { S.counters = v || {}; });
   Store.on('orders', function (v) {
     var before = pendingOrders().length;
     S.orders = v || {};
@@ -142,6 +180,7 @@
     var conn = S.conn === 'local' ? '<span class="conn">' + t('conn.local') + '</span>'
       : S.conn === 'error' ? '<span class="conn err">' + t('conn.err') + '</span>'
         : '<span class="conn">' + t('conn.ok') + '</span>';
+    if (S.pending) conn += ' <span class="conn err">' + t('sync.pending', { n: S.pending }) + '</span>';
     return '<header class="topbar"><div><small>TPV/' + esc(S.user.name) + ' · ' + conn + '</small><h1>' + esc(title) + '</h1></div>' +
       '<div class="tb-actions">' +
       '<button class="tb-btn' + (n ? ' primary' : '') + '" data-act="orders">📲 ' + t('tb.orders') + (n ? '<span class="badge">' + n + '</span>' : '') + '</button>' +
@@ -160,8 +199,34 @@
       '<button class="btn primary" data-act="save-auth">' + t('setup.save') + '</button></div></section>';
   }
 
+  function recentPrints(from, to) {
+    return Object.keys(S.prints).map(function (k) { return S.prints[k]; })
+      .filter(function (r) { return r.at >= from && r.at <= to; })
+      .sort(function (a, b) { return a.at - b.at; });
+  }
+
+  function recoveryCard() {
+    if (!S.recovery) return '';
+    var open = Object.keys(S.tickets).map(function (k) { return S.tickets[k]; }).filter(function (x) { return (x.lines || []).length; });
+    var sum = open.reduce(function (a, x) { return a + P.ticketTotals(x).total; }, 0);
+    var prints = recentPrints(S.recovery.at - 10 * 60000, S.recovery.at + 10000);
+    return '<div class="card recovery"><h3>' + t('rec.title', { t: time(S.recovery.at) }) + '</h3>' +
+      '<p>' + t('rec.body', { n: open.length, s: fmt(sum) }) + '</p>' +
+      (S.pending ? '<p>' + t('rec.pending', { n: S.pending }) + '</p>' : '') +
+      (prints.length ? '<p>' + t('rec.prints') + '</p>' + printsTable(prints) : '') +
+      '<button class="btn primary" data-act="rec-ok">' + t('rec.ok') + '</button></div>';
+  }
+
+  function printsTable(list) {
+    return '<div class="scroll-x"><table class="list">' + list.map(function (r) {
+      return '<tr><td><b>#' + r.n + '</b></td><td>' + time(r.at) + '</td><td>' + esc(tableLabel(r.table)) + '</td><td class="muted">' +
+        esc(r.lines.map(function (l) { return fmtQty(l.qty) + '× ' + l.name; }).join(', ')) + '</td>' +
+        '<td>' + (r.reprints ? '<small class="muted">×' + (r.reprints + 1) + '</small> ' : '') + '<button class="btn" data-act="reprint-k" data-id="' + esc(r.id) + '">🖨️ ' + t('k.reprint') + '</button></td></tr>';
+    }).join('') + '</table></div>';
+  }
+
   function viewLogin() {
-    return '<section class="login"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1>' + t('login.title') + '</h1>' + langSwitch() + '</div>' +
+    return '<section class="login">' + recoveryCard() + '<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><h1>' + t('login.title') + '</h1>' + langSwitch() + '</div>' +
       '<div class="user-grid">' +
       S.users.map(function (u, i) {
         return '<button class="user-tile" data-act="pick-user" data-i="' + i + '">' + esc(u.name) + '</button>';
@@ -195,6 +260,7 @@
     }).join('');
     var quick = S.tickets[QUICK] && (S.tickets[QUICK].lines || []).length;
     return topbar(t('map.title')) +
+      (S.recovery ? '<div style="padding:12px 12px 0">' + recoveryCard() + '</div>' : '') +
       (S.moveFrom ? '<div class="banner"><span>' + t('map.move', { t: '<b>' + esc(tableLabel(S.moveFrom)) + '</b>' }) + '</span><button class="btn" data-act="move-cancel">' + t('cancel') + '</button></div>' : '') +
       (quick ? '<div class="banner"><span>' + t('map.quickOpen', { n: fmt(P.ticketTotals(S.tickets[QUICK]).total) }) + '</span><button class="btn" data-act="open-table" data-id="' + QUICK + '">' + t('open') + '</button></div>' : '') +
       '<div class="floor-wrap"><div class="floor">' +
@@ -318,6 +384,10 @@
           return '<tr><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + t('m.' + x.method) + '</td><td class="num">' + fmt(x.total) + '</td>' +
             '<td><button class="btn" data-act="reprint" data-id="' + esc(x.id) + '">🖨️</button></td></tr>';
         }).join('') + '</table></div>' : '<p class="muted">' + t('caja.noSales') + '</p>') + '</div>' +
+      '<div class="card"><h3>' + t('k.title') + '</h3>' + (function () {
+        var list = Object.keys(S.prints).map(function (k) { return S.prints[k]; }).sort(function (a, b) { return b.at - a.at; }).slice(0, 15);
+        return list.length ? printsTable(list) : '<p class="muted">' + t('k.none') + '</p>';
+      })() + '</div>' +
       '<div class="card"><h3>' + t('caja.prev') + '</h3>' + (closures.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.date') + '</th><th>' + t('caja.by') + '</th><th class="num">' + t('caja.tickets') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         closures.map(function (c) {
           return '<tr><td>' + new Date(c.closedAt).toLocaleString('es-ES') + '</td><td>' + esc(c.user) + '</td><td class="num">' + c.summary.count + '</td><td class="num">' + fmt(c.summary.total) + '</td>' +
@@ -590,12 +660,25 @@
     },
     kitchen: function () {
       var tk = ticketOf(S.table);
-      var pending = tk.lines.filter(function (l) { return !l.sent; });
-      if (!pending.length) return toast(t('msg.noKitchen'));
-      printKitchen(S.table, pending);
-      tk.lines.forEach(function (l) { l.sent = true; });
-      saveTicket(tk); render();
+      if (!tk.lines.some(function (l) { return !l.sent; })) return toast(t('msg.noKitchen'));
+      var upd = {};
+      var rec = kitchenRecord(tk, upd);
+      stamp(tk);
+      upd['tickets/' + tk.table] = tk;
+      S.tickets[tk.table] = tk;
+      // ticket marcado + comanda numerada en una sola escritura: si se va la luz
+      // a mitad, o están las dos cosas o ninguna.
+      Store.update('', upd);
+      printComanda(rec, false);
+      render();
     },
+    'reprint-k': function (d) {
+      var r = S.prints[d.id];
+      if (!r) return;
+      printComanda(r, true);
+      Store.update('prints/' + r.id, { reprints: (r.reprints || 0) + 1 });
+    },
+    'rec-ok': function () { S.recovery = null; render(); },
     pay: function () {
       var tk = ticketOf(S.table);
       if (!tk.lines.length) return toast(t('msg.empty'));
@@ -611,15 +694,17 @@
       if (Object.keys(S.tickets).length && !confirm(t('caja.openWarn'))) return;
       if (!confirm(t('caja.zConfirm', { n: fmt(summarize(sales).total) }))) return;
       var id = Store.newId();
-      var c = { id: id, closedAt: Date.now(), user: S.user.name, summary: summarize(sales), sales: S.sales };
-      Store.set('closures/' + id, c).then(function () {
-        Store.remove('sales');
+      var c = { id: id, closedAt: Date.now(), user: S.user.name, summary: summarize(sales) };
+      // 1) ventas al archivo (IndexedDB + nube)  2) cierre + vaciar turno, de una vez
+      Store.archive(id, { id: id, closedAt: c.closedAt, sales: S.sales }).then(function () {
+        var upd = { sales: null };
+        upd['closures/' + id] = c;
         // limpia avisos QR ya atendidos
-        var keep = {};
-        Object.keys(S.orders).forEach(function (k) { if (S.orders[k].status === 'new') keep[k] = S.orders[k]; });
-        Store.set('orders', keep);
+        Object.keys(S.orders).forEach(function (k) { if (S.orders[k].status !== 'new') upd['orders/' + k] = null; });
+        return Store.update('', upd);
+      }).then(function () {
         printReport('CIERRE Z', c.summary, c.closedAt);
-      });
+      }).catch(function (e) { toast(t('sync.storageErr', { e: e.message })); });
     },
     'print-z': function (d) {
       var c = S.closures[d.id];
@@ -705,7 +790,18 @@
   // Cada línea: {pid, name, base, price, qty, mods, note, src, sent, free}
   // price = base + extras. Solo se juntan líneas idénticas sin enviar.
   function addLines(table, add) {
-    var tk = ticketOf(table);
+    var tk = mergeLines(ticketOf(table), add);
+    if (table === S.table) S.sel = -1;
+    saveTicket(tk);
+    render();
+  }
+
+  function stamp(tk) {
+    if (!tk.openedAt) { tk.openedAt = Date.now(); tk.user = S.user.name; }
+    return tk;
+  }
+
+  function mergeLines(tk, add) {
     add.forEach(function (a) {
       var mods = a.mods || [];
       var price = round2(a.base + extrasOf(mods));
@@ -721,9 +817,7 @@
         });
       }
     });
-    if (table === S.table) S.sel = -1;
-    saveTicket(tk);
-    render();
+    return tk;
   }
 
   function changeQty(delta) {
@@ -1079,13 +1173,13 @@
   // ---------------------------------------------------------------- cobro
 
   // Numeración correlativa por serie (requisito de las facturas simplificadas).
+  // El contador se guarda en la MISMA escritura que la venta y la mesa libre,
+  // así un corte de luz no deja huecos en la numeración ni mesas a medias.
   function nextInvoice() {
     var series = S.settings.series || P.DEFAULT_SETTINGS.series;
     return Store.get('counters/' + series).then(function (n) {
       n = (Number(n) || 0) + 1;
-      return Store.set('counters/' + series, n).then(function () {
-        return series + '-' + String(n).padStart(6, '0');
-      });
+      return { key: 'counters/' + series, n: n, invoice: series + '-' + String(n).padStart(6, '0') };
     });
   }
 
@@ -1123,7 +1217,8 @@
         var given = st.method === 'efectivo' ? (Number(String(st.given).replace(',', '.')) || tot.total) : tot.total;
         if (given < tot.total) return toast(t('msg.givenLow'));
         st.busy = true; draw();
-        nextInvoice().then(function (invoice) {
+        nextInvoice().then(function (num) {
+          var invoice = num.invoice;
           var vat = Number(S.settings.vat) || 0;
           var base = round2(tot.total / (1 + vat / 100));
           var id = Store.newId();
@@ -1133,8 +1228,11 @@
             method: st.method, given: round2(given), change: round2(given - tot.total),
             cashier: S.user.name, closedAt: Date.now()
           });
-          return Store.set('sales/' + id, sale).then(function () {
-            Store.remove('tickets/' + tk.table);
+          var upd = {};
+          upd[num.key] = num.n;
+          upd['sales/' + id] = sale;
+          upd['tickets/' + tk.table] = null;
+          return Store.update('', upd).then(function () {
             delete S.tickets[tk.table];
             closeModal();
             if (st.print) printTicket(sale, sale);
@@ -1156,12 +1254,15 @@
   }
 
   function exportCsv() {
-    var all = salesList().slice();
-    Object.keys(S.closures).forEach(function (k) {
-      var c = S.closures[k];
-      Object.keys(c.sales || {}).forEach(function (sk) { all.push(c.sales[sk]); });
+    Store.readArchive().then(function (arch) {
+      var byId = {};
+      salesList().forEach(function (x) { byId[x.id] = x; });
+      (arch || []).forEach(function (a) { Object.keys((a && a.sales) || {}).forEach(function (k) { byId[k] = a.sales[k]; }); });
+      writeCsv(Object.keys(byId).map(function (k) { return byId[k]; }).sort(function (a, b) { return a.closedAt - b.closedAt; }));
     });
-    all.sort(function (a, b) { return a.closedAt - b.closedAt; });
+  }
+
+  function writeCsv(all) {
     var rows = [['Factura', 'Fecha', 'Hora', 'Mesa', 'Camarero', 'Pago', 'Base', 'IVA %', 'Cuota IVA', 'Descuento', 'Total']];
     all.forEach(function (x) {
       var d = new Date(x.closedAt);
@@ -1258,15 +1359,19 @@
       last.note = [last.note, String(o.note).slice(0, 120)].filter(Boolean).join(' · ');
     }
     if (!add.length) return toast(t('orders.noValid'));
-    addLines(o.table, add);
-    if (kitchen) {
-      var tk = ticketOf(o.table);
-      var pending = tk.lines.filter(function (l) { return !l.sent; });
-      printKitchen(o.table, pending);
-      tk.lines.forEach(function (l) { l.sent = true; });
-      saveTicket(tk);
-    }
-    Store.update('orders/' + o.id, { status: 'accepted', handledBy: S.user.name, handledAt: Date.now() });
+    // mesa + estado del pedido (+ comanda) en una sola escritura: tras un corte
+    // de luz nunca queda un pedido aceptado sin sus líneas, ni líneas duplicadas.
+    var tk = stamp(mergeLines(ticketOf(o.table), add));
+    var upd = {}, rec = null;
+    if (kitchen) rec = kitchenRecord(tk, upd);
+    upd['tickets/' + o.table] = tk;
+    upd['orders/' + o.id + '/status'] = 'accepted';
+    upd['orders/' + o.id + '/handledBy'] = S.user.name;
+    upd['orders/' + o.id + '/handledAt'] = Date.now();
+    S.tickets[o.table] = tk;
+    Store.update('', upd);
+    if (rec) printComanda(rec, false);
+    render();
     toast(t('orders.added', { t: tableLabel(o.table) }));
   }
 
@@ -1308,11 +1413,40 @@
       '</table><hr><div class="c">' + esc(S.settings.footer) + '</div>');
   }
 
-  function printKitchen(table, lines) {
-    printHtml('<h1>COCINA · ' + esc(tableLabelEs(table)) + '</h1><div class="c">' + new Date().toLocaleTimeString('es-ES') + ' · ' + esc(S.user.name) + '</div><hr>' +
-      '<table class="kitchen">' + lines.map(function (l) {
-        var sub = [P.modsText(l.mods, 'es'), l.note].filter(Boolean);
-        return '<tr><td>' + fmtQty(l.qty) + ' x</td><td>' + esc(l.name) + sub.map(function (s) { return '<br>» ' + esc(s); }).join('') + '</td></tr>';
+  // Comanda numerada (#57) guardada ANTES de imprimir: si la impresora o la luz
+  // fallan a mitad, se puede reimprimir desde Caja o desde el aviso de
+  // recuperación, y cocina ve "REIMPRESIÓN" para no hacer el plato dos veces.
+  var KEEP_PRINTS = 60;
+  function kitchenRecord(tk, upd) {
+    var n = Math.max(Number(S.counters.comanda) || 0, maxPrintN()) + 1;
+    var rec = {
+      id: Store.newId(), n: n, table: tk.table, user: S.user.name, at: Date.now(), reprints: 0,
+      lines: tk.lines.filter(function (l) { return !l.sent; }).map(function (l) {
+        return { qty: l.qty, name: l.name, mods: P.modsText(l.mods, 'es'), note: l.note || '' };
+      })
+    };
+    tk.lines.forEach(function (l) { l.sent = true; });
+    upd['prints/' + rec.id] = rec;
+    upd['counters/comanda'] = n;
+    S.counters.comanda = n;
+    S.prints[rec.id] = rec;
+    var old = Object.keys(S.prints).map(function (k) { return S.prints[k]; }).sort(function (a, b) { return b.at - a.at; }).slice(KEEP_PRINTS);
+    old.forEach(function (r) { upd['prints/' + r.id] = null; delete S.prints[r.id]; });
+    return rec;
+  }
+  function maxPrintN() {
+    return Object.keys(S.prints).reduce(function (m, k) { return Math.max(m, S.prints[k].n || 0); }, 0);
+  }
+
+  function printComanda(r, reprint) {
+    printHtml('<h1>COMANDA #' + r.n + '</h1>' +
+      (reprint ? '<div class="c big">*** REIMPRESIÓN ***</div>' : '') +
+      '<div class="c big">' + esc(tableLabelEs(r.table)) + '</div>' +
+      '<div class="c">' + time(r.at) + ' · ' + esc(r.user) +
+      (reprint ? '<br>reimpresa ' + time(Date.now()) : '') + '</div><hr>' +
+      '<table class="kitchen">' + r.lines.map(function (l) {
+        var sub = [l.mods, l.note].filter(Boolean);
+        return '<tr><td>' + fmtQty(l.qty) + ' x</td><td>' + esc(l.name) + sub.map(function (x) { return '<br>» ' + esc(x); }).join('') + '</td></tr>';
       }).join('') + '</table>');
   }
 

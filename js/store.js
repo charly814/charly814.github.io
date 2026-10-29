@@ -1,7 +1,14 @@
 // Almacén de datos compartido entre el TPV (pos.html) y los pedidos QR (pedir.html).
-// Dos modos con la misma API:
-//   - local: localStorage (solo este navegador, se sincroniza entre pestañas)
-//   - nube:  Firebase Realtime Database por REST + EventSource (sin SDK)
+//
+// Pensado para cortes de luz y de internet:
+//   - Todo se guarda PRIMERO en este dispositivo (localStorage + copia en
+//     IndexedDB con escritura "strict", que obliga a grabar en disco). Un
+//     apagón no borra lo que ya se ha guardado.
+//   - En modo nube, cada cambio entra además en una cola persistente
+//     (outbox) que se envía a Firebase en orden cuando hay internet. Si el
+//     router está apagado, el TPV sigue funcionando y sincroniza al volver.
+//   - Varios cambios pueden escribirse a la vez de forma atómica
+//     (Store.update('', {...})), p. ej. cobrar = factura + venta + liberar mesa.
 (function () {
   'use strict';
 
@@ -13,6 +20,10 @@
   var AUTH_KEY = 'platet-auth:' + root;
   var auth = '';
   try { auth = localStorage.getItem(AUTH_KEY) || ''; } catch (e) { /* sin almacenamiento */ }
+
+  var KEY = 'platet-db:' + root;
+  var SEQ_KEY = 'platet-seq:' + root;
+  var OUT_KEY = 'platet-outbox:' + root;
 
   function parts(p) { return String(p || '').split('/').filter(Boolean); }
   function clone(v) { return v == null ? null : JSON.parse(JSON.stringify(v)); }
@@ -37,100 +48,320 @@
     return Object.keys(obj).length ? obj : null;
   }
 
-  function conn(state) {
-    window.dispatchEvent(new CustomEvent('platet-conn', { detail: state }));
+  function emit(name, detail) { window.dispatchEvent(new CustomEvent(name, { detail: detail })); }
+
+  // ---------------------------------------------------------------- copia local
+
+  var mem = null;
+  function load() {
+    if (mem) return mem;
+    try { mem = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { mem = {}; }
+    return mem;
+  }
+  function seq() { return Number(localStorage.getItem(SEQ_KEY)) || 0; }
+  function loadOutbox() {
+    try { return JSON.parse(localStorage.getItem(OUT_KEY)) || []; } catch (e) { return []; }
   }
 
-  var local = (function () {
-    var KEY = 'platet-db:' + root;
-    var listeners = [];
-    function load() {
-      try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
+  var listeners = [];
+  function fire() {
+    var db = load();
+    listeners.slice().forEach(function (l) { l.cb(clone(getAt(db, l.ps))); });
+  }
+
+  function persist(db, outbox) {
+    mem = db || {};
+    var n = seq() + 1;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(mem));
+      if (outbox) localStorage.setItem(OUT_KEY, JSON.stringify(outbox));
+      localStorage.setItem(SEQ_KEY, String(n));
+    } catch (e) {
+      emit('platet-storage-error', e.message);
     }
-    function fire() {
-      var db = load();
-      listeners.slice().forEach(function (l) { l.cb(clone(getAt(db, l.ps))); });
-    }
-    function save(db) {
-      localStorage.setItem(KEY, JSON.stringify(db || {}));
+    mirror(n);
+  }
+
+  // Otra pestaña ha cambiado los datos.
+  window.addEventListener('storage', function (e) {
+    if (e.key === KEY) { mem = null; fire(); }
+    if (e.key === OUT_KEY) emit('platet-pending', loadOutbox().length);
+  });
+
+  // ---------------------------------------------------------------- IndexedDB
+  // localStorage puede tardar unos segundos en llegar al disco; IndexedDB con
+  // durability "strict" no confirma hasta que está grabado. Al arrancar se usa
+  // la copia más reciente de las dos.
+
+  var idbP = null;
+  function idb() {
+    if (idbP) return idbP;
+    idbP = new Promise(function (resolve, reject) {
+      if (!window.indexedDB) return reject(new Error('no-idb'));
+      var r = indexedDB.open('platet-' + root, 2);
+      r.onupgradeneeded = function () {
+        if (!r.result.objectStoreNames.contains('snap')) r.result.createObjectStore('snap');
+        if (!r.result.objectStoreNames.contains('archive')) r.result.createObjectStore('archive');
+      };
+      r.onsuccess = function () { resolve(r.result); };
+      r.onerror = function () { reject(r.error); };
+    });
+    return idbP;
+  }
+  var writing = false, again = false;
+  function mirror() {
+    if (writing) { again = true; return; }
+    writing = true; again = false;
+    idb().then(function (d) {
+      return new Promise(function (resolve) {
+        var tx;
+        try { tx = d.transaction('snap', 'readwrite', { durability: 'strict' }); } catch (e) { tx = d.transaction('snap', 'readwrite'); }
+        tx.objectStore('snap').put({ seq: seq(), db: load(), outbox: loadOutbox(), at: Date.now() }, 'last');
+        tx.oncomplete = tx.onerror = tx.onabort = function () { resolve(); };
+      });
+    }).catch(function () { /* sin IndexedDB: queda localStorage */ }).then(function () {
+      writing = false;
+      if (again) mirror();
+    });
+  }
+  // Recuperación al arrancar
+  var ready = idb().then(function (d) {
+    return new Promise(function (resolve) {
+      var g = d.transaction('snap', 'readonly').objectStore('snap').get('last');
+      g.onsuccess = function () { resolve(g.result); };
+      g.onerror = function () { resolve(null); };
+    });
+  }).then(function (snap) {
+    if (snap && snap.seq > seq()) {
+      mem = snap.db || {};
+      localStorage.setItem(KEY, JSON.stringify(mem));
+      localStorage.setItem(OUT_KEY, JSON.stringify(snap.outbox || []));
+      localStorage.setItem(SEQ_KEY, String(snap.seq));
+      emit('platet-restored', { seq: snap.seq, at: snap.at });
       fire();
-      return Promise.resolve();
-    }
-    window.addEventListener('storage', function (e) { if (e.key === KEY) fire(); });
-    return {
-      get: function (p) { return Promise.resolve(clone(getAt(load(), parts(p)))); },
-      set: function (p, v) { return save(setAt(load(), parts(p), clone(v))); },
-      update: function (p, obj) {
-        var db = load();
-        Object.keys(obj).forEach(function (k) {
-          db = setAt(db, parts(p).concat(parts(k)), clone(obj[k]));
-        });
-        return save(db);
-      },
-      remove: function (p) { return save(setAt(load(), parts(p), null)); },
-      on: function (p, cb) {
-        var l = { ps: parts(p), cb: cb };
-        listeners.push(l);
-        cb(clone(getAt(load(), l.ps)));
-        return function () { listeners = listeners.filter(function (x) { return x !== l; }); };
-      }
-    };
-  })();
+      flush();
+    } else if (!snap || snap.seq < seq()) mirror();
+  }).catch(function () { /* sin IndexedDB */ });
 
-  var cloud = (function () {
-    function url(p) {
-      return base + '/' + parts(root + '/' + p).map(encodeURIComponent).join('/') + '.json' +
-        (auth ? '?auth=' + encodeURIComponent(auth) : '');
-    }
-    function req(method, p, body) {
-      return fetch(url(p), {
-        method: method,
-        headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body)
-      }).then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      }).catch(function (e) { conn('error'); throw e; });
-    }
-    return {
-      get: function (p) { return req('GET', p); },
-      set: function (p, v) { return v == null ? req('DELETE', p) : req('PUT', p, v); },
-      update: function (p, obj) { return req('PATCH', p, obj); },
-      remove: function (p) { return req('DELETE', p); },
-      on: function (p, cb) {
-        var cache = null;
-        var es = new EventSource(url(p));
-        es.addEventListener('put', function (e) {
-          var m = JSON.parse(e.data);
-          cache = setAt(cache, parts(m.path), m.data);
-          conn('ok');
-          cb(clone(cache));
-        });
-        es.addEventListener('patch', function (e) {
-          var m = JSON.parse(e.data);
-          Object.keys(m.data || {}).forEach(function (k) {
-            cache = setAt(cache, parts(m.path).concat(parts(k)), m.data[k]);
-          });
-          cb(clone(cache));
-        });
-        es.onerror = function () { conn('error'); };
-        return function () { es.close(); };
-      }
-    };
-  })();
+  // ---------------------------------------------------------------- escrituras
 
-  var impl = base ? cloud : local;
+  // ops: [{ps, v}] — se aplican todas juntas (una sola escritura a disco).
+  function applyOps(db, ops) {
+    ops.forEach(function (o) { db = setAt(db, o.ps, clone(o.v)); });
+    return db || {};
+  }
+
+  var waiters = {};
+  function write(ops, remote, opts) {
+    var outbox = null, op = null;
+    if (base && remote) {
+      outbox = loadOutbox();
+      op = Object.assign({ id: newId() }, remote);
+      outbox.push(op);
+    }
+    persist(applyOps(load(), ops), outbox);
+    fire();
+    if (!op) return Promise.resolve();
+    emit('platet-pending', outbox.length);
+    var p = Promise.resolve();
+    // {wait: ms} espera a que el servidor lo confirme (pedidos de clientes).
+    if (opts && opts.wait) {
+      p = new Promise(function (resolve, reject) {
+        waiters[op.id] = { resolve: resolve, reject: reject };
+        setTimeout(function () {
+          if (!waiters[op.id]) return;
+          if (inFlight === op.id) return;            // ya se está enviando: esperar el resultado
+          delete waiters[op.id];
+          var ob = loadOutbox().filter(function (x) { return x.id !== op.id; });
+          localStorage.setItem(OUT_KEY, JSON.stringify(ob));
+          emit('platet-pending', ob.length);
+          reject(new Error('timeout'));
+        }, opts.wait);
+      });
+    }
+    flush();
+    return p;
+  }
+
+  // ---------------------------------------------------------------- nube
+
+  function url(p) {
+    return base + '/' + parts(root + '/' + p).map(encodeURIComponent).join('/') + '.json' +
+      (auth ? '?auth=' + encodeURIComponent(auth) : '');
+  }
+  function req(method, p, body) {
+    return fetch(url(p), {
+      method: method,
+      headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body)
+    }).then(function (r) {
+      if (!r.ok) { var e = new Error('HTTP ' + r.status); e.status = r.status; throw e; }
+      return r.json();
+    });
+  }
+
+  // Envía la cola en orden, de uno en uno. Con varias pestañas abiertas, solo
+  // una envía (Web Locks) para no duplicar.
+  var inFlight = null, retryTimer = null, delay = 2000;
+  function flush() {
+    if (!base || inFlight) return;
+    var run = function () {
+      return new Promise(function (done) {
+        var outbox = loadOutbox();
+        if (!outbox.length) { emit('platet-pending', 0); return done(); }
+        var op = outbox[0];
+        inFlight = op.id;
+        req(op.m, op.path, op.m === 'DELETE' ? undefined : op.body).then(function () {
+          var ob = loadOutbox().filter(function (x) { return x.id !== op.id; });
+          localStorage.setItem(OUT_KEY, JSON.stringify(ob));
+          mirror();
+          inFlight = null; delay = 2000;
+          emit('platet-conn', 'ok');
+          emit('platet-pending', ob.length);
+          if (waiters[op.id]) { waiters[op.id].resolve(); delete waiters[op.id]; }
+          done();
+          flush();
+        }, function (e) {
+          inFlight = null;
+          emit('platet-conn', 'error');
+          if (e.status === 400) {
+            // petición imposible: se aparta para no bloquear la cola
+            var ob = loadOutbox().filter(function (x) { return x.id !== op.id; });
+            localStorage.setItem(OUT_KEY, JSON.stringify(ob));
+            if (waiters[op.id]) { waiters[op.id].reject(e); delete waiters[op.id]; }
+          }
+          clearTimeout(retryTimer);
+          retryTimer = setTimeout(flush, delay);
+          delay = Math.min(delay * 2, 30000);
+          done();
+        });
+      });
+    };
+    if (navigator.locks && navigator.locks.request) navigator.locks.request('platet-flush-' + root, run);
+    else run();
+  }
+  window.addEventListener('online', function () { delay = 2000; flush(); });
+  if (base) setInterval(flush, 20000);
+
+  // Cambios que llegan del servidor: se aplican a la copia local y se vuelven a
+  // aplicar encima los cambios propios todavía sin enviar.
+  function reapplyPending(db) {
+    loadOutbox().forEach(function (op) {
+      var ps = parts(op.path);
+      if (op.m === 'PUT') db = setAt(db, ps, clone(op.body));
+      else if (op.m === 'DELETE') db = setAt(db, ps, null);
+      else if (op.m === 'PATCH') Object.keys(op.body || {}).forEach(function (k) { db = setAt(db, ps.concat(parts(k)), clone(op.body[k])); });
+    });
+    return db || {};
+  }
+  var streams = {};
+  function subscribe(p) {
+    if (!base) return;
+    var key = parts(p).join('/');
+    if (streams[key]) return;
+    var es = new EventSource(url(p));
+    streams[key] = es;
+    function apply(ps, data) {
+      var db = load();
+      db = setAt(db, parts(p).concat(ps), data);
+      persist(reapplyPending(db || {}), null);
+      fire();
+    }
+    es.addEventListener('put', function (e) {
+      var m = JSON.parse(e.data);
+      apply(parts(m.path), m.data);
+      emit('platet-conn', 'ok');
+      flush();
+    });
+    es.addEventListener('patch', function (e) {
+      var m = JSON.parse(e.data);
+      var db = load();
+      Object.keys(m.data || {}).forEach(function (k) {
+        db = setAt(db, parts(p).concat(parts(m.path), parts(k)), m.data[k]);
+      });
+      persist(reapplyPending(db || {}), null);
+      fire();
+    });
+    es.onerror = function () { emit('platet-conn', 'error'); };
+  }
+
+  // ---------------------------------------------------------------- archivo
+  // Las ventas de cierres anteriores no caben en localStorage (≈5 MB): se
+  // guardan en IndexedDB y, en modo nube, también en el servidor.
+
+  function idbTx(store, mode, fn) {
+    return idb().then(function (d) {
+      return new Promise(function (resolve, reject) {
+        var tx;
+        try { tx = d.transaction(store, mode, mode === 'readwrite' ? { durability: 'strict' } : undefined); } catch (e) { tx = d.transaction(store, mode); }
+        var out = fn(tx.objectStore(store));
+        tx.oncomplete = function () { resolve(out && out.result !== undefined ? out.result : out); };
+        tx.onerror = tx.onabort = function () { reject(tx.error); };
+      });
+    });
+  }
+  function archive(id, data) {
+    var p = idbTx('archive', 'readwrite', function (st) { st.put(clone(data), id); });
+    if (base) {
+      var ob = loadOutbox();
+      ob.push({ id: newId(), m: 'PUT', path: 'archive/' + id, body: clone(data) });
+      localStorage.setItem(OUT_KEY, JSON.stringify(ob));
+      emit('platet-pending', ob.length);
+      flush();
+    }
+    return p;
+  }
+  function readArchive() {
+    var local = idbTx('archive', 'readonly', function (st) { return st.getAll(); }).catch(function () { return []; });
+    if (!base) return local;
+    return Promise.all([local, req('GET', 'archive').catch(function () { return null; })]).then(function (r) {
+      var all = r[0] || [];
+      var seen = {};
+      all.forEach(function (a) { if (a && a.id) seen[a.id] = 1; });
+      Object.keys(r[1] || {}).forEach(function (k) { if (!seen[k]) all.push(r[1][k]); });
+      return all;
+    });
+  }
+
+  // ---------------------------------------------------------------- API
+
   window.Store = {
     mode: base ? 'cloud' : 'local',
     newId: newId,
     hasAuth: !!auth,
+    ready: ready,
     setAuth: function (key) {
       if (key) localStorage.setItem(AUTH_KEY, key); else localStorage.removeItem(AUTH_KEY);
     },
-    get: impl.get,
-    set: impl.set,
-    update: impl.update,
-    remove: impl.remove,
-    on: impl.on
+    pending: function () { return base ? loadOutbox().length : 0; },
+    archive: archive,
+    readArchive: readArchive,
+    get: function (p) {
+      var v = getAt(load(), parts(p));
+      if (v != null || !base) return Promise.resolve(clone(v));
+      return req('GET', p).then(function (r) {
+        if (r != null) { persist(reapplyPending(setAt(load(), parts(p), r) || {}), null); fire(); }
+        return clone(getAt(load(), parts(p)));
+      }, function () { return null; });
+    },
+    set: function (p, v, opts) {
+      return write([{ ps: parts(p), v: v }], v == null ? { m: 'DELETE', path: p } : { m: 'PUT', path: p, body: clone(v) }, opts);
+    },
+    // Varias rutas a la vez, de forma atómica: Store.update('', {'a/b': 1, 'c': null})
+    update: function (p, obj, opts) {
+      var ops = Object.keys(obj).map(function (k) { return { ps: parts(p).concat(parts(k)), v: obj[k] }; });
+      return write(ops, { m: 'PATCH', path: p, body: clone(obj) }, opts);
+    },
+    remove: function (p, opts) {
+      return write([{ ps: parts(p), v: null }], { m: 'DELETE', path: p }, opts);
+    },
+    on: function (p, cb) {
+      var l = { ps: parts(p), cb: cb };
+      listeners.push(l);
+      cb(clone(getAt(load(), l.ps)));
+      subscribe(p);
+      return function () { listeners = listeners.filter(function (x) { return x !== l; }); };
+    }
   };
+  flush();
 })();

@@ -82,6 +82,9 @@
   <script src="js/common.js"></script>
   <script src="js/i18n.js"></script>
   <script>
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* sin modo offline */ });
+  </script>
+  <script>
   (function () {
     'use strict';
     var P = window.Platet, fmt = P.fmt, esc = P.esc;
@@ -256,7 +259,8 @@
         id: id, type: type, table: table, status: 'new', createdAt: Date.now(),
         lines: lines || [], note: type === 'order' ? note.trim().slice(0, 120) : '', lang: I.lang
       };
-      return Store.set('orders/' + id, order).then(function () {
+      // Espera a que el servidor lo confirme: el cliente solo ve «enviado» si de verdad ha llegado.
+      return Store.set('orders/' + id, order, { wait: 12000 }).then(function () {
         mine.push({ id: id, type: type, createdAt: order.createdAt, status: 'new' });
         saveMine();
         watch(mine[mine.length - 1]);

@@ -1,0 +1,13 @@
+{
+  "name": "TPV Platet",
+  "short_name": "TPV Platet",
+  "start_url": "pos.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#eef1f5",
+  "theme_color": "#273c55",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

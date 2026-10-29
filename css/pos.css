@@ -330,3 +330,7 @@ code { background: #f5f6fa; padding: 1px 5px; border-radius: 4px; user-select: t
   .actions .act.voice-act { display: flex !important; }
   .v-row { flex-wrap: wrap; }
 }
+
+/* ---------- recuperación tras apagón ---------- */
+.card.recovery { border: 2px solid var(--busy); background: #fffaf0; margin-bottom: 16px; }
+.card.recovery h3 { color: #b45309; }
