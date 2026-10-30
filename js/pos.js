@@ -29,6 +29,7 @@
     users: P.DEFAULT_USERS,
     settings: P.DEFAULT_SETTINGS,
     tickets: {},
+    raw: {},
     orders: {},
     sales: {},
     closures: {},
@@ -70,7 +71,15 @@
   Store.on('mods', function (v) { S.mods = v || P.DEFAULT_MODS; render(); });
   Store.on('users', function (v) { S.users = v || P.DEFAULT_USERS; render(); });
   Store.on('settings', function (v) { S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {}); render(); });
-  Store.on('tickets', function (v) { S.tickets = v || {}; render(); });
+  Store.on('tickets', function (v) {
+    S.raw = v || {};
+    S.tickets = {};
+    Object.keys(S.raw).forEach(function (k) {
+      var tk = toTicket(k, S.raw[k]);
+      if (tk) S.tickets[k] = tk;
+    });
+    render();
+  });
   Store.on('sales', function (v) { S.sales = v || {}; render(); });
   Store.on('closures', function (v) {
     S.closures = v || {};
@@ -105,8 +114,21 @@
     voiceSync = true; Voice.importMem(v, true); voiceSync = false;
   });
 
+  // Sin internet (solo importa en modo nube: lo de este dispositivo no llega a los demás)
+  function offline() { return Store.mode === 'cloud' && (S.conn === 'error' || !navigator.onLine); }
+  window.addEventListener('offline', function () { render(); });
+  window.addEventListener('online', function () { render(); });
+  function offlineBanner() {
+    return offline() ? '<div class="offline-banner">' + t('off.banner') + (S.pending ? ' <b>' + t('sync.pending', { n: S.pending }) + '</b>' : '') + '</div>' : '';
+  }
+
   window.addEventListener('platet-conn', function (e) {
-    if (S.conn !== e.detail) { S.conn = e.detail; render(); }
+    if (S.conn !== e.detail) {
+      var was = offline();
+      S.conn = e.detail;
+      if (was && !offline()) toast(t('off.back', { n: S.pending || 0 }));
+      render();
+    }
   });
 
   function pendingOrders() {
@@ -123,6 +145,68 @@
     return { table: table, lines: [], discountPct: 0, discountEur: 0 };
   }
 
+  // ---------------------------------------------------------------- sincronizar por líneas
+  // Cada línea del ticket tiene su propio id y se guarda en tickets/T5/lines/<id>.
+  // Los cambios se envían línea a línea (no el ticket entero), así si dos
+  // dispositivos trabajan sin internet sobre la misma mesa, al volver la
+  // conexión se conservan las líneas de los dos.
+  var DEV = (function () {
+    try {
+      var d = localStorage.getItem('platet-device');
+      if (!d) { d = Math.random().toString(36).slice(2, 8); localStorage.setItem('platet-device', d); }
+      return d;
+    } catch (e) { return 'x'; }
+  })();
+  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur'];
+
+  function toTicket(table, raw) {
+    if (!raw) return null;
+    var tk = { table: table, discountPct: raw.discountPct || 0, discountEur: raw.discountEur || 0, openedAt: raw.openedAt, user: raw.user };
+    var src = raw.lines || {};
+    // Una línea sin nombre es un resto de un cambio llegado tarde a una línea ya cobrada o borrada.
+    tk.lines = Object.keys(src).map(function (id) { return Object.assign({}, src[id], { id: id }); })
+      .filter(function (l) { return l.name != null && l.qty != null; })
+      .sort(function (a, b) { return (a.ord || 0) - (b.ord || 0) || (a.id < b.id ? -1 : 1); });
+    return tk;
+  }
+
+  function same(a, b) { return JSON.stringify(a == null ? null : a) === JSON.stringify(b == null ? null : b); }
+
+  // Diferencias entre lo guardado y el ticket nuevo, como rutas relativas.
+  function ticketDiff(tk) {
+    var old = S.raw[tk.table] || {};
+    var d = {};
+    TK_FIELDS.forEach(function (k) { if (!same(old[k], tk[k])) d[k] = tk[k] == null ? null : tk[k]; });
+    // orden: las líneas nuevas se colocan entre sus vecinas
+    tk.lines.forEach(function (l, i) {
+      if (!l.id) l.id = Store.newId();
+      if (l.ord == null) {
+        var prev = i > 0 ? tk.lines[i - 1].ord : 0;
+        var next = null;
+        for (var j = i + 1; j < tk.lines.length; j++) if (tk.lines[j].ord != null) { next = tk.lines[j].ord; break; }
+        l.ord = next == null ? Math.max(prev + 1, Date.now()) : (prev + next) / 2;
+      }
+    });
+    var ol = old.lines || {}, nl = {};
+    tk.lines.forEach(function (l) { var c = Object.assign({}, l); delete c.id; nl[l.id] = c; });
+    Object.keys(ol).forEach(function (id) { if (!nl[id]) d['lines/' + id] = null; });
+    Object.keys(nl).forEach(function (id) {
+      if (!ol[id] || typeof ol[id] !== 'object') { d['lines/' + id] = nl[id]; return; }
+      Object.keys(Object.assign({}, ol[id], nl[id])).forEach(function (f) {
+        if (!same(ol[id][f], nl[id][f])) d['lines/' + id + '/' + f] = nl[id][f] == null ? null : nl[id][f];
+      });
+    });
+    return d;
+  }
+
+  // Añade a upd (escritura atómica desde la raíz) los cambios de un ticket.
+  function ticketPatch(tk, upd) {
+    if (!tk.lines.length && !tk.discountPct && !tk.discountEur) { upd['tickets/' + tk.table] = null; return upd; }
+    var d = ticketDiff(tk);
+    Object.keys(d).forEach(function (k) { upd['tickets/' + tk.table + '/' + k] = d[k]; });
+    return upd;
+  }
+
   function saveTicket(tk) {
     if (!tk.lines.length && !tk.discountPct && !tk.discountEur) {
       delete S.tickets[tk.table];
@@ -130,7 +214,9 @@
     }
     if (!tk.openedAt) { tk.openedAt = Date.now(); tk.user = S.user.name; }
     S.tickets[tk.table] = tk;
-    return Store.set('tickets/' + tk.table, tk);
+    var d = ticketDiff(tk);
+    if (!Object.keys(d).length) return Promise.resolve();
+    return Store.update('tickets/' + tk.table, d);
   }
 
   function tableLabel(id) { return id === QUICK ? t('quickSale') : t('table', { t: id }); }
@@ -162,7 +248,7 @@
     S.dirty = false;
     if (!S.user) S.view = 'login';
     if (Store.mode === 'cloud' && !Store.hasAuth) S.view = 'setup';
-    app.innerHTML = ({
+    app.innerHTML = (S.user ? offlineBanner() : '') + ({
       setup: viewSetup, login: viewLogin, map: viewMap, ticket: viewTicket, caja: viewCaja, admin: viewAdmin
     })[S.view]();
   }
@@ -664,8 +750,9 @@
       var upd = {};
       var rec = kitchenRecord(tk, upd);
       stamp(tk);
-      upd['tickets/' + tk.table] = tk;
+      ticketPatch(tk, upd);
       S.tickets[tk.table] = tk;
+      if (offline()) toast(t('off.kitchen'));
       // ticket marcado + comanda numerada en una sola escritura: si se va la luz
       // a mitad, o están las dos cosas o ninguna.
       Store.update('', upd);
@@ -807,13 +894,13 @@
       var price = round2(a.base + extrasOf(mods));
       var same = tk.lines.filter(function (l) {
         return l.pid === a.pid && l.name === a.name && l.price === price && !l.sent && (l.note || '') === (a.note || '') &&
-          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos');
+          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV;
       })[0];
       if (same) same.qty = round2(same.qty + a.qty);
       else {
         tk.lines.push({
           pid: a.pid, name: a.name, base: a.base, price: price, qty: a.qty, mods: mods,
-          note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free
+          note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV
         });
       }
     });
@@ -923,6 +1010,8 @@
           // Separar: p. ej. 3 hamburguesas, solo 1 "sin cebolla".
           line.qty = round2(line.qty - st.units);
           updated.qty = st.units;
+          delete updated.id; delete updated.ord;
+          updated.dev = DEV;
           tk.lines.splice(index + 1, 0, updated);
           S.sel = index + 1;
         } else {
@@ -1364,7 +1453,7 @@
     var tk = stamp(mergeLines(ticketOf(o.table), add));
     var upd = {}, rec = null;
     if (kitchen) rec = kitchenRecord(tk, upd);
-    upd['tickets/' + o.table] = tk;
+    ticketPatch(tk, upd);
     upd['orders/' + o.id + '/status'] = 'accepted';
     upd['orders/' + o.id + '/handledBy'] = S.user.name;
     upd['orders/' + o.id + '/handledAt'] = Date.now();

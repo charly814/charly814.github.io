@@ -50,6 +50,16 @@
 
   function emit(name, detail) { window.dispatchEvent(new CustomEvent(name, { detail: detail })); }
 
+  // Estado de conexión. Una conexión en tiempo real que se reconecta también
+  // da "error" un instante: solo se avisa de "sin internet" si en 4 s no
+  // vuelve a funcionar nada.
+  var connTimer = null;
+  function connOk() { clearTimeout(connTimer); connTimer = null; emit('platet-conn', 'ok'); }
+  function connLost(now) {
+    if (now) { clearTimeout(connTimer); connTimer = null; emit('platet-conn', 'error'); return; }
+    if (!connTimer) connTimer = setTimeout(function () { connTimer = null; emit('platet-conn', 'error'); }, 4000);
+  }
+
   // ---------------------------------------------------------------- copia local
 
   var mem = null;
@@ -216,14 +226,14 @@
           localStorage.setItem(OUT_KEY, JSON.stringify(ob));
           mirror();
           inFlight = null; delay = 2000;
-          emit('platet-conn', 'ok');
+          connOk();
           emit('platet-pending', ob.length);
           if (waiters[op.id]) { waiters[op.id].resolve(); delete waiters[op.id]; }
           done();
           flush();
         }, function (e) {
           inFlight = null;
-          emit('platet-conn', 'error');
+          connLost(true);
           if (e.status === 400) {
             // petición imposible: se aparta para no bloquear la cola
             var ob = loadOutbox().filter(function (x) { return x.id !== op.id; });
@@ -270,7 +280,7 @@
     es.addEventListener('put', function (e) {
       var m = JSON.parse(e.data);
       apply(parts(m.path), m.data);
-      emit('platet-conn', 'ok');
+      connOk();
       flush();
     });
     es.addEventListener('patch', function (e) {
@@ -282,7 +292,7 @@
       persist(reapplyPending(db || {}), null);
       fire();
     });
-    es.onerror = function () { emit('platet-conn', 'error'); };
+    es.onerror = function () { connLost(!navigator.onLine); };
   }
 
   // ---------------------------------------------------------------- archivo
