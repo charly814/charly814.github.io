@@ -21,8 +21,6 @@
     buf: '',
     moveFrom: null,
     showTicket: false,
-    adminTab: 'productos',
-    adminCat: null,
     conn: Store.mode === 'local' ? 'local' : 'connecting',
     menu: P.DEFAULT_MENU,
     mods: P.DEFAULT_MODS,
@@ -77,7 +75,23 @@
 
   Store.on('menu', function (v) { S.menu = v || P.DEFAULT_MENU; render(); });
   Store.on('mods', function (v) { S.mods = v || P.DEFAULT_MODS; render(); });
-  Store.on('users', function (v) { S.users = v || P.DEFAULT_USERS; render(); });
+  Store.on('users', function (v) {
+    S.users = v || P.DEFAULT_USERS;
+    if (!S.user) {
+      var name = null;
+      try { name = sessionStorage.getItem('platet-session'); } catch (e) { /* ignorar */ }
+      var u = name && S.users.filter(function (x) { return x.name === name; })[0];
+      if (u) {
+        S.user = u; S.view = 'map';
+        // "Abrir el editor de plano" desde el back-office
+        try {
+          if (sessionStorage.getItem('platet-open-layout') && u.admin) S.editLayout = true;
+          sessionStorage.removeItem('platet-open-layout');
+        } catch (e) { /* ignorar */ }
+      }
+    }
+    render();
+  });
   Store.on('settings', function (v) { S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {}); render(); });
   Store.on('tickets', function (v) {
     S.raw = v || {};
@@ -337,21 +351,17 @@
 
   // ---------------------------------------------------------------- render
 
+  // repintado agrupado (p. ej. cuando terminan de cargar varias fotos)
+  var raf = 0;
+  function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; render(); }); }
+
   function render() {
-    // No repintar mientras se escribe en un campo de Ajustes (se pierde el foco).
-    var a = document.activeElement;
-    if (S.view === 'admin' && a && app.contains(a) && /INPUT|SELECT|TEXTAREA/.test(a.tagName)) {
-      S.dirty = true;
-      return;
-    }
-    S.dirty = false;
     if (!S.user) S.view = 'login';
     if (Store.mode === 'cloud' && !Store.hasAuth) S.view = 'setup';
     app.innerHTML = (S.user ? offlineBanner() : '') + ({
-      setup: viewSetup, login: viewLogin, map: viewMap, ticket: viewTicket, caja: viewCaja, admin: viewAdmin
+      setup: viewSetup, login: viewLogin, map: viewMap, ticket: viewTicket, caja: viewCaja
     })[S.view]();
   }
-  app.addEventListener('focusout', function () { setTimeout(function () { if (S.dirty) render(); }, 0); });
   window.addEventListener('resize', function () { if (S.view === 'ticket' && !mobile() && S.showTicket) { S.showTicket = false; render(); } });
 
   function langSwitch() {
@@ -534,10 +544,15 @@
       '<button class="btn voice-btn" data-act="voice">🎤</button>' +
       '<button class="btn primary" data-act="show-ticket">🧾 ' + fmtQty(count) + ' · ' + fmt(tot.total) + '</button></div>' +
       '<div class="cats">' + S.menu.map(function (c) {
-        return '<button class="cat' + (c.id === S.cat ? ' on' : '') + '" data-act="cat" data-id="' + esc(c.id) + '"><b>' + esc(c.icon || '🍽️') + '</b>' + esc(P.tr(c, I.lang)) + '</button>';
+        var cu = c.img ? Store.imageURL('c-' + c.id, c.img, later) : '';
+        return '<button class="cat' + (c.id === S.cat ? ' on' : '') + (cu ? ' has-img' : '') + '" data-act="cat" data-id="' + esc(c.id) + '">' +
+          (cu ? '<img src="' + cu + '" alt="">' : '<b>' + esc(c.icon || '🍽️') + '</b>') + esc(P.tr(c, I.lang)) + '</button>';
       }).join('') + '</div>' +
       '<div class="prods">' + ((cat && cat.items) || []).map(function (it) {
-        return '<button class="prod' + (it.available === false ? ' off' : '') + '" data-act="add" data-id="' + esc(it.id) + '"><span>' + esc(P.tr(it, I.lang)) + '</span><b>' + fmt(it.price) + '</b></button>';
+        // foto del producto (subida en el back-office), como en los TPV de toda la vida
+        var pu = it.img ? Store.imageURL('p-' + it.id, it.img, later) : '';
+        return '<button class="prod' + (it.available === false ? ' off' : '') + (pu ? ' has-img' : '') + '" data-act="add" data-id="' + esc(it.id) + '">' +
+          (pu ? '<img src="' + pu + '" alt="">' : '') + '<span>' + esc(P.tr(it, I.lang)) + '</span><b>' + fmt(it.price) + '</b></button>';
       }).join('') + '</div>' +
       '<nav class="actions">' +
       act('go', '🪑', t('tb.tables'), 'data-v="map"') +
@@ -619,123 +634,8 @@
   function kpi(label, val) { return '<div class="kpi"><small>' + label + '</small><b>' + val + '</b></div>'; }
   function time(ts) { return new Date(ts).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }
 
-  function viewAdmin() {
-    var tabs = '<div class="tabs">' + [['productos', 'admin.products'], ['mods', 'admin.mods'], ['voz', 'admin.voice'], ['usuarios', 'admin.users'], ['ajustes', 'admin.settings']].map(function (x) {
-      return '<button class="' + (S.adminTab === x[0] ? 'on' : '') + '" data-act="admin-tab" data-t="' + x[0] + '">' + t(x[1]) + '</button>';
-    }).join('') + '</div>';
-    var body = { productos: adminProducts, mods: adminMods, voz: adminVoice, usuarios: adminUsers, ajustes: adminSettings }[S.adminTab]();
-    return topbar(t('admin.title')) + '<div class="page">' + tabs + body + '</div>';
-  }
-
-  function input(val, edit, data, type) {
-    return '<input type="' + (type || 'text') + '"' + (type === 'number' ? ' step="0.05" min="0"' : '') + ' value="' + esc(val == null ? '' : val) + '" data-edit="' + edit + '" ' + data + '>';
-  }
-
-  function adminProducts() {
-    if (!S.adminCat || !S.menu.some(function (c) { return c.id === S.adminCat; })) S.adminCat = S.menu[0] && S.menu[0].id;
-    var ci = S.menu.findIndex(function (c) { return c.id === S.adminCat; });
-    var cat = S.menu[ci];
-    var d = 'data-ci="' + ci + '"';
-    return '<div class="card"><h3>' + t('admin.cats') + '</h3><div class="cats" style="padding:0;border:0">' +
-      S.menu.map(function (c) {
-        return '<button class="cat' + (c.id === S.adminCat ? ' on' : '') + '" data-act="admin-cat" data-id="' + esc(c.id) + '"><b>' + esc(c.icon) + '</b>' + esc(P.tr(c, I.lang)) + '</button>';
-      }).join('') + '<button class="cat" data-act="cat-add"><b>＋</b>' + t('admin.newCat') + '</button></div></div>' +
-      (cat ? '<div class="card"><h3>' + esc(cat.icon) + ' ' + esc(P.tr(cat, I.lang)) + '</h3><div class="scroll-x">' +
-        '<div class="form-row cat-row">' + input(cat.icon, 'cat-icon', d) + input(cat.name, 'cat-name', d) + input(cat.en, 'cat-en', d) + input(cat.zh, 'cat-zh', d) +
-        '<button class="btn" data-act="cat-up" ' + d + '>↑</button><button class="btn danger" data-act="cat-del" ' + d + '>' + t('admin.delCat') + '</button></div><hr>' +
-        '<div class="form-row prod-row muted"><span>' + t('admin.nameEs') + '</span><span>EN</span><span>中文</span><span>' + t('admin.priceEur') + '</span><span>' + t('admin.available') + '</span><span></span></div>' +
-        (cat.items || []).map(function (it, ii) {
-          var di = d + ' data-ii="' + ii + '"';
-          return '<div class="form-row prod-row">' + input(it.name, 'it-name', di) + input(it.en, 'it-en', di) + input(it.zh, 'it-zh', di) +
-            input(it.price, 'it-price', di, 'number') +
-            '<label><input type="checkbox" ' + (it.available !== false ? 'checked' : '') + ' data-edit="it-avail" ' + di + '> ' + t('yes') + '</label>' +
-            '<button class="btn" data-act="it-del" ' + di + '>🗑️</button></div>';
-        }).join('') + '</div>' +
-        '<div class="btn-row" style="margin-top:10px"><button class="btn primary" data-act="it-add" ' + d + '>' + t('admin.addProduct') + '</button></div>' +
-        '<p class="muted">' + t('admin.soldOutNote') + '</p></div>' : '') +
-      '<div class="card"><button class="btn danger" data-act="menu-reset">' + t('admin.resetMenu') + '</button></div>';
-  }
-
-  function adminMods() {
-    return '<p class="muted">' + t('admin.modsNote') + '</p>' +
-      ['sin', 'extra', 'prep'].map(function (type) {
-        return '<div class="card"><h3>' + t('mod.' + type) + '</h3><div class="scroll-x">' +
-          '<div class="form-row mod-row muted"><span>' + t('admin.nameEs') + '</span><span>EN</span><span>中文</span><span>' + (type === 'extra' ? t('admin.priceEur') : '') + '</span><span></span></div>' +
-          S.mods.map(function (m, mi) {
-            if (m.type !== type) return '';
-            var dm = 'data-mi="' + mi + '"';
-            return '<div class="form-row mod-row">' + input(m.name, 'mod-name', dm) + input(m.en, 'mod-en', dm) + input(m.zh, 'mod-zh', dm) +
-              (type === 'extra' ? input(m.price, 'mod-price', dm, 'number') : '<span></span>') +
-              '<button class="btn" data-act="mod-del" ' + dm + '>🗑️</button></div>';
-          }).join('') + '</div>' +
-          '<div class="btn-row" style="margin-top:10px"><button class="btn primary" data-act="mod-add" data-type="' + type + '">＋ ' + t('add') + '</button></div></div>';
-      }).join('') +
-      '<div class="card"><button class="btn danger" data-act="mods-reset">' + t('admin.resetMods') + '</button></div>';
-  }
-
   function aiAuto() {
     try { return localStorage.getItem('platet-ai-auto') !== '0'; } catch (e) { return true; }
-  }
-
-  function adminVoice() {
-    var st = Voice.stats();
-    var key = Voice.aiKey();
-    return '<div class="card"><h3>' + t('admin.v.memTitle') + '</h3><p class="muted">' + t('admin.v.memNote') + '</p>' +
-      '<p>' + t('v.stats', { a: st.aliases, u: st.utter, c: st.ai }) + '</p>' +
-      '<div class="btn-row"><button class="btn" data-act="vmem-export">' + t('admin.v.export') + '</button>' +
-      '<button class="btn" data-act="vmem-import">' + t('admin.v.import') + '</button>' +
-      '<button class="btn danger" data-act="vmem-clear">' + t('admin.v.clear') + '</button></div></div>' +
-      '<div class="card"><h3>' + t('admin.v.aiTitle') + '</h3><p class="muted">' + t('admin.v.aiNote') + '</p>' +
-      (key
-        ? '<p>' + t('admin.v.keySet') + ' <code>…' + esc(key.slice(-4)) + '</code> <button class="btn" data-act="ai-key-remove">' + t('admin.v.keyRemove') + '</button></p>'
-        : '<div class="field"><label>' + t('admin.v.key') + '</label><input id="ai-key" type="password" autocomplete="off" placeholder="sk-ant-..."></div>' +
-          '<button class="btn primary" data-act="ai-key-save">' + t('save') + '</button>') +
-      '<label style="display:block;margin-top:12px"><input type="checkbox" data-act="ai-auto" ' + (aiAuto() ? 'checked' : '') + '> ' + t('admin.v.auto') + '</label></div>';
-  }
-
-  function adminUsers() {
-    return '<div class="card"><h3>' + t('admin.users') + '</h3><div class="form-row users muted"><span>' + t('admin.name') + '</span><span>PIN</span><span>' + t('admin.admin') + '</span><span></span></div>' +
-      S.users.map(function (u, i) {
-        return '<div class="form-row users"><input type="text" value="' + esc(u.name) + '" data-edit="u-name" data-i="' + i + '">' +
-          '<input type="text" inputmode="numeric" maxlength="6" value="' + esc(u.pin) + '" data-edit="u-pin" data-i="' + i + '">' +
-          '<label><input type="checkbox" ' + (u.admin ? 'checked' : '') + ' data-edit="u-admin" data-i="' + i + '"> ' + t('yes') + '</label>' +
-          '<button class="btn" data-act="u-del" data-i="' + i + '">🗑️</button></div>';
-      }).join('') +
-      '<div class="btn-row" style="margin-top:10px"><button class="btn primary" data-act="u-add">' + t('admin.addUser') + '</button></div>' +
-      '<p class="muted">' + t('admin.adminNote') + '</p></div>';
-  }
-
-  function adminSettings() {
-    var st = S.settings;
-    var f = function (k) {
-      return '<div class="field"><label>' + t('admin.f.' + k) + '</label><input type="text" value="' + esc(st[k]) + '" data-edit="set" data-k="' + k + '"></div>';
-    };
-    var qrUrl = new URL('qr.html', location.href).href;
-    var q = S.qr, days = t('sch.days');
-    var schedule = '<div class="card"><h3>' + t('sch.title') + '</h3>' +
-      '<p>' + qrControls() + '</p>' +
-      '<label style="display:block;margin-bottom:10px"><input type="checkbox" data-edit="sch-use" ' + (q.useSchedule ? 'checked' : '') + '> ' + t('sch.use') + '</label>' +
-      '<div class="scroll-x"><table class="list sch"><tr><th>' + t('sch.day') + '</th><th>' + t('sch.qr') + '</th><th>' + t('sch.kitchen') + '</th></tr>' +
-      [0, 1, 2, 3, 4, 5, 6].map(function (i) {
-        var d = (q.days && q.days[i]) || {};
-        return '<tr><td>' + days[i] + '</td>' +
-          '<td><input type="text" value="' + esc(d.qr || '') + '" data-edit="sch-day" data-i="' + i + '" data-f="qr" placeholder="12:00-16:30, 20:00-23:30"></td>' +
-          '<td><input type="text" value="' + esc(d.kitchen || '') + '" data-edit="sch-day" data-i="' + i + '" data-f="kitchen" placeholder="13:00-16:00, 20:00-23:00"></td></tr>';
-      }).join('') + '</table></div>' +
-      '<p class="muted">' + t('sch.help') + '</p>' +
-      '<h4>' + t('sch.cats') + '</h4><div class="chips-sel">' + S.menu.map(function (c) {
-        var on = (q.kitchenCats || []).indexOf(c.id) >= 0;
-        return '<label class="chk"><input type="checkbox" data-edit="sch-cat" data-id="' + esc(c.id) + '" ' + (on ? 'checked' : '') + '> ' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</label>';
-      }).join('') + '</div></div>';
-    return schedule + '<div class="card"><h3>' + t('admin.ticketData') + '</h3>' + f('name') + f('address') + f('nif') + f('vat') + f('footer') + f('series') +
-      '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
-      '<div class="card"><h3>' + t('admin.qr') + '</h3>' +
-      '<p>' + t('admin.mode', { m: '<b>' + t(Store.mode === 'local' ? 'admin.local' : 'admin.cloud') + '</b>' }) + '</p>' +
-      (Store.mode === 'local'
-        ? '<p class="warn">' + t('admin.localWarn') + '</p>'
-        : '<p class="muted">' + t('admin.cloudOk') + '</p><p><button class="btn" data-act="reset-auth">' + t('admin.changeKey') + '</button></p>') +
-      '<div class="btn-row"><a class="btn primary" href="' + esc(qrUrl) + '" target="_blank" rel="noopener">' + t('admin.printQr') + '</a>' +
-      '<a class="btn" href="pedir.html?mesa=T1" target="_blank" rel="noopener">' + t('admin.testQr') + '</a></div></div>';
   }
 
   // ---------------------------------------------------------------- eventos
@@ -747,60 +647,7 @@
     if (fn) fn(b.dataset, b);
   });
 
-  var FIELD = { 'cat-icon': 'icon', 'cat-name': 'name', 'cat-en': 'en', 'cat-zh': 'zh', 'it-name': 'name', 'it-en': 'en', 'it-zh': 'zh', 'mod-name': 'name', 'mod-en': 'en', 'mod-zh': 'zh' };
-
-  app.addEventListener('change', function (e) {
-    var el = e.target;
-    if (!el.dataset || !el.dataset.edit) return;
-    var d = el.dataset;
-    var val = el.type === 'checkbox' ? el.checked : el.value;
-    var menu = clone(S.menu), users = clone(S.users), mods = clone(S.mods);
-    var price = round2(String(val).replace(',', '.'));
-    switch (d.edit) {
-      case 'cat-icon': case 'cat-name': case 'cat-en': case 'cat-zh':
-        menu[d.ci][FIELD[d.edit]] = String(val).trim(); return saveMenu(menu);
-      case 'it-name': case 'it-en': case 'it-zh':
-        menu[d.ci].items[d.ii][FIELD[d.edit]] = String(val).trim(); return saveMenu(menu);
-      case 'it-price': menu[d.ci].items[d.ii].price = price; return saveMenu(menu);
-      case 'it-avail': menu[d.ci].items[d.ii].available = val; return saveMenu(menu);
-      case 'mod-name': case 'mod-en': case 'mod-zh':
-        mods[d.mi][FIELD[d.edit]] = String(val).trim(); return saveMods(mods);
-      case 'mod-price': mods[d.mi].price = price; return saveMods(mods);
-      case 'u-name': users[d.i].name = String(val).trim().toUpperCase() || users[d.i].name; return saveUsers(users);
-      case 'u-pin':
-        if (!/^\d{4,6}$/.test(val)) { toast(t('msg.pinFormat')); return render(); }
-        users[d.i].pin = val; return saveUsers(users);
-      case 'u-admin': users[d.i].admin = val; return saveUsers(users);
-      case 'sch-use': return Store.update('public/qr', { useSchedule: !!val });
-      case 'sch-day':
-        if (!P.validRanges(val)) { toast(t('sch.bad', { v: val })); el.value = ((S.qr.days || [])[d.i] || {})[d.f] || ''; return; }
-        var days = clone(S.qr.days || P.DEFAULT_QR.days);
-        days[d.i] = Object.assign({}, days[d.i]);
-        days[d.i][d.f] = String(val).trim();
-        return Store.update('public/qr', { days: days });
-      case 'sch-cat':
-        var cats = (S.qr.kitchenCats || []).filter(function (c) { return c !== d.id; });
-        if (val) cats.push(d.id);
-        return Store.update('public/qr', { kitchenCats: cats });
-      case 'set':
-        var st = Object.assign({}, S.settings);
-        if (d.k === 'vat') st.vat = Number(String(val).replace(',', '.')) || 0;
-        // La serie se usa como clave en la base de datos: solo letras, números y guiones.
-        else if (d.k === 'series') st.series = String(val).toUpperCase().replace(/[^A-Z0-9_-]/g, '') || P.DEFAULT_SETTINGS.series;
-        else st[d.k] = val;
-        return Store.set('settings', st);
-    }
-  });
-
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
-  function saveMenu(menu) { S.menu = menu; return Store.set('menu', menu); }
-  function saveMods(mods) { S.mods = mods; return Store.set('mods', mods); }
-  function saveUsers(users) {
-    if (!users.some(function (u) { return u.admin; })) { toast(t('msg.needAdmin')); render(); return; }
-    S.users = users;
-    return Store.set('users', users);
-  }
-
   var ACTIONS = {
     'pick-user': function (d) { askPin(S.users[d.i]); },
     lang: function (d) { I.set(d.l); render(); },
@@ -813,9 +660,18 @@
       if (!confirm(t('setup.resetConfirm'))) return;
       Store.setAuth(''); location.reload();
     },
-    logout: function () { S.user = null; S.table = null; S.moveFrom = null; closeModal(); render(); },
+    logout: function () {
+      try { sessionStorage.removeItem('platet-session'); } catch (e) { /* ignorar */ }
+      S.user = null; S.table = null; S.moveFrom = null; closeModal(); render();
+    },
     go: function (d) {
-      if ((d.v === 'admin') && !isAdmin()) return;
+      // El back-office es una página aparte; la sesión del administrador pasa con sessionStorage.
+      if (d.v === 'admin') {
+        if (!isAdmin()) return;
+        try { sessionStorage.setItem('platet-session', S.user.name); } catch (e) { /* ignorar */ }
+        location.href = 'admin.html';
+        return;
+      }
       S.view = d.v; S.sel = -1; S.buf = ''; S.showTicket = false; render();
     },
     orders: function () { openOrders(); },
@@ -882,35 +738,6 @@
     },
     free: function () { openFree(); },
     voice: function () { openVoice(); },
-    'ai-key-save': function () {
-      var k = document.getElementById('ai-key').value.trim();
-      if (k) { Voice.setAiKey(k); render(); }
-    },
-    'ai-key-remove': function () { Voice.setAiKey(''); render(); },
-    'ai-auto': function (d, el) {
-      try { localStorage.setItem('platet-ai-auto', el.checked ? '1' : '0'); } catch (e) { /* ignorar */ }
-    },
-    'vmem-export': function () {
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([Voice.exportMem()], { type: 'application/json' }));
-      a.download = 'memoria-voz-platet.json';
-      document.body.appendChild(a); a.click(); a.remove();
-    },
-    'vmem-import': function () {
-      var inp = document.createElement('input');
-      inp.type = 'file'; inp.accept = 'application/json,.json';
-      inp.onchange = function () {
-        var f = inp.files[0];
-        if (!f) return;
-        f.text().then(function (txt) { Voice.importMem(txt, true); toast(t('admin.v.imported')); render(); })
-          .catch(function () { toast('JSON ✗'); });
-      };
-      inp.click();
-    },
-    'vmem-clear': function () {
-      if (!confirm(t('admin.v.clearConfirm'))) return;
-      Voice.clear(); render();
-    },
     mods: function () {
       if (!ticketOf(S.table).lines[S.sel]) return toast(t('msg.selectLine'));
       openMods(S.sel);
@@ -999,69 +826,6 @@
     reprint: function (d) {
       var s = S.sales[d.id];
       if (s) printTicket(s, s);
-    },
-
-    'admin-tab': function (d) { S.adminTab = d.t; render(); },
-    'admin-cat': function (d) { S.adminCat = d.id; render(); },
-    'cat-add': function () {
-      var name = prompt(t('admin.newCatPrompt'));
-      if (!name) return;
-      var menu = clone(S.menu);
-      var id = 'c' + Store.newId();
-      menu.push({ id: id, name: name.trim(), icon: '🍽️', items: [] });
-      S.adminCat = id; saveMenu(menu); render();
-    },
-    'cat-up': function (d) {
-      var i = +d.ci;
-      if (i === 0) return;
-      var menu = clone(S.menu);
-      menu.splice(i - 1, 0, menu.splice(i, 1)[0]);
-      saveMenu(menu); render();
-    },
-    'cat-del': function (d) {
-      var menu = clone(S.menu);
-      if (!confirm(t('admin.delCatConfirm', { n: menu[d.ci].name }))) return;
-      menu.splice(+d.ci, 1); saveMenu(menu); render();
-    },
-    'it-add': function (d) {
-      var menu = clone(S.menu);
-      menu[d.ci].items = menu[d.ci].items || [];
-      menu[d.ci].items.push({ id: menu[d.ci].id + '-' + Store.newId(), name: t('admin.newProduct'), price: 0, available: true });
-      saveMenu(menu); render();
-    },
-    'it-del': function (d) {
-      var menu = clone(S.menu);
-      if (!confirm(t('admin.delConfirm', { n: menu[d.ci].items[d.ii].name }))) return;
-      menu[d.ci].items.splice(+d.ii, 1); saveMenu(menu); render();
-    },
-    'menu-reset': function () {
-      if (!confirm(t('admin.resetConfirm'))) return;
-      saveMenu(clone(P.DEFAULT_MENU)); render();
-    },
-    'mod-add': function (d) {
-      var mods = clone(S.mods);
-      mods.push({ id: d.type.charAt(0) + Store.newId(), type: d.type, name: '…', price: 0 });
-      saveMods(mods); render();
-    },
-    'mod-del': function (d) {
-      var mods = clone(S.mods);
-      if (!confirm(t('admin.delConfirm', { n: mods[d.mi].name }))) return;
-      mods.splice(+d.mi, 1); saveMods(mods); render();
-    },
-    'mods-reset': function () {
-      if (!confirm(t('admin.resetMods') + '?')) return;
-      saveMods(clone(P.DEFAULT_MODS)); render();
-    },
-    'u-add': function () {
-      var users = clone(S.users);
-      users.push({ name: 'NUEVO', pin: '0000', admin: false });
-      saveUsers(users); render();
-    },
-    'u-del': function (d) {
-      var users = clone(S.users);
-      if (users[d.i].name === S.user.name) return toast(t('msg.selfDel'));
-      if (!confirm(t('admin.delUser', { n: users[d.i].name }))) return;
-      users.splice(+d.i, 1); saveUsers(users); render();
     }
   };
 
@@ -1592,6 +1356,8 @@
     function tryLogin() {
       if (pin === String(user.pin)) {
         S.user = user; S.view = 'map'; closeModal(); render();
+        // la sesión sigue al volver del back-office (misma pestaña)
+        try { sessionStorage.setItem('platet-session', user.name); } catch (e) { /* ignorar */ }
       } else { pin = ''; draw(); toast(t('pin.wrong')); }
     }
     openModal('pin', draw, function (k) {

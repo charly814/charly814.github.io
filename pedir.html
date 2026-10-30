@@ -49,6 +49,9 @@
     .status.closed h3 { color: var(--price); }
     .status.kclosed { border-left: 4px solid #e1a100; background: #fffbeb; }
     section.cat.off .item { opacity: .5; }
+    .item .pic { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; flex: 0 0 64px; background: #f1f5f9; }
+    .item .name small.desc { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    .item .name small.alg { font-size: 15px; letter-spacing: 2px; margin-top: 2px; }
     section.cat h2 .kc { font-size: 13px; color: #b45309; font-weight: 600; }
     .lang { position: absolute; top: 10px; right: 10px; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
     .lang button { border: 0; background: #fff; padding: 6px 9px; font-size: 13px; }
@@ -178,6 +181,9 @@
       return l ? l.qty : 0;
     }
 
+    var raf = 0;
+    function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; render(); if (sheetMode === 'cart') openCart(); }); }
+
     function render() {
       document.getElementById('table-pill').textContent = t('table', { t: table });
       var st = P.qrStatus(qrCfg);
@@ -201,7 +207,16 @@
             c.items.map(function (it) {
               var q = plainQty(it.id);
               var es = I.lang !== 'es' && P.tr(it, I.lang) !== it.name ? '<small>' + esc(it.name) + '</small>' : '';
-              return '<div class="item"><span class="name"' + (off ? '' : ' data-a="custom" data-id="' + esc(it.id) + '"') + '>' + esc(P.tr(it, I.lang)) + (off ? '' : ' <u>✏️</u>') + es + '</span>' +
+              var desc = P.trDesc(it, I.lang);
+              var al = (it.allergens || []).map(function (a) {
+                var x = P.ALLERGENS.filter(function (y) { return y.id === a; })[0];
+                return x ? '<span title="' + esc(P.tr(x, I.lang)) + '">' + x.icon + '</span>' : '';
+              }).join('');
+              var pu = it.img ? Store.imageURL('p-' + it.id, it.img, later) : '';
+              return '<div class="item">' + (pu ? '<img class="pic" src="' + pu + '" alt="" loading="lazy">' : '') +
+                '<span class="name"' + (off ? '' : ' data-a="custom" data-id="' + esc(it.id) + '"') + '>' + esc(P.tr(it, I.lang)) + (off ? '' : ' <u>✏️</u>') + es +
+                (desc ? '<small class="desc">' + esc(desc) + '</small>' : '') +
+                (al ? '<small class="alg" aria-label="' + esc(t('c.allergens2')) + '">' + al + '</small>' : '') + '</span>' +
                 '<span class="price">' + fmt(it.price) + '</span>' +
                 (off ? '' : '<span class="stepper">' + (q ? '<button data-a="minus" data-key="' + esc(it.id) + '" aria-label="−">−</button><b>' + q + '</b>' : '') +
                 '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="+">+</button></span>') + '</div>';

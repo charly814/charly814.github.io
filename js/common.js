@@ -210,6 +210,30 @@
 
   var TABLE_ID_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/;
 
+  // Los 14 alérgenos de declaración obligatoria (Reglamento UE 1169/2011)
+  var ALLERGENS = [
+    ['gluten', '🌾', 'Gluten', 'Gluten', '麸质'],
+    ['crustaceos', '🦐', 'Crustáceos', 'Crustaceans', '甲壳类'],
+    ['huevo', '🥚', 'Huevo', 'Egg', '鸡蛋'],
+    ['pescado', '🐟', 'Pescado', 'Fish', '鱼'],
+    ['cacahuetes', '🥜', 'Cacahuetes', 'Peanuts', '花生'],
+    ['soja', '🫘', 'Soja', 'Soy', '大豆'],
+    ['lacteos', '🥛', 'Lácteos', 'Milk', '乳制品'],
+    ['frutos', '🌰', 'Frutos de cáscara', 'Tree nuts', '坚果'],
+    ['apio', '🥬', 'Apio', 'Celery', '芹菜'],
+    ['mostaza', '🟡', 'Mostaza', 'Mustard', '芥末'],
+    ['sesamo', '⚪', 'Sésamo', 'Sesame', '芝麻'],
+    ['sulfitos', '🍷', 'Sulfitos', 'Sulphites', '亚硫酸盐'],
+    ['altramuces', '🫛', 'Altramuces', 'Lupin', '羽扇豆'],
+    ['moluscos', '🦪', 'Moluscos', 'Molluscs', '软体动物']
+  ].map(function (a) { return { id: a[0], icon: a[1], name: a[2], en: a[3], zh: a[4] }; });
+
+  // Descripción de un producto en el idioma pedido (desc, desc_en, desc_zh)
+  function trDesc(it, lang) {
+    if (!it) return '';
+    return (lang && lang !== 'es' && it['desc_' + lang]) || it.desc || '';
+  }
+
   function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
   function fmt(n) {
@@ -279,6 +303,8 @@
     qrStatus: qrStatus,
     endOfService: endOfService,
     catOfItem: catOfItem,
-    TABLE_ID_RE: TABLE_ID_RE
+    TABLE_ID_RE: TABLE_ID_RE,
+    ALLERGENS: ALLERGENS,
+    trDesc: trDesc
   };
 })();

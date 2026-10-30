@@ -2,10 +2,10 @@
 // arranque aunque no haya internet (p. ej. tras un corte de luz, mientras el
 // router se reinicia). Primero intenta la red (para recibir actualizaciones)
 // y si no responde en 3 s usa la copia guardada.
-var CACHE = 'platet-app-v3';
+var CACHE = 'platet-app-v4';
 var FILES = [
   './', 'index.html', 'pos.html', 'pedir.html', 'qr.html', 'config.js',
-  'css/pos.css', 'js/store.js', 'js/common.js', 'js/i18n.js', 'js/voice.js', 'js/pos.js',
+  'admin.html', 'css/pos.css', 'css/admin.css', 'js/admin.js', 'js/store.js', 'js/common.js', 'js/i18n.js', 'js/voice.js', 'js/pos.js',
   'manifest.webmanifest', 'icon.svg'
 ];
 

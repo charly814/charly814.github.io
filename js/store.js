@@ -108,10 +108,11 @@
     if (idbP) return idbP;
     idbP = new Promise(function (resolve, reject) {
       if (!window.indexedDB) return reject(new Error('no-idb'));
-      var r = indexedDB.open('platet-' + root, 2);
+      var r = indexedDB.open('platet-' + root, 3);
       r.onupgradeneeded = function () {
-        if (!r.result.objectStoreNames.contains('snap')) r.result.createObjectStore('snap');
-        if (!r.result.objectStoreNames.contains('archive')) r.result.createObjectStore('archive');
+        ['snap', 'archive', 'images'].forEach(function (n) {
+          if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n);
+        });
       };
       r.onsuccess = function () { resolve(r.result); };
       r.onerror = function () { reject(r.error); };
@@ -221,7 +222,11 @@
         if (!outbox.length) { emit('platet-pending', 0); return done(); }
         var op = outbox[0];
         inFlight = op.id;
-        req(op.m, op.path, op.m === 'DELETE' ? undefined : op.body).then(function () {
+        // las imágenes no van en la cola (pesan): se leen de IndexedDB al enviarlas
+        var send = op.img
+          ? idbTx('images', 'readonly', function (st) { return st.get(op.img); }).then(function (rec) { return rec ? req('PUT', op.path, rec) : null; })
+          : req(op.m, op.path, op.m === 'DELETE' ? undefined : op.body);
+        send.then(function () {
           var ob = loadOutbox().filter(function (x) { return x.id !== op.id; });
           localStorage.setItem(OUT_KEY, JSON.stringify(ob));
           mirror();
@@ -333,6 +338,69 @@
     });
   }
 
+  // ---------------------------------------------------------------- imágenes
+  // Fotos de productos y categorías: {v: versión, data: 'data:image/jpeg;base64,...'}
+  // en IndexedDB y, en modo nube, en public/images/<clave> (la carta del cliente las lee).
+
+  var imgMem = {};
+  function queue(op) {
+    var ob = loadOutbox();
+    ob.push(Object.assign({ id: newId() }, op));
+    localStorage.setItem(OUT_KEY, JSON.stringify(ob));
+    emit('platet-pending', ob.length);
+    flush();
+  }
+  function putImage(key, data, v) {
+    var rec = { v: v || Date.now(), data: data };
+    imgMem[key] = rec;
+    return idbTx('images', 'readwrite', function (st) { st.put(rec, key); }).then(function () {
+      if (base) queue({ m: 'PUT', path: 'public/images/' + key, img: key });
+      return rec.v;
+    });
+  }
+  function removeImage(key) {
+    delete imgMem[key];
+    return idbTx('images', 'readwrite', function (st) { st.delete(key); }).then(function () {
+      if (base) queue({ m: 'DELETE', path: 'public/images/' + key });
+    });
+  }
+  // v: versión que se espera (la guarda el producto); si la copia local es más vieja se descarga.
+  function getImage(key, v) {
+    var m = imgMem[key];
+    if (m && (!v || m.v >= v)) return Promise.resolve(m.data);
+    return idbTx('images', 'readonly', function (st) { return st.get(key); }).catch(function () { return null; }).then(function (rec) {
+      if (rec && (!v || rec.v >= v)) { imgMem[key] = rec; return rec.data; }
+      if (!base) return rec ? rec.data : null;
+      return req('GET', 'public/images/' + key).then(function (r) {
+        if (!r || !r.data) return rec ? rec.data : null;
+        imgMem[key] = r;
+        idbTx('images', 'readwrite', function (st) { st.put(r, key); }).catch(function () { /* sin caché */ });
+        return r.data;
+      }, function () { return rec ? rec.data : null; });
+    });
+  }
+
+  // URL lista para <img src>. Si aún no está en memoria devuelve '' y llama a
+  // onLoad cuando la tiene (para repintar).
+  var urls = {}, loading = {};
+  function imageURL(key, v, onLoad) {
+    var u = urls[key];
+    if (u && (!v || u.v >= v)) return u.url;
+    var lk = key + '@' + (v || 0);
+    if (!loading[lk]) {
+      loading[lk] = true;
+      getImage(key, v).then(function (data) {
+        if (!data) return;
+        var i = data.indexOf(','), bin = atob(data.slice(i + 1)), arr = new Uint8Array(bin.length);
+        for (var j = 0; j < bin.length; j++) arr[j] = bin.charCodeAt(j);
+        if (urls[key]) URL.revokeObjectURL(urls[key].url);
+        urls[key] = { v: v || 0, url: URL.createObjectURL(new Blob([arr], { type: data.slice(5, data.indexOf(';')) })) };
+        if (onLoad) onLoad();
+      }).catch(function () { /* sin imagen */ });
+    }
+    return u ? u.url : '';
+  }
+
   // ---------------------------------------------------------------- API
 
   window.Store = {
@@ -346,6 +414,10 @@
     pending: function () { return base ? loadOutbox().length : 0; },
     archive: archive,
     readArchive: readArchive,
+    putImage: putImage,
+    getImage: getImage,
+    removeImage: removeImage,
+    imageURL: imageURL,
     get: function (p) {
       var v = getAt(load(), parts(p));
       if (v != null || !base) return Promise.resolve(clone(v));
