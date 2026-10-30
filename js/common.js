@@ -228,6 +228,22 @@
     ['moluscos', '🦪', 'Moluscos', 'Molluscs', '软体动物']
   ].map(function (a) { return { id: a[0], icon: a[1], name: a[2], en: a[3], zh: a[4] }; });
 
+  // Permisos de los empleados. El administrador lo puede todo; para los demás,
+  // el valor guardado en user.perms o, si no hay, el de esta lista.
+  var PERMS = [
+    ['pay', true], ['caja', true], ['reprint', true], ['drawer', true], ['free', true],
+    ['qrOrders', true], ['qrControl', true], ['tables', true],
+    ['discount', false], ['price', false], ['delSent', false], ['cancel', false], ['closeZ', false]
+  ];
+  function can(user, perm) {
+    if (!user) return false;
+    if (user.admin) return true;
+    var p = user.perms || {};
+    if (Object.prototype.hasOwnProperty.call(p, perm)) return !!p[perm];
+    var d = PERMS.filter(function (x) { return x[0] === perm; })[0];
+    return d ? d[1] : false;
+  }
+
   // Descripción de un producto en el idioma pedido (desc, desc_en, desc_zh)
   function trDesc(it, lang) {
     if (!it) return '';
@@ -305,6 +321,8 @@
     catOfItem: catOfItem,
     TABLE_ID_RE: TABLE_ID_RE,
     ALLERGENS: ALLERGENS,
+    PERMS: PERMS,
+    can: can,
     trDesc: trDesc
   };
 })();

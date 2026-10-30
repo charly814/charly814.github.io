@@ -80,3 +80,7 @@ details.chart-table summary { cursor: pointer; color: var(--accent); font-size: 
   .form-grid, .two-col { grid-template-columns: 1fr; }
   .hide-sm { display: none; }
 }
+
+/* permisos */
+table.perms th.c, table.perms td.c { text-align: center; }
+table.perms td:first-child { white-space: nowrap; }

@@ -116,6 +116,7 @@
   });
   var archiving = {};
   Store.on('prints', function (v) { S.prints = v || {}; render(); });
+  Store.on('audit', function (v) { S.audit = v || {}; });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
   Store.on('temp', function (v) { S.temp = v || {}; render(); });
   Store.on('joins', function (v) { S.joins = v || {}; render(); });
@@ -166,6 +167,29 @@
   }
 
   function isAdmin() { return S.user && S.user.admin; }
+  function can(perm) { return P.can(S.user, perm); }
+
+  // Si el empleado no tiene permiso, un administrador lo autoriza con su PIN
+  // (queda apuntado quién lo autorizó en S.authBy mientras dura la acción).
+  function allow(perm, fn) {
+    if (can(perm)) return fn();
+    askSupervisor(perm, fn);
+  }
+
+  // Registro de acciones sensibles (se ve en Gestión → Permisos y registro)
+  var KEEP_AUDIT = 400;
+  function audit(action, detail) {
+    var id = Store.newId();
+    var rec = { id: id, at: Date.now(), user: S.user ? S.user.name : '', by: S.authBy || null, action: action, table: S.table || null, detail: String(detail || '').slice(0, 200) };
+    var upd = {};
+    upd['audit/' + id] = rec;
+    var keys = Object.keys(S.audit || {});
+    if (keys.length >= KEEP_AUDIT + 20) {
+      keys.map(function (k) { return S.audit[k]; }).sort(function (a, b) { return a.at - b.at; }).slice(0, keys.length - KEEP_AUDIT)
+        .forEach(function (r) { upd['audit/' + r.id] = null; });
+    }
+    Store.update('', upd);
+  }
 
   function ticketOf(table) {
     var tk = S.tickets[table];
@@ -558,6 +582,7 @@
       act('go', '🪑', t('tb.tables'), 'data-v="map"') +
       (pendingOrders().length ? act('orders', '📲', t('tb.orders') + ' (' + pendingOrders().length + ')', '', 'alert-act') : '') +
       act('print-ticket', '🖨️', t('act.print')) +
+      act('drawer', '💶', t('act.drawer')) +
       act('kitchen', '👨‍🍳', t('act.kitchen')) +
       act('voice', '🎤', t('act.voice'), '', 'voice-act') +
       act('mods', '✏️', t('act.mod')) +
@@ -613,7 +638,8 @@
       '<p class="muted">' + t('caja.byUser') + ': ' + (Object.keys(s.byUser).map(function (u) { return esc(u) + ' ' + fmt(s.byUser[u]); }).join(' · ') || '—') + '</p>' +
       '<div class="btn-row"><button class="btn" data-act="print-x">' + t('caja.printX') + '</button>' +
       '<button class="btn" data-act="csv">' + t('caja.csv') + '</button>' +
-      (isAdmin() ? '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button>' : '') + '</div></div>' +
+      '<button class="btn" data-act="drawer">💶 ' + t('act.drawer') + '</button>' +
+      '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
           return '<tr><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + t('m.' + x.method) + '</td><td class="num">' + fmt(x.total) + '</td>' +
@@ -640,11 +666,21 @@
 
   // ---------------------------------------------------------------- eventos
 
+  // Permiso que necesita cada botón (los que no aparecen, cualquiera)
+  var GUARD = {
+    pay: 'pay', free: 'free', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
+    reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
+    'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders'
+  };
   app.addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]');
     if (!b) return;
     var fn = ACTIONS[b.dataset.act];
-    if (fn) fn(b.dataset, b);
+    if (!fn) return;
+    var perm = GUARD[b.dataset.act] || (b.dataset.act === 'go' && b.dataset.v === 'caja' ? 'caja' : null);
+    if (perm) allow(perm, function () { fn(b.dataset, b); });
+    else fn(b.dataset, b);
   });
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
@@ -747,9 +783,13 @@
     'qty-minus': function () { changeQty(-1); },
     'del-line': function () {
       var tk = ticketOf(S.table);
-      if (!tk.lines[S.sel]) return toast(t('msg.selectLine'));
-      if (tk.lines[S.sel].sent && !isAdmin()) return toast(t('msg.sentAdmin'));
-      tk.lines.splice(S.sel, 1); S.sel = -1; saveTicket(tk); render();
+      var l = tk.lines[S.sel];
+      if (!l) return toast(t('msg.selectLine'));
+      var go = function () {
+        if (l.sent) audit('delSent', fmtQty(l.qty) + '× ' + l.name);
+        tk.lines.splice(tk.lines.indexOf(l), 1); S.sel = -1; saveTicket(tk); render();
+      };
+      if (l.sent) allow('delSent', go); else go();
     },
     move: function () {
       if (!ticketOf(S.table).lines.length) return toast(t('msg.empty'));
@@ -758,8 +798,8 @@
     'cancel-ticket': function () {
       var tk = ticketOf(S.table);
       if (!tk.lines.length) return;
-      if (!isAdmin()) return toast(t('msg.adminOnly'));
       if (!confirm(t('msg.cancelConfirm', { t: tableLabel(S.table) }))) return;
+      audit('cancel', tableLabel(S.table) + ' · ' + fmt(P.ticketTotals(tk).total) + ' · ' + tk.lines.map(function (l) { return fmtQty(l.qty) + '× ' + l.name; }).join(', '));
       var upd = closeTablePatch(S.table, {});
       upd['tickets/' + S.table] = null;
       Store.update('', upd); delete S.tickets[S.table];
@@ -801,7 +841,6 @@
     'print-x': function () { printReport('INFORME X (sin cierre)', summarize(salesList()), Date.now()); },
     csv: function () { exportCsv(); },
     'close-z': function () {
-      if (!isAdmin()) return;
       var sales = salesList();
       if (!sales.length) return toast(t('caja.nothing'));
       if (Object.keys(S.tickets).length && !confirm(t('caja.openWarn'))) return;
@@ -816,6 +855,7 @@
         Object.keys(S.orders).forEach(function (k) { if (S.orders[k].status !== 'new') upd['orders/' + k] = null; });
         return Store.update('', upd);
       }).then(function () {
+        audit('closeZ', fmt(c.summary.total) + ' · ' + c.summary.count + ' tickets');
         printReport('CIERRE Z', c.summary, c.closedAt);
       }).catch(function (e) { toast(t('sync.storageErr', { e: e.message })); });
     },
@@ -825,7 +865,14 @@
     },
     reprint: function (d) {
       var s = S.sales[d.id];
-      if (s) printTicket(s, s);
+      if (!s) return;
+      audit('reprint', (s.invoice || s.id) + ' · ' + fmt(s.total));
+      printTicket(s, s);
+    },
+    drawer: function () {
+      Devices.openDrawer().then(function () {
+        audit('drawer', '');
+      }).catch(function (e) { toast(e.message === 'browser' ? t('dev.drawerBrowser') : t('dev.err', { e: e.message })); });
     }
   };
 
@@ -874,10 +921,13 @@
     var tk = ticketOf(S.table);
     var l = tk.lines[S.sel];
     if (!l) return toast(t('msg.selectLine'));
-    if (delta < 0 && l.sent && !isAdmin()) return toast(t('msg.sentAdmin'));
-    l.qty = round2(l.qty + delta);
-    if (l.qty <= 0) { tk.lines.splice(S.sel, 1); S.sel = -1; }
-    saveTicket(tk); render();
+    var go = function () {
+      if (delta < 0 && l.sent) audit('delSent', '1× ' + l.name);
+      l.qty = round2(l.qty + delta);
+      if (l.qty <= 0) { tk.lines.splice(tk.lines.indexOf(l), 1); S.sel = -1; }
+      saveTicket(tk); render();
+    };
+    if (delta < 0 && l.sent) allow('delSent', go); else go();
   }
 
   function numKey(k) {
@@ -888,16 +938,30 @@
     var n = takeNumber();
     if (k === 'DTO%') {
       if (n > 100) return toast(t('msg.max100'));
-      tk.discountPct = n; tk.discountEur = 0;
-      toast(n ? t('msg.discPct', { n: n }) : t('msg.discOff'));
+      return allow('discount', function () {
+        tk.discountPct = n; tk.discountEur = 0;
+        audit('discount', tableLabel(S.table) + ' · ' + n + '%');
+        toast(n ? t('msg.discPct', { n: n }) : t('msg.discOff'));
+        saveTicket(tk); render();
+      });
     } else if (k === 'DTO€') {
-      tk.discountEur = round2(n); tk.discountPct = 0;
-      toast(n ? t('msg.discEur', { n: fmt(n) }) : t('msg.discOff'));
+      return allow('discount', function () {
+        tk.discountEur = round2(n); tk.discountPct = 0;
+        audit('discount', tableLabel(S.table) + ' · ' + fmt(n));
+        toast(n ? t('msg.discEur', { n: fmt(n) }) : t('msg.discOff'));
+        saveTicket(tk); render();
+      });
     } else if (k === 'PREC' || k === 'CANT') {
       var l = tk.lines[S.sel];
       if (!l) { render(); return toast(t('msg.numFirst')); }
-      if (k === 'PREC') { l.price = round2(n); l.base = round2(n - extrasOf(l.mods)); }
-      else if (n > 0) l.qty = round2(n);
+      if (k === 'PREC') {
+        return allow('price', function () {
+          audit('price', l.name + ' · ' + fmt(l.price) + ' → ' + fmt(n));
+          l.price = round2(n); l.base = round2(n - extrasOf(l.mods));
+          saveTicket(tk); render();
+        });
+      }
+      if (n > 0) l.qty = round2(n);
       else return render();
     }
     saveTicket(tk); render();
@@ -1077,7 +1141,10 @@
     var tk = ticketOf(S.table);
     var line = tk.lines[index];
     if (!line) return;
-    if (line.sent && !isAdmin()) return toast(t('msg.sentAdmin'));
+    if (line.sent && !can('delSent') && !S.authBy) {
+      return askSupervisor('delSent', function () { openMods(index); });
+    }
+    if (line.sent) audit('modSent', fmtQty(line.qty) + '× ' + line.name);
     var st = { sel: {}, note: line.note || '', units: Math.ceil(line.qty) };
     (line.mods || []).forEach(function (m) { st.sel[m.id] = true; });
     var whole = Math.ceil(line.qty) === line.qty && line.qty > 1;
@@ -1157,6 +1224,7 @@
         if (!name) return toast(t('free.needName'));
         var price = round2(String(st.price).replace(',', '.'));
         closeModal();
+        audit('free', st.qty + '× ' + name + ' · ' + fmt(price));
         addLines(S.table, [{ pid: 'libre', name: name, base: price, qty: st.qty, free: true }]);
       }
     });
@@ -1341,6 +1409,35 @@
     });
   }
 
+  // ---------------------------------------------------------------- autorización
+  function askSupervisor(perm, fn) {
+    var pin = '';
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>🔐 ' + t('auth.title') + '</h2><p>' + t('auth.body', { u: '<b>' + esc(S.user.name) + '</b>', p: '<b>' + t('perm.' + perm) + '</b>' }) + '</p>' +
+        '<div class="pin-dots">' + [0, 1, 2, 3].map(function (i) { return '<i class="' + (i < pin.length ? 'on' : '') + '"></i>'; }).join('') + '</div>' +
+        '<div class="keypad">' + ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK'].map(function (k) {
+          return '<button data-k="' + k + '" class="' + (k === 'OK' ? 'ok' : '') + '">' + k + '</button>';
+        }).join('') + '</div><div class="btn-row" style="margin-top:12px"><button class="btn" data-k="X">' + t('cancel') + '</button></div>';
+    }
+    function check() {
+      var boss = S.users.filter(function (u) { return u.admin && String(u.pin) === pin; })[0];
+      if (!boss) { pin = ''; draw(); return toast(t('pin.wrong')); }
+      closeModal();
+      toast(t('auth.ok', { u: boss.name }));
+      S.authBy = boss.name;
+      try { fn(); } finally { S.authBy = null; }
+    }
+    openModal('pin', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === '⌫') pin = pin.slice(0, -1);
+      else if (k === 'OK') return check();
+      else if (pin.length < 6) pin += k;
+      draw();
+      if (pin.length >= 4 && S.users.some(function (u) { return u.admin && String(u.pin) === pin; })) check();
+    });
+  }
+
   // ---------------------------------------------------------------- PIN
 
   function askPin(user) {
@@ -1436,7 +1533,9 @@
           return Store.update('', upd).then(function () {
             delete S.tickets[tk.table];
             closeModal();
-            if (st.print) printTicket(sale, sale);
+            var drawer = st.method === 'efectivo' && Devices.cfg().drawerOnCash;
+            if (st.print) printTicket(sale, sale, { drawer: drawer });
+            else if (drawer) Devices.openDrawer().catch(function () { /* navegador: lo abre el driver al imprimir */ });
             toast(t('msg.paid', { n: fmt(tot.total) }) + (sale.change ? ' · ' + t('msg.change', { n: fmt(sale.change) }) : ''));
             S.view = 'map'; S.table = null; S.showTicket = false; render();
           });
@@ -1586,39 +1685,42 @@
   // ---------------------------------------------------------------- impresión
   // Los tickets y comandas se imprimen siempre en español.
 
-  function printHtml(html) {
-    var pa = document.getElementById('print-area');
-    pa.innerHTML = html;
-    setTimeout(function () { window.print(); }, 50);
+  // Los documentos se imprimen con Devices (navegador, Epson en red o USB directa,
+  // según la configuración de este dispositivo). Errores de impresora: aviso.
+  function printDoc(doc, which, opts) {
+    return Devices.print(doc, which, opts).catch(function (e) {
+      toast(t('dev.err', { e: e.message === 'no-port' ? t('dev.connect') : e.message }));
+    });
   }
 
   function header() {
     var st = S.settings;
-    return '<h1>' + esc(st.name) + '</h1><div class="c">' + esc(st.address) + (st.nif ? '<br>NIF ' + esc(st.nif) : '') + '</div><hr>';
+    return [['h1', st.name], ['c', st.address]].concat(st.nif ? [['c', 'NIF ' + st.nif]] : []).concat([['hr']]);
   }
 
-  function printTicket(tk, sale) {
+  function printTicket(tk, sale, opts) {
     var tot = P.ticketTotals(tk);
     var vat = sale && sale.vatRate != null ? sale.vatRate : (Number(S.settings.vat) || 0);
     var base = round2(tot.total / (1 + vat / 100));
     var when = sale ? sale.closedAt : Date.now();
-    printHtml(header() +
-      '<div>' + (sale ? 'Factura simplificada ' + esc(sale.invoice || sale.id.toUpperCase()) : '<b>PRE-CUENTA (no válida como factura)</b>') + '</div>' +
-      '<div>' + esc(tableLabelEs(tk.table)) + ' · ' + esc(sale ? sale.cashier : S.user.name) + '</div>' +
-      '<div>' + new Date(when).toLocaleString('es-ES') + '</div><hr>' +
-      '<table>' + tk.lines.map(function (l) {
-        var extras = (l.mods || []).filter(function (m) { return m.type === 'extra'; });
-        return '<tr><td>' + fmtQty(l.qty) + '</td><td>' + esc(l.name) +
-          (extras.length ? '<br>&nbsp;+ ' + esc(extras.map(function (m) { return m.name; }).join(', ')) : '') +
-          '</td><td class="r">' + fmt(l.price * l.qty) + '</td></tr>';
-      }).join('') + '</table><hr>' +
-      '<table>' + (tot.discount ? '<tr><td>Subtotal</td><td class="r">' + fmt(tot.subtotal) + '</td></tr><tr><td>Descuento</td><td class="r">-' + fmt(tot.discount) + '</td></tr>' : '') +
-      '<tr class="big"><td>TOTAL</td><td class="r">' + fmt(tot.total) + '</td></tr>' +
-      '<tr><td>Base imponible</td><td class="r">' + fmt(base) + '</td></tr>' +
-      '<tr><td>IVA ' + vat + '%</td><td class="r">' + fmt(tot.total - base) + '</td></tr>' +
-      (sale ? '<tr><td>' + esc(METHOD_ES[sale.method] || sale.method) + '</td><td class="r">' + fmt(sale.given) + '</td></tr>' +
-        (sale.change ? '<tr><td>Cambio</td><td class="r">' + fmt(sale.change) + '</td></tr>' : '') : '') +
-      '</table><hr><div class="c">' + esc(S.settings.footer) + '</div>');
+    var doc = header().concat([
+      sale ? ['t', 'Factura simplificada ' + (sale.invoice || sale.id.toUpperCase())] : ['b', 'PRE-CUENTA (no válida como factura)'],
+      ['t', tableLabelEs(tk.table) + ' · ' + (sale ? sale.cashier : S.user.name)],
+      ['t', new Date(when).toLocaleString('es-ES')], ['hr']
+    ]);
+    tk.lines.forEach(function (l) {
+      var extras = (l.mods || []).filter(function (m) { return m.type === 'extra'; });
+      doc.push(['item', fmtQty(l.qty), l.name, extras.length ? ['+ ' + extras.map(function (m) { return m.name; }).join(', ')] : [], fmt(l.price * l.qty)]);
+    });
+    doc.push(['hr']);
+    if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);
+    doc.push(['lrb', 'TOTAL', fmt(tot.total)], ['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
+    if (sale) {
+      doc.push(['lr', METHOD_ES[sale.method] || sale.method, fmt(sale.given)]);
+      if (sale.change) doc.push(['lr', 'Cambio', fmt(sale.change)]);
+    }
+    doc.push(['hr'], ['c', S.settings.footer]);
+    return printDoc(doc, 'receipt', opts);
   }
 
   // Comanda numerada (#57) guardada ANTES de imprimir: si la impresora o la luz
@@ -1647,27 +1749,21 @@
   }
 
   function printComanda(r, reprint) {
-    printHtml('<h1>COMANDA #' + r.n + '</h1>' +
-      (reprint ? '<div class="c big">*** REIMPRESIÓN ***</div>' : '') +
-      '<div class="c big">' + esc(tableLabelEs(r.table)) + '</div>' +
-      '<div class="c">' + time(r.at) + ' · ' + esc(r.user) +
-      (reprint ? '<br>reimpresa ' + time(Date.now()) : '') + '</div><hr>' +
-      '<table class="kitchen">' + r.lines.map(function (l) {
-        var sub = [l.mods, l.note].filter(Boolean);
-        return '<tr><td>' + fmtQty(l.qty) + ' x</td><td>' + esc(l.name) + sub.map(function (x) { return '<br>» ' + esc(x); }).join('') + '</td></tr>';
-      }).join('') + '</table>');
+    var doc = [['h1', 'COMANDA #' + r.n]];
+    if (reprint) doc.push(['cb', '*** REIMPRESIÓN ***']);
+    doc.push(['cb', tableLabelEs(r.table)], ['c', time(r.at) + ' · ' + r.user]);
+    if (reprint) doc.push(['c', 'reimpresa ' + time(Date.now())]);
+    doc.push(['hr']);
+    r.lines.forEach(function (l) { doc.push(['kitem', fmtQty(l.qty) + ' x', l.name, [l.mods, l.note].filter(Boolean)]); });
+    return printDoc(doc, 'kitchen');
   }
 
   function printReport(title, s, when) {
-    printHtml(header() + '<div class="c"><b>' + title + '</b><br>' + new Date(when).toLocaleString('es-ES') + '</div><hr><table>' +
-      '<tr><td>Tickets</td><td class="r">' + s.count + '</td></tr>' +
-      METHODS.map(function (m) {
-        return '<tr><td>' + METHOD_ES[m] + '</td><td class="r">' + fmt(s.byMethod[m] || 0) + '</td></tr>';
-      }).join('') +
-      '<tr><td>Descuentos</td><td class="r">' + fmt(s.discounts) + '</td></tr>' +
-      '<tr class="big"><td>TOTAL</td><td class="r">' + fmt(s.total) + '</td></tr></table><hr><table>' +
-      Object.keys(s.byUser).map(function (u) { return '<tr><td>' + esc(u) + '</td><td class="r">' + fmt(s.byUser[u]) + '</td></tr>'; }).join('') +
-      '</table>');
+    var doc = header().concat([['cb', title], ['c', new Date(when).toLocaleString('es-ES')], ['hr'], ['lr', 'Tickets', String(s.count)]]);
+    METHODS.forEach(function (m) { doc.push(['lr', METHOD_ES[m], fmt(s.byMethod[m] || 0)]); });
+    doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)], ['hr']);
+    Object.keys(s.byUser).forEach(function (u) { doc.push(['lr', u, fmt(s.byUser[u])]); });
+    return printDoc(doc, 'receipt');
   }
 
   // ---------------------------------------------------------------- modal / avisos
@@ -1690,6 +1786,26 @@
     else if (modal.dataset.kind === 'pin' && e.key === 'Backspace') modalHandler('⌫');
     else if (e.key === 'Escape' && modalHandler) { Voice.stop(); closeModal(); }
     else if (e.key === 'Enter' && modal.dataset.kind === 'voice' && e.target.id === 'v-text') { e.preventDefault(); modalHandler('parse'); }
+  });
+
+  // Lector de códigos de barras (se comporta como un teclado muy rápido + Enter)
+  var scan = { buf: '', last: 0 };
+  document.addEventListener('keydown', function (e) {
+    if (S.view !== 'ticket' || !modal.classList.contains('hidden')) return;
+    if (/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) return;
+    var now = Date.now();
+    if (now - scan.last > 80) scan.buf = '';
+    scan.last = now;
+    if (e.key === 'Enter') {
+      var code = scan.buf; scan.buf = '';
+      if (code.length < 4) return;
+      e.preventDefault();
+      var it = null;
+      S.menu.some(function (c) { return (c.items || []).some(function (x) { if (x.barcode && String(x.barcode) === code) { it = x; return true; } return false; }); });
+      if (!it) return toast(t('bc.notFound', { c: code }));
+      addLines(S.table, [{ pid: it.id, name: it.name, base: it.price, qty: 1 }]);
+      toast(t('msg.added', { q: 1, n: P.tr(it, I.lang) }));
+    } else if (e.key.length === 1) scan.buf += e.key;
   });
 
   var toastTimer;

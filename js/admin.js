@@ -99,11 +99,14 @@
   var SECTIONS = [
     ['panel', 'adm.nav.panel', secPanel],
     ['products', 'adm.nav.products', secProducts],
+    ['import', 'adm.nav.import', secImport],
     ['cats', 'adm.nav.cats', secCats],
     ['mods', 'adm.nav.mods', secMods],
     ['tables', 'adm.nav.tables', secTables],
     ['hours', 'adm.nav.hours', secHours],
     ['users', 'adm.nav.users', secUsers],
+    ['audit', 'adm.nav.audit', secAudit],
+    ['devices', 'adm.nav.devices', secDevices],
     ['business', 'adm.nav.business', secBusiness],
     ['voice', 'adm.nav.voice', secVoice],
     ['backup', 'adm.nav.backup', secBackup]
@@ -223,6 +226,7 @@
         '<div class="form-grid">' +
         field('name', t('adm.nameEs')) + field('price', t('adm.price'), 'number') +
         field('en', t('adm.nameEn')) + field('zh', t('adm.nameZh')) +
+        field('barcode', t('adm.barcode')) + '<div></div>' +
         '<div class="field"><label>' + t('adm.col.cat') + '</label><select data-f="cat">' + A.menu.map(function (c) {
           return '<option value="' + esc(c.id) + '"' + (c.id === st.cat ? ' selected' : '') + '>' + esc(c.icon || '') + ' ' + esc(c.name) + '</option>';
         }).join('') + '</select></div>' +
@@ -263,7 +267,8 @@
       var item = {
         id: id, name: String(st.name).trim(), en: String(st.en || '').trim(), zh: String(st.zh || '').trim(),
         desc: String(st.desc || '').trim(), desc_en: String(st.desc_en || '').trim(), desc_zh: String(st.desc_zh || '').trim(),
-        price: price, available: st.available !== false, allergens: st.allergens.slice(), img: cur && !photo.removed ? (cur.img || 0) : 0
+        price: price, available: st.available !== false, allergens: st.allergens.slice(), img: cur && !photo.removed ? (cur.img || 0) : 0,
+        barcode: String(st.barcode || '').trim()
       };
       var key = 'p-' + id;
       var p = Promise.resolve();
@@ -426,6 +431,273 @@
       '<p class="muted">' + t('admin.adminNote') + '</p></div>';
     return { html: html };
   }
+
+  // ---------------------------------------------------------------- permisos y registro
+
+  function secAudit() {
+    var staff = A.users.map(function (u, i) { return { u: u, i: i }; });
+    var html = '<div class="card"><h3>' + t('adm.perms') + '</h3><p class="muted">' + t('adm.permsHelp') + '</p><div class="scroll-x"><table class="grid perms"><tr><th></th>' +
+      staff.map(function (x) { return '<th class="c">' + esc(x.u.name) + (x.u.admin ? '<small>' + t('admin.admin') + '</small>' : '') + '</th>'; }).join('') + '</tr>' +
+      P.PERMS.map(function (pm) {
+        return '<tr><td>' + t('perm.' + pm[0]) + '</td>' + staff.map(function (x) {
+          if (x.u.admin) return '<td class="c muted">✓</td>';
+          return '<td class="c"><input type="checkbox" data-edit="perm" data-i="' + x.i + '" data-p="' + pm[0] + '"' + (P.can(x.u, pm[0]) ? ' checked' : '') + '></td>';
+        }).join('') + '</tr>';
+      }).join('') + '</table></div></div>';
+    var log = Object.keys(A.audit || {}).map(function (k) { return A.audit[k]; }).sort(function (a, b) { return b.at - a.at; }).slice(0, 200);
+    html += '<div class="card"><h3>' + t('adm.log') + '</h3>' + (log.length ? '<div class="scroll-x"><table class="grid"><tr><th>' + t('adm.log.when') + '</th><th>' + t('adm.log.who') + '</th><th>' + t('adm.log.auth') + '</th><th>' + t('adm.log.what') + '</th><th>' + t('adm.log.detail') + '</th></tr>' +
+      log.map(function (r) {
+        return '<tr><td>' + new Date(r.at).toLocaleString('es-ES') + '</td><td>' + esc(r.user) + '</td><td>' + esc(r.by || '—') + '</td><td>' + t('audit.' + r.action) + '</td><td>' + esc(r.detail) + '</td></tr>';
+      }).join('') + '</table></div>' : '<p class="muted">' + t('adm.logNone') + '</p>') + '</div>';
+    return { html: html };
+  }
+
+  // ---------------------------------------------------------------- impresoras y cajón
+
+  function secDevices() {
+    var c = Devices.cfg();
+    function block(which) {
+      var d = c[which];
+      var modes = (which === 'kitchen' ? ['same'] : []).concat(['browser', 'epos', 'serial']);
+      return '<div class="card"><h3>' + t('dev.' + which) + '</h3>' +
+        '<div class="field"><label>' + t('dev.mode') + '</label><select data-dev="' + which + '.mode">' + modes.map(function (m) {
+          return '<option value="' + m + '"' + (d.mode === m ? ' selected' : '') + '>' + t('dev.m.' + m) + '</option>';
+        }).join('') + '</select></div>' +
+        (d.mode === 'epos' ? '<div class="form-grid"><div class="field"><label>' + t('dev.ip') + '</label><input type="text" data-dev="' + which + '.ip" value="' + esc(d.ip) + '" placeholder="192.168.1.50"></div>' +
+          '<div class="field"><label>' + t('dev.width') + '</label><select data-dev="' + which + '.width"><option value="48"' + (+d.width === 48 ? ' selected' : '') + '>80 mm</option><option value="32"' + (+d.width === 32 ? ' selected' : '') + '>58 mm</option></select></div></div>' +
+          '<label><input type="checkbox" data-dev="' + which + '.https"' + (d.https ? ' checked' : '') + '> ' + t('dev.https') + '</label>' : '') +
+        (d.mode === 'serial' ? '<div class="form-grid"><div class="field"><label>' + t('dev.width') + '</label><select data-dev="' + which + '.width"><option value="48"' + (+d.width === 48 ? ' selected' : '') + '>80 mm</option><option value="32"' + (+d.width === 32 ? ' selected' : '') + '>58 mm</option></select></div></div>' +
+          (Devices.hasSerial ? '<button class="btn" data-act="dev-connect">' + t('dev.connect') + '</button>' : '<p class="warn">' + t('dev.noSerial') + '</p>') : '') +
+        '</div>';
+    }
+    var html = '<p class="muted">' + t('dev.help') + '</p>' + block('receipt') + block('kitchen') +
+      '<div class="card"><label><input type="checkbox" data-dev="drawerOnCash"' + (c.drawerOnCash ? ' checked' : '') + '> ' + t('dev.drawerOnCash') + '</label>' +
+      (c.receipt.mode === 'browser' ? '<p class="muted">' + t('dev.drawerBrowser') + '</p>' : '') +
+      '<div class="btn-row" style="margin-top:12px"><button class="btn" data-act="dev-test" data-w="receipt">' + t('dev.testReceipt') + '</button>' +
+      '<button class="btn" data-act="dev-test" data-w="kitchen">' + t('dev.testKitchen') + '</button>' +
+      '<button class="btn" data-act="dev-drawer">' + t('dev.testDrawer') + '</button></div></div>';
+    return { html: html };
+  }
+
+  // ---------------------------------------------------------------- importar productos
+  // Lee un Excel/CSV exportado de otro TPV, reconoce las columnas y crea o
+  // actualiza los productos. Se puede deshacer mientras no se salga de la página.
+
+  var IMP_FIELDS = ['name', 'price', 'cat', 'barcode', 'en', 'zh'];
+  var IMP_HINTS = {
+    name: ['nombre', 'descripcion', 'articulo', 'producto', 'denominacion', 'name', 'item', 'product', 'description', 'plato'],
+    price: ['pvp', 'precio', 'price', 'importe', 'tarifa', 'venta'],
+    cat: ['familia', 'categoria', 'grupo', 'seccion', 'category', 'family', 'tipo'],
+    barcode: ['barras', 'ean', 'barcode', 'upc'],
+    en: ['ingles', 'english'],
+    zh: ['chino', 'chinese', '中文']
+  };
+
+  function parseNum(v) {
+    if (typeof v === 'number') return v;
+    var x = String(v || '').replace(/[^\d,.\-]/g, '');
+    if (!x) return NaN;
+    if (x.indexOf(',') >= 0 && x.indexOf('.') >= 0) {
+      x = x.lastIndexOf(',') > x.lastIndexOf('.') ? x.replace(/\./g, '').replace(',', '.') : x.replace(/,/g, '');
+    } else if (x.indexOf(',') >= 0) x = x.replace(',', '.');
+    else if (/^\d{1,3}(\.\d{3})+$/.test(x)) x = x.replace(/\./g, '');
+    return parseFloat(x);
+  }
+
+  function parseCsv(text) {
+    text = String(text).replace(/^\ufeff/, '');
+    var first = text.split(/\r?\n/)[0] || '';
+    var sep = ['\t', ';', ',', '|'].map(function (c) { return [c, first.split(c).length]; }).sort(function (a, b) { return b[1] - a[1]; })[0][0];
+    var rows = [], row = [], cell = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch;
+      } else if (ch === '"' && cell === '') q = true;
+      else if (ch === sep) { row.push(cell); cell = ''; }
+      else if (ch === '\n' || ch === '\r') {
+        if (ch === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else cell += ch;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (c) { return String(c).trim(); }); });
+  }
+
+  function loadXlsx() {
+    if (window.XLSX) return Promise.resolve(window.XLSX);
+    return new Promise(function (resolve, reject) {
+      var sc = document.createElement('script');
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      sc.onload = function () { resolve(window.XLSX); };
+      sc.onerror = function () { reject(new Error('sin conexión')); };
+      document.head.appendChild(sc);
+    });
+  }
+
+  // Reconoce la fila de títulos y qué columna es cada dato.
+  function autoMap(rows) {
+    var hi = 0, best = -1;
+    rows.slice(0, 10).forEach(function (r, i) {
+      var sc = r.reduce(function (n, c) {
+        var h = norm(c);
+        return n + (Object.keys(IMP_HINTS).some(function (f) { return IMP_HINTS[f].some(function (w) { return h.indexOf(w) >= 0; }); }) ? 1 : 0);
+      }, 0);
+      if (sc > best) { best = sc; hi = i; }
+    });
+    var header = best > 0 ? rows[hi] : null;
+    var cols = Math.max.apply(null, rows.map(function (r) { return r.length; }).concat([1]));
+    var map = {};
+    if (header) {
+      IMP_FIELDS.forEach(function (f) {
+        var idx = -1;
+        IMP_HINTS[f].some(function (w) {
+          idx = header.findIndex(function (c, i) { return norm(c).indexOf(w) >= 0 && !Object.keys(map).some(function (k) { return map[k] === i; }); });
+          return idx >= 0;
+        });
+        if (idx >= 0) map[f] = idx;
+      });
+    }
+    var data = rows.slice(header ? hi + 1 : 0);
+    // sin títulos reconocibles: precio = columna casi siempre numérica; nombre = la de textos más largos
+    if (map.price == null || map.name == null) {
+      var stats = [];
+      for (var c = 0; c < cols; c++) {
+        var nums = 0, len = 0;
+        data.slice(0, 50).forEach(function (r) { var v = r[c]; if (!isNaN(parseNum(v)) && String(v).trim()) nums++; len += String(v || '').length; });
+        stats.push({ c: c, nums: nums, len: len });
+      }
+      var n = Math.min(50, data.length) || 1;
+      if (map.price == null) {
+        var pc = stats.filter(function (x) { return x.nums / n > 0.8 && x.c !== map.name; }).pop();
+        if (pc) map.price = pc.c;
+      }
+      if (map.name == null) {
+        var nc = stats.filter(function (x) { return x.c !== map.price && x.nums / n < 0.5; }).sort(function (a, b) { return b.len - a.len; })[0];
+        if (nc) map.name = nc.c;
+      }
+    }
+    return { header: header, data: data, cols: cols, map: map };
+  }
+
+  // Calcula qué pasará (sin guardar nada todavía).
+  function planImport() {
+    var I2 = A.imp, m = I2.map, vat = Number(A.settings.vat) || 0;
+    var menu = I2.mode === 'replace' ? [] : clone(A.menu);
+    var stats = { a: 0, u: 0, c: 0, s: 0 }, rows = [];
+    function findCat(name) {
+      var n = norm(name);
+      return menu.filter(function (c) { return [c.name, c.en, c.zh].some(function (x) { return x && norm(x) === n; }); })[0];
+    }
+    I2.data.forEach(function (r) {
+      var name = String(r[m.name] == null ? '' : r[m.name]).trim();
+      var price = parseNum(r[m.price]);
+      if (!name || isNaN(price)) { stats.s++; rows.push({ name: name, price: r[m.price], st: 'skip' }); return; }
+      if (!I2.vatIncl) price = price * (1 + vat / 100);
+      price = round2(price);
+      var catName = m.cat != null && String(r[m.cat] || '').trim() ? String(r[m.cat]).trim() : t('imp.fallbackCat');
+      var existing = null;
+      menu.some(function (c) { return (c.items || []).some(function (it) { if (norm(it.name) === norm(name)) { existing = it; return true; } return false; }); });
+      var extra = {};
+      if (m.barcode != null && String(r[m.barcode] || '').trim()) extra.barcode = String(r[m.barcode]).trim();
+      if (m.en != null && String(r[m.en] || '').trim()) extra.en = String(r[m.en]).trim();
+      if (m.zh != null && String(r[m.zh] || '').trim()) extra.zh = String(r[m.zh]).trim();
+      if (existing) {
+        var changed = existing.price !== price;
+        existing.price = price;
+        Object.assign(existing, extra);
+        if (changed) stats.u++;
+        rows.push({ name: name, price: price, cat: catName, st: changed ? 'upd' : 'same' });
+      } else {
+        // la categoría solo se crea si de verdad entra un producto nuevo en ella
+        var cat = findCat(catName);
+        if (!cat) {
+          cat = { id: 'c' + Store.newId(), name: catName.charAt(0).toUpperCase() + catName.slice(1).toLowerCase(), icon: '🍽️', items: [] };
+          menu.push(cat); stats.c++;
+        }
+        cat.items = cat.items || [];
+        cat.items.push(Object.assign({ id: cat.id + '-' + Store.newId(), name: name, price: price, available: true }, extra));
+        stats.a++;
+        rows.push({ name: name, price: price, cat: catName, st: 'new' });
+      }
+    });
+    return { menu: menu, stats: stats, rows: rows };
+  }
+
+  function secImport() {
+    var I2 = A.imp;
+    var html = '<div class="card"><p>' + t('imp.help') + '</p><p class="muted">' + t('imp.tip') + '</p>' +
+      '<div class="btn-row"><label class="btn primary" style="display:inline-flex;align-items:center;cursor:pointer">' + t('imp.file') +
+      '<input id="imp-file" type="file" accept=".csv,.txt,.tsv,.xlsx,.xls,.ods,text/csv" hidden></label>' +
+      (A.impUndo ? '<button class="btn" data-act="imp-undo">' + t('imp.undo') + '</button>' : '') + '</div>' +
+      '<div class="field" style="margin-top:12px"><label>' + t('imp.paste') + '</label><textarea id="imp-paste" rows="4" placeholder="Nombre&#9;Familia&#9;PVP&#10;Caña&#9;Cervezas&#9;1,50"></textarea></div>' +
+      '<button class="btn" data-act="imp-paste">' + t('imp.read') + '</button></div>';
+    if (I2) {
+      var opts = function (f) {
+        return '<option value="">' + t('imp.none') + '</option>' + Array.apply(null, Array(I2.cols)).map(function (_, c) {
+          var label = I2.header ? String(I2.header[c] || '').trim() : '';
+          return '<option value="' + c + '"' + (I2.map[f] === c ? ' selected' : '') + '>' + String.fromCharCode(65 + (c % 26)) + (label ? ' · ' + esc(label) : '') + '</option>';
+        }).join('');
+      };
+      var plan = planImport();
+      I2.plan = plan;
+      html += '<div class="card"><h3>' + t('imp.map') + '</h3><p class="muted">' + t('imp.rows', { n: I2.data.length, f: esc(I2.file) }) + '</p><div class="form-grid">' +
+        IMP_FIELDS.map(function (f) { return '<div class="field"><label>' + t('imp.f.' + f) + '</label><select data-imp="' + f + '">' + opts(f) + '</select></div>'; }).join('') +
+        '</div><label style="display:block;margin:6px 0"><input type="checkbox" data-imp="vatIncl"' + (I2.vatIncl ? ' checked' : '') + '> ' + t('imp.vatIncl') + '</label>' +
+        '<label style="display:block;margin:6px 0"><input type="radio" name="impmode" data-imp="mode" value="merge"' + (I2.mode !== 'replace' ? ' checked' : '') + '> ' + t('imp.mode.merge') + '</label>' +
+        '<label style="display:block;margin:6px 0"><input type="radio" name="impmode" data-imp="mode" value="replace"' + (I2.mode === 'replace' ? ' checked' : '') + '> ' + t('imp.mode.replace') + '</label></div>' +
+        '<div class="card"><h3>' + t('imp.preview') + '</h3><p><b>' + t('imp.summary', plan.stats) + '</b></p><div class="scroll-x"><table class="grid"><tr><th>' + t('adm.col.product') + '</th><th>' + t('adm.col.cat') + '</th><th class="num">' + t('adm.col.price') + '</th><th></th></tr>' +
+        plan.rows.slice(0, 40).map(function (r) {
+          return '<tr class="' + (r.st === 'skip' ? 'off-row' : '') + '"><td>' + esc(r.name || '—') + '</td><td>' + esc(r.cat || '') + '</td><td class="num">' + (typeof r.price === 'number' ? fmt(r.price) : esc(r.price || '')) + '</td><td><small>' + t('imp.status.' + r.st) + '</small></td></tr>';
+        }).join('') + '</table></div>' + (plan.rows.length > 40 ? '<p class="muted">… +' + (plan.rows.length - 40) + '</p>' : '') +
+        '<div class="btn-row" style="margin-top:12px"><button class="btn ok" data-act="imp-apply"' + (plan.stats.a + plan.stats.u ? '' : ' disabled') + '>' + t('imp.apply') + '</button></div></div>';
+    }
+    return { html: html };
+  }
+
+  function startImport(rows, file) {
+    if (!rows.length) return toast(t('imp.needCols'));
+    var r = autoMap(rows);
+    A.imp = { file: file, header: r.header, data: r.data, cols: r.cols, map: r.map, vatIncl: true, mode: 'merge' };
+    render();
+  }
+
+  app.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el.id === 'imp-file') {
+      var f = el.files[0];
+      if (!f) return;
+      if (/\.(xlsx|xls|ods)$/i.test(f.name)) {
+        Promise.all([loadXlsx(), f.arrayBuffer()]).then(function (r) {
+          var wb = r[0].read(r[1], { type: 'array' });
+          var rows = r[0].utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+          startImport(rows.filter(function (x) { return x.some(function (c) { return String(c).trim(); }); }), f.name);
+        }).catch(function (err) { toast(t('imp.xlsxErr', { e: err.message })); });
+      } else {
+        // Los programas de Windows suelen exportar en Windows-1252 (ñ, á, €): si no es UTF-8 válido, se lee así
+        f.arrayBuffer().then(function (buf) {
+          var txt;
+          try { txt = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (err) { txt = new TextDecoder('windows-1252').decode(buf); }
+          startImport(parseCsv(txt), f.name);
+        });
+      }
+      return;
+    }
+    if (el.dataset && el.dataset.imp && A.imp) {
+      var k = el.dataset.imp;
+      if (k === 'vatIncl') A.imp.vatIncl = el.checked;
+      else if (k === 'mode') A.imp.mode = el.value;
+      else A.imp.map[k] = el.value === '' ? null : Number(el.value);
+      return render();
+    }
+    if (el.dataset && el.dataset.dev) {
+      var c = Devices.cfg(), path = el.dataset.dev.split('.');
+      var v = el.type === 'checkbox' ? el.checked : el.value;
+      if (path.length === 1) c[path[0]] = v; else c[path[0]][path[1]] = path[1] === 'width' ? Number(v) : v;
+      Devices.save(c);
+      render();
+    }
+  });
 
   // ---------------------------------------------------------------- negocio
 
@@ -707,6 +979,10 @@
         if (!/^\d{4,6}$/.test(val)) { toast(t('msg.pinFormat')); el.value = A.users[d.i].pin; return; }
         users[d.i].pin = val; return saveUsers(users);
       case 'u-admin': users[d.i].admin = val; return saveUsers(users);
+      case 'perm':
+        users[d.i].perms = Object.assign({}, users[d.i].perms);
+        users[d.i].perms[d.p] = !!val;
+        return saveUsers(users);
       case 'sch-use': return Store.update('public/qr', { useSchedule: !!val });
       case 'sch-day':
         if (!P.validRanges(val)) { toast(t('sch.bad', { v: val })); el.value = ((A.qr.days || [])[d.i] || {})[d.f] || ''; return; }
@@ -865,6 +1141,37 @@
     },
 
     'backup-dl': backupDownload,
+    'imp-paste': function () {
+      var txt = document.getElementById('imp-paste').value;
+      if (txt.trim()) startImport(parseCsv(txt), 'Excel');
+    },
+    'imp-apply': function () {
+      var I2 = A.imp;
+      if (!I2 || I2.map.name == null || I2.map.price == null) return toast(t('imp.needCols'));
+      if (I2.mode === 'replace' && !confirm(t('imp.replaceConfirm'))) return;
+      A.impUndo = clone(A.menu);
+      saveMenu(I2.plan.menu);
+      A.imp = null;
+      toast(t('imp.done'));
+    },
+    'imp-undo': function () {
+      if (!A.impUndo) return;
+      saveMenu(A.impUndo);
+      A.impUndo = null;
+      toast(t('imp.undone'));
+    },
+    'dev-connect': function () {
+      Devices.connectSerial().then(function () { toast(t('dev.connected')); }).catch(function (e) { if (e.name !== 'NotFoundError') toast(t('dev.err', { e: e.message })); });
+    },
+    'dev-test': function (d) {
+      var doc = d.w === 'kitchen'
+        ? [['h1', 'COMANDA #0'], ['cb', 'PRUEBA'], ['hr'], ['kitem', '2 x', 'Caña', []], ['kitem', '1 x', 'Hamburguesa Básica', ['SIN Cebolla · EXTRA Bacon', 'Al punto']]]
+        : [['h1', A.settings.name], ['c', A.settings.address], ['hr'], ['b', 'PRUEBA DE IMPRESIÓN · ñ á é í ó ú €'], ['item', '2', 'Caña', [], '3,00 €'], ['hr'], ['lrb', 'TOTAL', '3,00 €']];
+      Devices.print(doc, d.w).then(function () { toast(t('dev.sent')); }).catch(function (e) { toast(t('dev.err', { e: e.message })); });
+    },
+    'dev-drawer': function () {
+      Devices.openDrawer().then(function () { toast(t('dev.sent')); }).catch(function (e) { toast(e.message === 'browser' ? t('dev.drawerBrowser') : t('dev.err', { e: e.message })); });
+    },
     'backup-up': backupUpload,
 
     range: function (d) { A.range = d.r; A.from = ''; A.to = ''; render(); },
@@ -937,6 +1244,7 @@
     Store.on('layout', function (v) { A.layout = (v && v.length) ? v : P.LAYOUT; render(); });
     Store.on('temp', function (v) { A.temp = v || {}; render(); });
     Store.on('sales', function (v) { A.sales = v || {}; render(); });
+    Store.on('audit', function (v) { A.audit = v || {}; render(); });
     Store.on('users', function (v) {
       A.users = v || P.DEFAULT_USERS;
       if (!A.user) {
