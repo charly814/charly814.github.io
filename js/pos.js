@@ -30,6 +30,14 @@
     settings: P.DEFAULT_SETTINGS,
     tickets: {},
     raw: {},
+    layout: P.LAYOUT,
+    temp: {},
+    joins: {},
+    qr: P.DEFAULT_QR,
+    joinInto: null,
+    joinPick: false,
+    joinFrom: null,
+    editLayout: false,
     orders: {},
     sales: {},
     closures: {},
@@ -94,6 +102,12 @@
   });
   var archiving = {};
   Store.on('prints', function (v) { S.prints = v || {}; render(); });
+  Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
+  Store.on('temp', function (v) { S.temp = v || {}; render(); });
+  Store.on('joins', function (v) { S.joins = v || {}; render(); });
+  Store.on('public/qr', function (v) { S.qr = Object.assign({}, P.DEFAULT_QR, v || {}); render(); });
+  // el estado del horario cambia con la hora
+  setInterval(function () { if (S.view === 'map' && modal.classList.contains('hidden')) render(); }, 60000);
   Store.on('counters', function (v) { S.counters = v || {}; });
   Store.on('orders', function (v) {
     var before = pendingOrders().length;
@@ -220,6 +234,91 @@
   }
 
   function tableLabel(id) { return id === QUICK ? t('quickSale') : t('table', { t: id }); }
+
+  // ---------------------------------------------------------------- mesas
+  // Plano fijo (S.layout, editable por el administrador) + mesas temporales
+  // (S.temp: terraza, mesas añadidas al lado) + mesas juntadas (S.joins:
+  // hija -> principal; la cuenta va siempre en la principal).
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function tempList() {
+    return Object.keys(S.temp).map(function (k) { return S.temp[k]; }).sort(function (a, b) { return a.at - b.at; });
+  }
+  function allTables() {
+    var out = S.layout.map(function (tb) { return Object.assign({}, tb); });
+    var byId = {};
+    out.forEach(function (tb) { byId[tb.id] = tb; });
+    // Cada mesa temporal se coloca en el hueco más libre alrededor de su vecina
+    // (el plano es 1,45 veces más ancho que alto: se corrige al medir distancias).
+    function clearance(x, y) {
+      return out.reduce(function (m, o) {
+        var dx = o.x - x, dy = (o.y - y) / 1.45;
+        return Math.min(m, Math.sqrt(dx * dx + dy * dy));
+      }, 99);
+    }
+    var loose = 0;
+    tempList().forEach(function (tp) {
+      var near = tp.near && byId[tp.near];
+      var x, y;
+      if (near) {
+        var best = null;
+        [6, 8, 10, 13].some(function (r) {
+          for (var a = 0; a < 8; a++) {
+            var ang = Math.PI / 2 + a * Math.PI / 4;         // empieza por debajo
+            var cx = clamp(near.x + Math.cos(ang) * r, 3, 97), cy = clamp(near.y + Math.sin(ang) * r * 1.45, 3, 97);
+            var c = clearance(cx, cy);
+            if (!best || c > best.c) best = { x: cx, y: cy, c: c };
+          }
+          return best.c >= 5;
+        });
+        x = best.x; y = best.y;
+      } else { loose++; x = 4; y = 4 + loose * 9; }
+      out.push({ id: tp.id, x: x, y: y, shape: 'square', temp: true, near: tp.near || null });
+    });
+    return out;
+  }
+  // Orden para la lista del móvil: cada mesa temporal justo después de su vecina.
+  function tablesForList() {
+    var all = allTables(), out = [];
+    var temps = all.filter(function (x) { return x.temp; });
+    all.filter(function (x) { return !x.temp; }).forEach(function (tb) {
+      out.push(tb);
+      temps.filter(function (x) { return x.near === tb.id; }).forEach(function (x) { out.push(x); });
+    });
+    return out.concat(temps.filter(function (x) { return !x.near || !S.layout.some(function (tb) { return tb.id === x.near; }); }));
+  }
+  function tableExists(id) { return id === QUICK || S.layout.some(function (tb) { return tb.id === id; }) || !!S.temp[id]; }
+  function mainOf(id) {
+    var m = id, guard = 0;
+    while (S.joins[m] && guard++ < 10) m = S.joins[m];
+    return m;
+  }
+  function childrenOf(id) { return Object.keys(S.joins).filter(function (c) { return S.joins[c] === id; }); }
+
+  // Al cerrar la cuenta de una mesa: se deshacen sus uniones y desaparecen sus mesas temporales.
+  function closeTablePatch(table, upd) {
+    childrenOf(table).forEach(function (c) {
+      upd['joins/' + c] = null;
+      if (S.temp[c]) upd['temp/' + c] = null;
+    });
+    if (S.joins[table]) upd['joins/' + table] = null;
+    if (S.temp[table]) upd['temp/' + table] = null;
+    return upd;
+  }
+
+  function qrStateText() {
+    var st = P.qrStatus(S.qr);
+    if (st.reason === 'paused') return { cls: 'off', text: t('qr.stPaused') };
+    if (!st.open) return { cls: 'off', text: t('qr.stClosed') };
+    if (!st.kitchen) return { cls: 'warn', text: t('qr.stKitchen') };
+    return { cls: 'on', text: t('qr.stOpen') };
+  }
+  function qrControls() {
+    var st = qrStateText();
+    var kOff = S.qr.kitchenOffUntil && S.qr.kitchenOffUntil > Date.now();
+    return '<span class="qr-state ' + st.cls + '">' + st.text + '</span>' +
+      '<button class="btn" data-act="qr-pause">' + t(S.qr.paused ? 'qr.resume' : 'qr.pause') + '</button>' +
+      '<button class="btn" data-act="kitchen-toggle">' + t(kOff ? 'qr.kitchenOn' : 'qr.kitchenOff') + '</button>';
+  }
   function tableLabelEs(id) { return id === QUICK ? 'Venta rápida' : 'Mesa ' + id; }
 
   // Nombre de una línea en el idioma del TPV (las líneas guardan el nombre en español).
@@ -328,33 +427,61 @@
     var orderTables = {};
     pendingOrders().forEach(function (o) { orderTables[o.table] = (orderTables[o.table] || 0) + 1; });
     function state(id) {
-      var tk = S.tickets[id];
-      return { busy: tk && (tk.lines || []).length, total: tk ? P.ticketTotals(tk).total : 0, qr: orderTables[id] || 0 };
+      var main = mainOf(id);
+      var tk = S.tickets[main];
+      return {
+        busy: tk && (tk.lines || []).length, total: tk ? P.ticketTotals(tk).total : 0, qr: orderTables[id] || 0,
+        joinedTo: main !== id ? main : null, hasChildren: childrenOf(id).length > 0
+      };
     }
-    var floor = P.LAYOUT.map(function (tb) {
+    function classes(base, tb, st) {
+      return base + (st.busy ? ' busy' : '') + (st.qr ? ' qr' : '') + (tb.temp ? ' temp' : '') + (st.joinedTo ? ' joined' : '');
+    }
+    var editing = S.editLayout;
+    var tables = editing ? S.layout : allTables();
+    var floor = tables.map(function (tb) {
       var st = state(tb.id);
-      var cls = 'tbl ' + tb.shape + (st.busy ? ' busy' : '') + (st.qr ? ' qr' : '');
-      return '<button class="' + cls + '" style="left:' + tb.x + '%;top:' + tb.y + '%" data-act="open-table" data-id="' + tb.id + '">' +
-        '<span>' + tb.id + '</span>' + (st.busy && tb.shape !== 'stool' ? '<small>' + fmt(st.total) + '</small>' : '') +
+      var attrs = editing ? 'data-drag="' + esc(tb.id) + '"' : 'data-act="open-table" data-id="' + esc(tb.id) + '"';
+      return '<button class="' + classes('tbl ' + tb.shape, tb, st) + '" style="left:' + tb.x + '%;top:' + tb.y + '%" ' + attrs + '>' +
+        '<span>' + esc(tb.id) + '</span>' +
+        (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy && tb.shape !== 'stool' ? '<small>' + fmt(st.total) + '</small>' : '') +
+        (st.hasChildren ? '<i class="link">🔗</i>' : '') +
         (st.qr ? '<i class="alert">QR ' + st.qr + '</i>' : '') + '</button>';
     }).join('');
     // En el móvil, una cuadrícula de botones es más rápida que el plano.
-    var list = P.LAYOUT.map(function (tb) {
+    var list = tablesForList().map(function (tb) {
       var st = state(tb.id);
-      return '<button class="tl' + (st.busy ? ' busy' : '') + (st.qr ? ' qr' : '') + '" data-act="open-table" data-id="' + tb.id + '">' +
-        '<b>' + tb.id + '</b>' + (st.busy ? '<small>' + fmt(st.total) + '</small>' : '') + (st.qr ? '<i class="alert">QR</i>' : '') + '</button>';
+      return '<button class="' + classes('tl', tb, st) + '" data-act="open-table" data-id="' + esc(tb.id) + '">' +
+        '<b>' + esc(tb.id) + '</b>' +
+        (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy ? '<small>' + fmt(st.total) + '</small>' : '') +
+        (st.hasChildren ? '<i class="link">🔗</i>' : '') +
+        (st.qr ? '<i class="alert">QR</i>' : '') + '</button>';
     }).join('');
     var quick = S.tickets[QUICK] && (S.tickets[QUICK].lines || []).length;
+    var tools = editing
+      ? '<div class="map-tools"><span class="muted">' + t('map.editHint') + '</span>' +
+        '<button class="btn primary" data-act="layout-add">' + t('map.addTable') + '</button>' +
+        '<button class="btn" data-act="layout-reset">' + t('map.resetLayout') + '</button>' +
+        '<button class="btn ok" data-act="layout-edit">' + t('map.editDone') + '</button></div>'
+      : '<div class="map-tools">' +
+        '<button class="btn temp-btn" data-act="temp-new">' + t('map.tempAdd') + '</button>' +
+        '<button class="btn" data-act="join-start">' + t('map.join') + '</button>' +
+        qrControls() +
+        (isAdmin() ? '<button class="btn" data-act="layout-edit">' + t('map.edit') + '</button>' : '') + '</div>';
     return topbar(t('map.title')) +
       (S.recovery ? '<div style="padding:12px 12px 0">' + recoveryCard() + '</div>' : '') +
+      tools +
       (S.moveFrom ? '<div class="banner"><span>' + t('map.move', { t: '<b>' + esc(tableLabel(S.moveFrom)) + '</b>' }) + '</span><button class="btn" data-act="move-cancel">' + t('cancel') + '</button></div>' : '') +
+      (S.joinPick ? '<div class="banner"><span>' + t('map.joinPick') + '</span><button class="btn" data-act="join-done">' + t('cancel') + '</button></div>' : '') +
+      (S.joinInto ? '<div class="banner"><span>' + t('map.joinBanner', { t: '<b>' + esc(S.joinInto) + '</b>' }) + '</span><button class="btn ok" data-act="join-done">' + t('done') + '</button></div>' : '') +
       (quick ? '<div class="banner"><span>' + t('map.quickOpen', { n: fmt(P.ticketTotals(S.tickets[QUICK]).total) }) + '</span><button class="btn" data-act="open-table" data-id="' + QUICK + '">' + t('open') + '</button></div>' : '') +
-      '<div class="floor-wrap"><div class="floor">' +
+      '<div class="map-view' + (editing ? ' map-edit' : '') + '"><div class="floor-wrap"><div class="floor' + (editing ? ' editing' : '') + '">' +
       '<div class="bar-h"></div><div class="bar-v"></div>' +
       '<span class="plant" style="left:89%;top:19%">🌳</span><span class="plant" style="left:17%;top:70%">🌳</span>' +
       floor + '</div></div>' +
-      '<div class="tbl-list">' + list + '</div>' +
-      '<div class="legend"><span class="l-free">' + t('legend.free') + '</span><span class="l-busy">' + t('legend.busy') + '</span><span class="l-qr">' + t('legend.qr') + '</span></div>';
+      '<div class="tbl-list">' + list + '</div></div>' +
+      '<div class="legend"><span class="l-free">' + t('legend.free') + '</span><span class="l-busy">' + t('legend.busy') + '</span><span class="l-qr">' + t('legend.qr') + '</span>' +
+      '<span class="l-temp">' + t('legend.temp') + '</span><span class="l-joined">' + t('legend.joined') + '</span></div>';
   }
 
   function viewTicket() {
@@ -380,7 +507,10 @@
 
     return '<div class="ticket-view' + (S.showTicket ? ' show' : '') + '">' +
       '<section class="tk-left">' +
-      '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + '</h2><small>' + esc(tk.user || S.user.name) + '</small></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
+      '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + (S.temp[S.table] ? ' <i class="tag temp">' + t('legend.temp') + '</i>' : '') + '</h2><small>' + esc(tk.user || S.user.name) + '</small></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
+      (childrenOf(S.table).length ? '<div class="joined-row">🔗 ' + t('tk.joined') + ': ' + childrenOf(S.table).map(function (c) {
+        return '<button class="chip" data-act="unjoin" data-id="' + esc(c) + '" title="' + esc(t('tk.unjoin', { c: c })) + '">' + esc(c) + ' ✕</button>';
+      }).join('') + '</div>' : '') +
       '<div class="tk-cols"><span>' + t('tk.units') + '</span><span>' + t('tk.product') + '</span><span>' + t('tk.price') + '</span><span>' + t('total') + '</span></div>' +
       '<div class="tk-lines">' + (lines || '<p class="muted" style="padding:14px">' + t('tk.empty') + '</p>') + '</div>' +
       (S.sel >= 0 ? '<p class="muted hint">' + t('tk.tapAgain') + '</p>' : '') +
@@ -421,6 +551,10 @@
       act('qty-plus', '➕', t('act.plus')) +
       act('del-line', '🗑️', t('act.del')) +
       act('move', '⇄', t('act.move')) +
+      act('join', '🔗', t('act.join')) +
+      act('temp-near', '➕', t('act.tempNear')) +
+      act('table-qr', '🔳', t('act.qr')) +
+      (S.temp[S.table] && !tk.lines.length ? act('temp-del', '🗑️', t('act.tempDel'), '', 'danger') : '') +
       act('cancel-ticket', '✖', t('act.cancel'), '', 'danger') +
       '<button class="act pay" data-act="pay"><b>💶</b>' + t('act.pay') + ' ' + fmt(tot.total) + '</button>' +
       '</nav></section></div>';
@@ -577,7 +711,23 @@
       return '<div class="field"><label>' + t('admin.f.' + k) + '</label><input type="text" value="' + esc(st[k]) + '" data-edit="set" data-k="' + k + '"></div>';
     };
     var qrUrl = new URL('qr.html', location.href).href;
-    return '<div class="card"><h3>' + t('admin.ticketData') + '</h3>' + f('name') + f('address') + f('nif') + f('vat') + f('footer') + f('series') +
+    var q = S.qr, days = t('sch.days');
+    var schedule = '<div class="card"><h3>' + t('sch.title') + '</h3>' +
+      '<p>' + qrControls() + '</p>' +
+      '<label style="display:block;margin-bottom:10px"><input type="checkbox" data-edit="sch-use" ' + (q.useSchedule ? 'checked' : '') + '> ' + t('sch.use') + '</label>' +
+      '<div class="scroll-x"><table class="list sch"><tr><th>' + t('sch.day') + '</th><th>' + t('sch.qr') + '</th><th>' + t('sch.kitchen') + '</th></tr>' +
+      [0, 1, 2, 3, 4, 5, 6].map(function (i) {
+        var d = (q.days && q.days[i]) || {};
+        return '<tr><td>' + days[i] + '</td>' +
+          '<td><input type="text" value="' + esc(d.qr || '') + '" data-edit="sch-day" data-i="' + i + '" data-f="qr" placeholder="12:00-16:30, 20:00-23:30"></td>' +
+          '<td><input type="text" value="' + esc(d.kitchen || '') + '" data-edit="sch-day" data-i="' + i + '" data-f="kitchen" placeholder="13:00-16:00, 20:00-23:00"></td></tr>';
+      }).join('') + '</table></div>' +
+      '<p class="muted">' + t('sch.help') + '</p>' +
+      '<h4>' + t('sch.cats') + '</h4><div class="chips-sel">' + S.menu.map(function (c) {
+        var on = (q.kitchenCats || []).indexOf(c.id) >= 0;
+        return '<label class="chk"><input type="checkbox" data-edit="sch-cat" data-id="' + esc(c.id) + '" ' + (on ? 'checked' : '') + '> ' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</label>';
+      }).join('') + '</div></div>';
+    return schedule + '<div class="card"><h3>' + t('admin.ticketData') + '</h3>' + f('name') + f('address') + f('nif') + f('vat') + f('footer') + f('series') +
       '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
       '<div class="card"><h3>' + t('admin.qr') + '</h3>' +
       '<p>' + t('admin.mode', { m: '<b>' + t(Store.mode === 'local' ? 'admin.local' : 'admin.cloud') + '</b>' }) + '</p>' +
@@ -621,6 +771,17 @@
         if (!/^\d{4,6}$/.test(val)) { toast(t('msg.pinFormat')); return render(); }
         users[d.i].pin = val; return saveUsers(users);
       case 'u-admin': users[d.i].admin = val; return saveUsers(users);
+      case 'sch-use': return Store.update('public/qr', { useSchedule: !!val });
+      case 'sch-day':
+        if (!P.validRanges(val)) { toast(t('sch.bad', { v: val })); el.value = ((S.qr.days || [])[d.i] || {})[d.f] || ''; return; }
+        var days = clone(S.qr.days || P.DEFAULT_QR.days);
+        days[d.i] = Object.assign({}, days[d.i]);
+        days[d.i][d.f] = String(val).trim();
+        return Store.update('public/qr', { days: days });
+      case 'sch-cat':
+        var cats = (S.qr.kitchenCats || []).filter(function (c) { return c !== d.id; });
+        if (val) cats.push(d.id);
+        return Store.update('public/qr', { kitchenCats: cats });
       case 'set':
         var st = Object.assign({}, S.settings);
         if (d.k === 'vat') st.vat = Number(String(val).replace(',', '.')) || 0;
@@ -660,8 +821,44 @@
     orders: function () { openOrders(); },
 
     'open-table': function (d) {
-      if (S.moveFrom) return moveTo(d.id);
-      S.table = d.id; S.view = 'ticket'; S.sel = -1; S.buf = ''; S.showTicket = false; render();
+      if (S.moveFrom) return moveTo(mainOf(d.id));
+      if (S.joinPick) { S.joinPick = false; S.joinInto = mainOf(d.id); return render(); }
+      if (S.joinInto) return joinTable(d.id);
+      // una mesa juntada abre la cuenta de su mesa principal
+      S.table = mainOf(d.id); S.view = 'ticket'; S.sel = -1; S.buf = ''; S.showTicket = false; render();
+    },
+    'temp-new': function () { openTemp(null); },
+    'temp-near': function () { openTemp(S.table); },
+    'temp-del': function () {
+      if (ticketOf(S.table).lines.length) return toast(t('lay.busy'));
+      var upd = closeTablePatch(S.table, {});
+      upd['tickets/' + S.table] = null;
+      Store.update('', upd);
+      S.view = 'map'; S.table = null; render();
+    },
+    'join-start': function () { S.joinPick = true; S.joinFrom = 'map'; render(); },
+    join: function () { S.joinInto = S.table; S.joinFrom = 'ticket'; S.view = 'map'; render(); },
+    'join-done': function () {
+      var back = S.joinFrom === 'ticket' ? S.joinInto : null;
+      S.joinInto = null; S.joinPick = false; S.joinFrom = null;
+      if (back) { S.table = back; S.view = 'ticket'; }
+      render();
+    },
+    unjoin: function (d) { Store.remove('joins/' + d.id); },
+    'table-qr': function () { window.open('qr.html?mesas=' + encodeURIComponent(S.table), '_blank', 'noopener'); },
+    'qr-pause': function () { Store.update('public/qr', { paused: !S.qr.paused }); },
+    'kitchen-toggle': function () {
+      var off = S.qr.kitchenOffUntil && S.qr.kitchenOffUntil > Date.now();
+      Store.update('public/qr', { kitchenOffUntil: off ? 0 : P.endOfService() });
+    },
+    'layout-edit': function () {
+      if (!isAdmin()) return;
+      S.editLayout = !S.editLayout; S.moveFrom = null; S.joinInto = null; S.joinPick = false; render();
+    },
+    'layout-add': function () { openLayoutEdit(null); },
+    'layout-reset': function () {
+      if (!confirm(t('lay.resetConfirm'))) return;
+      Store.remove('layout');
     },
     'move-cancel': function () { S.moveFrom = null; render(); },
     'show-ticket': function () { S.showTicket = true; render(); },
@@ -736,7 +933,9 @@
       if (!tk.lines.length) return;
       if (!isAdmin()) return toast(t('msg.adminOnly'));
       if (!confirm(t('msg.cancelConfirm', { t: tableLabel(S.table) }))) return;
-      Store.remove('tickets/' + S.table); delete S.tickets[S.table];
+      var upd = closeTablePatch(S.table, {});
+      upd['tickets/' + S.table] = null;
+      Store.update('', upd); delete S.tickets[S.table];
       S.view = 'map'; render();
     },
     'print-ticket': function () {
@@ -949,11 +1148,157 @@
     dst.lines = dst.lines.concat(src.lines);
     if (!dst.openedAt) { dst.openedAt = src.openedAt; dst.user = src.user; }
     if (!dst.discountPct && !dst.discountEur) { dst.discountPct = src.discountPct || 0; dst.discountEur = src.discountEur || 0; }
-    Store.remove('tickets/' + from); delete S.tickets[from];
-    saveTicket(dst);
+    var upd = {};
+    ticketPatch(dst, upd);
+    upd['tickets/' + from] = null;
+    childrenOf(from).forEach(function (c) { upd['joins/' + c] = c === target ? null : target; });
+    if (S.temp[from]) upd['temp/' + from] = null;
+    S.tickets[target] = dst; delete S.tickets[from];
+    Store.update('', upd);
     toast(tableLabel(from) + ' → ' + tableLabel(target));
     S.table = target; S.view = 'ticket'; render();
   }
+
+  // Juntar `child` a la mesa principal S.joinInto (su cuenta pasa a la principal).
+  function joinTable(child) {
+    var main = S.joinInto;
+    if (mainOf(child) === main) return;
+    var upd = {};
+    var src = S.tickets[child];
+    if (src && src.lines.length) {
+      var dst = stamp(ticketOf(main));
+      dst.lines = dst.lines.concat(src.lines);
+      ticketPatch(dst, upd);
+      upd['tickets/' + child] = null;
+      S.tickets[main] = dst; delete S.tickets[child];
+    }
+    childrenOf(child).forEach(function (c) { upd['joins/' + c] = main; });
+    upd['joins/' + child] = main;
+    S.joins[child] = main;
+    Store.update('', upd);
+    toast(t('msg.joined', { c: child, t: main }));
+    render();
+  }
+
+  function suggestTemp(near) {
+    if (near) {
+      for (var i = 0; i < 26; i++) {
+        var id = near + String.fromCharCode(65 + i);
+        if (!tableExists(id)) return id;
+      }
+    }
+    for (var n = 1; n < 100; n++) if (!tableExists('X' + n)) return 'X' + n;
+    return '';
+  }
+
+  function openTemp(near) {
+    near = near && near !== QUICK && tableExists(near) ? near : '';
+    var st = { name: suggestTemp(near), near: near };
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + t('temp.title') + '</h2>' +
+        '<div class="field"><label>' + t('temp.name') + '</label><input id="temp-name" type="text" maxlength="10" value="' + esc(st.name) + '" autocapitalize="characters"></div>' +
+        '<div class="field"><label>' + t('temp.near') + '</label><select id="temp-near"><option value="">' + t('temp.none') + '</option>' +
+        allTables().map(function (tb) { return '<option value="' + esc(tb.id) + '"' + (tb.id === st.near ? ' selected' : '') + '>' + esc(tb.id) + '</option>'; }).join('') +
+        '</select></div><p class="muted">' + t('temp.note') + '</p>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('temp.create') + '</button></div>';
+      var n = document.getElementById('temp-name');
+      n.oninput = function () { st.name = n.value; };
+      document.getElementById('temp-near').onchange = function (e) {
+        var auto = st.name === suggestTemp(st.near);
+        st.near = e.target.value;
+        if (auto) { st.name = suggestTemp(st.near); n.value = st.name; }
+      };
+    }
+    openModal('temp', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k !== 'OK') return;
+      var id = String(st.name).trim().toUpperCase();
+      if (!P.TABLE_ID_RE.test(id) || tableExists(id)) return toast(t('temp.badName'));
+      var rec = { id: id, near: st.near || null, at: Date.now(), by: S.user.name };
+      S.temp[id] = rec;
+      Store.set('temp/' + id, rec);
+      closeModal();
+      S.table = id; S.view = 'ticket'; S.sel = -1; S.showTicket = false; render();
+    });
+  }
+
+  // Editar el plano (solo administradores): mover, añadir, renombrar, borrar.
+  function suggestNewTable() {
+    var max = 0;
+    S.layout.forEach(function (tb) { var m = /^T(\d+)$/.exec(tb.id); if (m) max = Math.max(max, +m[1]); });
+    var id = 'T' + (max + 1);
+    while (tableExists(id)) id = 'T' + (++max + 1);
+    return id;
+  }
+
+  function openLayoutEdit(id) {
+    var cur = id ? S.layout.filter(function (tb) { return tb.id === id; })[0] : null;
+    if (id && !cur) return;
+    var st = { id: cur ? cur.id : suggestNewTable(), shape: cur ? cur.shape : 'square' };
+    function busy(x) { var tk = S.tickets[x]; return !!(tk && tk.lines.length) || childrenOf(x).length > 0 || !!S.joins[x]; }
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + (cur ? t('lay.title', { t: esc(cur.id) }) : t('lay.newTitle')) + '</h2>' +
+        '<div class="field"><label>' + t('lay.id') + '</label><input id="lay-id" type="text" maxlength="10" value="' + esc(st.id) + '" autocapitalize="characters"></div>' +
+        '<div class="field"><label>' + t('lay.shape') + '</label><div class="chips-sel">' + ['round', 'square', 'stool'].map(function (sh) {
+          return '<button class="' + (st.shape === sh ? 'on' : '') + '" data-k="sh:' + sh + '">' + t('lay.' + sh) + '</button>';
+        }).join('') + '</div></div>' +
+        '<div class="btn-row">' + (cur ? '<button class="btn danger" data-k="DEL">' + t('lay.delete') + '</button>' : '') +
+        '<button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('save') + '</button></div>';
+      document.getElementById('lay-id').oninput = function (e) { st.id = e.target.value; };
+    }
+    openModal('layout', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('sh:') === 0) { st.shape = k.slice(3); return draw(); }
+      var layout = clone(S.layout);
+      if (k === 'DEL') {
+        if (busy(cur.id)) return toast(t('lay.busy'));
+        if (!confirm(t('lay.delConfirm', { t: cur.id }))) return;
+        layout = layout.filter(function (tb) { return tb.id !== cur.id; });
+      } else if (k === 'OK') {
+        var nid = String(st.id).trim().toUpperCase();
+        if (!P.TABLE_ID_RE.test(nid) || (nid !== (cur && cur.id) && tableExists(nid))) return toast(t('temp.badName'));
+        if (cur && nid !== cur.id && busy(cur.id)) return toast(t('lay.busy'));
+        if (cur) layout.forEach(function (tb) { if (tb.id === cur.id) { tb.id = nid; tb.shape = st.shape; } });
+        else layout.push({ id: nid, x: 50, y: 50, shape: st.shape });
+      } else return;
+      S.layout = layout;
+      Store.set('layout', layout);
+      closeModal();
+      render();
+    });
+  }
+
+  // Arrastrar mesas en el modo "Editar plano"
+  var drag = null;
+  app.addEventListener('pointerdown', function (e) {
+    var el = e.target.closest('[data-drag]');
+    if (!el || !S.editLayout) return;
+    var floor = el.closest('.floor');
+    drag = { id: el.dataset.drag, el: el, rect: floor.getBoundingClientRect(), sx: e.clientX, sy: e.clientY, moved: false };
+    try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignorar */ }
+    e.preventDefault();
+  });
+  app.addEventListener('pointermove', function (e) {
+    if (!drag) return;
+    if (!drag.moved && Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) < 6) return;
+    drag.moved = true;
+    drag.x = clamp((e.clientX - drag.rect.left) / drag.rect.width * 100, 2, 98);
+    drag.y = clamp((e.clientY - drag.rect.top) / drag.rect.height * 100, 2, 98);
+    drag.el.style.left = drag.x + '%';
+    drag.el.style.top = drag.y + '%';
+  });
+  app.addEventListener('pointerup', function () {
+    if (!drag) return;
+    var d = drag;
+    drag = null;
+    if (!d.moved) return openLayoutEdit(d.id);
+    var layout = clone(S.layout);
+    layout.forEach(function (tb) { if (tb.id === d.id) { tb.x = Math.round(d.x * 10) / 10; tb.y = Math.round(d.y * 10) / 10; } });
+    S.layout = layout;
+    Store.set('layout', layout);
+  });
 
   // ---------------------------------------------------------------- modificadores
 
@@ -1321,6 +1666,7 @@
           upd[num.key] = num.n;
           upd['sales/' + id] = sale;
           upd['tickets/' + tk.table] = null;
+          closeTablePatch(tk.table, upd);
           return Store.update('', upd).then(function () {
             delete S.tickets[tk.table];
             closeModal();
@@ -1377,8 +1723,13 @@
       var list = pendingOrders();
       modalBox.className = 'modal-box wide';
       modalBox.innerHTML = '<h2>' + t('orders.title') + '</h2>' +
+        '<div class="btn-row qr-controls">' + qrControls() + '</div>' +
         (list.length ? list.map(function (o) {
-          var head = '<header><b>' + esc(tableLabel(o.table)) + '</b><span class="muted">' + time(o.createdAt) + '</span></header>';
+          var at = P.qrStatus(S.qr, new Date(o.createdAt));
+          var into = mainOf(o.table);
+          var head = '<header><b>' + esc(tableLabel(o.table)) + (into !== o.table ? ' → ' + esc(into) : '') + '</b><span class="muted">' + time(o.createdAt) + '</span></header>' +
+            (!tableExists(o.table) ? '<p class="warn">' + t('orders.unknownTable') + '</p>' : '') +
+            (o.type === 'order' && !at.open ? '<p class="warn">' + t('orders.outHours') + '</p>' : '');
           if (o.type === 'waiter' || o.type === 'bill') {
             return '<div class="order-card req">' + head + '<p style="font-size:18px;margin:6px 0">' +
               t(o.type === 'bill' ? 'orders.bill' : 'orders.waiter') + '</p>' +
@@ -1392,6 +1743,7 @@
             return '<li>' + l.qty + ' × ' + esc(l.item ? P.tr(l.item, I.lang) : l.name) +
               (l.item ? ' — ' + fmt(l.price * l.qty) : ' <span class="warn">(' + t('orders.notFound') + ')</span>') +
               (l.item && l.item.available === false ? ' <span class="warn">(' + t('orders.soldOut') + ')</span>' : '') +
+              (l.item && !at.kitchen && at.kitchenCats.indexOf(P.catOfItem(S.menu, l.item.id)) >= 0 ? ' <span class="warn">(' + t('orders.kitchenClosed') + ')</span>' : '') +
               (sub ? '<br><small class="mods-txt">' + esc(sub) + '</small>' : '') + '</li>';
           }).join('') + '</ul>' +
             (o.note ? '<div class="note">💬 ' + esc(o.note) + '</div>' : '') +
@@ -1416,7 +1768,7 @@
         Store.update('orders/' + id, { status: 'rejected', reason: reason.slice(0, 120), handledBy: S.user.name, handledAt: Date.now() });
       } else if (cmd === 'done' || cmd === 'bill') {
         Store.update('orders/' + id, { status: 'done', handledBy: S.user.name, handledAt: Date.now() });
-        if (cmd === 'bill') { closeModal(); S.table = o.table; S.view = 'ticket'; render(); return; }
+        if (cmd === 'bill') { closeModal(); S.table = mainOf(o.table); S.view = 'ticket'; render(); return; }
       }
       S.orders[id] = Object.assign({}, o, { status: 'handled' });
       draw();
@@ -1450,18 +1802,19 @@
     if (!add.length) return toast(t('orders.noValid'));
     // mesa + estado del pedido (+ comanda) en una sola escritura: tras un corte
     // de luz nunca queda un pedido aceptado sin sus líneas, ni líneas duplicadas.
-    var tk = stamp(mergeLines(ticketOf(o.table), add));
+    var table = mainOf(o.table);   // pedido desde una mesa juntada -> cuenta de la principal
+    var tk = stamp(mergeLines(ticketOf(table), add));
     var upd = {}, rec = null;
     if (kitchen) rec = kitchenRecord(tk, upd);
     ticketPatch(tk, upd);
     upd['orders/' + o.id + '/status'] = 'accepted';
     upd['orders/' + o.id + '/handledBy'] = S.user.name;
     upd['orders/' + o.id + '/handledAt'] = Date.now();
-    S.tickets[o.table] = tk;
+    S.tickets[table] = tk;
     Store.update('', upd);
     if (rec) printComanda(rec, false);
     render();
-    toast(t('orders.added', { t: tableLabel(o.table) }));
+    toast(t('orders.added', { t: tableLabel(table) }));
   }
 
   // ---------------------------------------------------------------- impresión

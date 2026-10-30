@@ -45,6 +45,11 @@
     .warning { background: #fff3cd; border-left: 4px solid #ffeeba; padding: 12px 15px; margin: 24px 0; border-radius: 4px; font-size: 14px; }
     .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 999px; z-index: 30; }
     .hidden { display: none !important; }
+    .status.closed { border-left: 4px solid var(--price); }
+    .status.closed h3 { color: var(--price); }
+    .status.kclosed { border-left: 4px solid #e1a100; background: #fffbeb; }
+    section.cat.off .item { opacity: .5; }
+    section.cat h2 .kc { font-size: 13px; color: #b45309; font-weight: 600; }
     .lang { position: absolute; top: 10px; right: 10px; display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
     .lang button { border: 0; background: #fff; padding: 6px 9px; font-size: 13px; }
     .lang button.on { background: var(--accent); color: #fff; }
@@ -92,7 +97,9 @@
     var t = function (k, v) { return I.t(k, v); };
     var params = new URLSearchParams(location.search);
     var table = String(params.get('mesa') || '').toUpperCase();
-    var validTable = P.LAYOUT.some(function (x) { return x.id === table; });
+    // Vale cualquier mesa del plano o temporal; el TPV avisa si no existe.
+    var validTable = P.TABLE_ID_RE.test(table);
+    var qrCfg = P.DEFAULT_QR;
 
     var menu = P.DEFAULT_MENU;
     var mods = P.DEFAULT_MODS;
@@ -130,6 +137,14 @@
     }
 
     Store.on('menu', function (v) { menu = v || P.DEFAULT_MENU; render(); });
+    Store.on('public/qr', function (v) { qrCfg = Object.assign({}, P.DEFAULT_QR, v || {}); render(); });
+    // el horario cambia con la hora: se comprueba cada minuto
+    var lastKey = '';
+    setInterval(function () {
+      var st = P.qrStatus(qrCfg);
+      var k = st.open + '|' + st.kitchen;
+      if (k !== lastKey) render();
+    }, 60000);
     Store.on('mods', function (v) {
       // En modo nube los modificadores son privados del TPV; si no se pueden leer, se usan los de serie.
       mods = v || P.DEFAULT_MODS; render();
@@ -142,6 +157,22 @@
       }).filter(function (c) { return c.items.length; });
     }
 
+    // ¿Se puede pedir este producto ahora? (horario QR y horario de cocina)
+    function canOrder(pid, st) {
+      st = st || P.qrStatus(qrCfg);
+      return st.open && (st.kitchen || st.kitchenCats.indexOf(P.catOfItem(menu, pid)) < 0);
+    }
+    function isKitchen(catId, st) { return st.kitchenCats.indexOf(catId) >= 0; }
+
+    function scheduleHtml(st) {
+      if (!st.open) {
+        return '<div class="status closed"><h3>' + t(st.reason === 'paused' ? 'c.paused' : 'c.closed') + '</h3><p>' +
+          (st.next ? t('c.opensAt', { h: st.next }) + ' ' : '') + t('c.closedHelp') + '</p></div>';
+      }
+      if (!st.kitchen) return '<div class="status kclosed"><p>' + t('c.kitchenNote') + '</p></div>';
+      return '';
+    }
+
     function plainQty(pid) {
       var l = cart.filter(function (x) { return x.key === pid; })[0];
       return l ? l.qty : 0;
@@ -149,22 +180,31 @@
 
     function render() {
       document.getElementById('table-pill').textContent = t('table', { t: table });
+      var st = P.qrStatus(qrCfg);
+      lastKey = st.open + '|' + st.kitchen;
+      // quitar del carrito lo que ya no se puede pedir (p. ej. la cocina acaba de cerrar)
+      var before = cart.length;
+      cart = cart.filter(function (l) { return canOrder(l.pid, st); });
+      if (cart.length < before) toast(t('c.removed'));
       var cats = visibleCats();
       chips.innerHTML = cats.map(function (c) {
         return '<a href="#c-' + esc(c.id) + '">' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</a>';
       }).join('');
-      main.innerHTML = statusHtml() +
+      main.innerHTML = scheduleHtml(st) + statusHtml() +
         '<div class="quick"><button data-a="waiter">' + t('c.waiter') + '</button><button data-a="bill">' + t('c.bill') + '</button></div>' +
-        '<p class="hint">' + t('c.customizeHint') + '</p>' +
+        (st.open ? '<p class="hint">' + t('c.customizeHint') + '</p>' : '') +
         cats.map(function (c) {
-          return '<section class="cat" id="c-' + esc(c.id) + '"><h2>' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</h2>' +
+          var off = !st.open || (!st.kitchen && isKitchen(c.id, st));
+          var kOff = st.open && !st.kitchen && isKitchen(c.id, st);
+          return '<section class="cat' + (off ? ' off' : '') + '" id="c-' + esc(c.id) + '"><h2>' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) +
+            (kOff ? ' <small class="kc">' + (st.kitchenNext ? t('c.kitchenOpensAt', { h: st.kitchenNext }) : t('c.kitchenClosed')) + '</small>' : '') + '</h2>' +
             c.items.map(function (it) {
               var q = plainQty(it.id);
               var es = I.lang !== 'es' && P.tr(it, I.lang) !== it.name ? '<small>' + esc(it.name) + '</small>' : '';
-              return '<div class="item"><span class="name" data-a="custom" data-id="' + esc(it.id) + '">' + esc(P.tr(it, I.lang)) + ' <u>✏️</u>' + es + '</span>' +
+              return '<div class="item"><span class="name"' + (off ? '' : ' data-a="custom" data-id="' + esc(it.id) + '"') + '>' + esc(P.tr(it, I.lang)) + (off ? '' : ' <u>✏️</u>') + es + '</span>' +
                 '<span class="price">' + fmt(it.price) + '</span>' +
-                '<span class="stepper">' + (q ? '<button data-a="minus" data-key="' + esc(it.id) + '" aria-label="−">−</button><b>' + q + '</b>' : '') +
-                '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="+">+</button></span></div>';
+                (off ? '' : '<span class="stepper">' + (q ? '<button data-a="minus" data-key="' + esc(it.id) + '" aria-label="−">−</button><b>' + q + '</b>' : '') +
+                '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="+">+</button></span>') + '</div>';
             }).join('') + '</section>';
         }).join('') +
         '<p class="hint">' + t('c.other') + '</p>' +
@@ -303,6 +343,7 @@
       switch (a) {
         case 'lang': I.set(b.dataset.l); drawLang(); render(); return refreshSheet();
         case 'plus':
+          if (!canOrder(b.dataset.id)) return render();
           l = lineByKey(b.dataset.id);
           if (l) l.qty = Math.min(20, l.qty + 1);
           else cart.push({ key: b.dataset.id, pid: b.dataset.id, qty: 1, mods: [], note: '' });
@@ -315,7 +356,7 @@
           l = lineByKey(b.dataset.key);
           if (l) { l.qty--; if (l.qty <= 0) cart.splice(cart.indexOf(l), 1); }
           break;
-        case 'custom': sheetMode = null; return openCustom(b.dataset.id);
+        case 'custom': if (!canOrder(b.dataset.id)) return; sheetMode = null; return openCustom(b.dataset.id);
         case 'mod': sheetMode.sel[b.dataset.id] = !sheetMode.sel[b.dataset.id]; return openCustom(sheetMode.pid);
         case 'cqty': sheetMode.qty = Math.min(20, Math.max(1, sheetMode.qty + Number(b.dataset.d))); return openCustom(sheetMode.pid);
         case 'cadd':
@@ -332,6 +373,7 @@
           closeSheet(); render(); return;
         case 'close': return closeSheet();
         case 'send':
+          if (!P.qrStatus(qrCfg).open || validLines().some(function (x) { return !canOrder(x.pid); })) { closeSheet(); return render(); }
           b.disabled = true;
           b.textContent = t('c.sending');
           send('order', validLines().map(function (x) {

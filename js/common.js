@@ -138,6 +138,78 @@
     series: 'T' + new Date().getFullYear()
   };
 
+  // ---------------------------------------------------------------- horario QR
+  // public/qr (lo lee también la carta del cliente):
+  //   useSchedule: si es false, se puede pedir siempre
+  //   days[0..6] (lunes..domingo): { qr: '12:00-16:30, 20:00-23:30', kitchen: '13:00-16:00' }
+  //     vacío = cerrado ese día; un tramo que acaba antes de empezar cruza la medianoche
+  //   kitchenCats: categorías que prepara la cocina (fuera de su horario no se pueden pedir)
+  //   paused: pedidos QR pausados a mano · kitchenOffUntil: cocina cerrada a mano hasta esa hora
+  var DEFAULT_QR = {
+    useSchedule: false,
+    paused: false,
+    kitchenOffUntil: 0,
+    days: [0, 1, 2, 3, 4, 5, 6].map(function () { return { qr: '12:00-16:30, 19:30-23:30', kitchen: '13:00-16:00, 20:00-23:00' }; }),
+    kitchenCats: ['menu', 'ent-frias', 'ensalada', 'ent-calientes', 'pescado', 'carne', 'tostada', 'montadito', 'bocadillo', 'hamburguesa', 'snack']
+  };
+
+  var RANGE_RE = /^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/;
+  function parseRanges(str) {
+    return String(str || '').split(/[,;]/).map(function (x) { return x.trim(); }).filter(Boolean).map(function (x) {
+      var m = x.match(RANGE_RE);
+      if (!m) return null;
+      var a = +m[1] * 60 + +m[2], b = +m[3] * 60 + +m[4];
+      if (a > 1440 || b > 1440) return null;
+      if (b <= a) b += 1440;
+      return [a, b];
+    });
+  }
+  function validRanges(str) { return parseRanges(str).every(Boolean); }
+  function hhmm(min) { min = min % 1440; return String(Math.floor(min / 60)).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); }
+
+  // ¿Abierto en la fecha d? Devuelve {open, next} (next = próxima apertura hoy, 'HH:MM' o null)
+  function inRanges(days, field, d) {
+    var dow = (d.getDay() + 6) % 7;             // 0 = lunes
+    var min = d.getHours() * 60 + d.getMinutes();
+    var today = parseRanges(days[dow] && days[dow][field]).filter(Boolean);
+    var yday = parseRanges(days[(dow + 6) % 7] && days[(dow + 6) % 7][field]).filter(Boolean);
+    var open = today.some(function (r) { return min >= r[0] && min < r[1]; }) ||
+      yday.some(function (r) { return r[1] > 1440 && min + 1440 < r[1]; });
+    var next = today.map(function (r) { return r[0]; }).filter(function (a) { return a > min; }).sort(function (a, b) { return a - b; })[0];
+    return { open: open, next: next == null ? null : hhmm(next) };
+  }
+
+  function qrStatus(cfg, d) {
+    cfg = Object.assign({}, DEFAULT_QR, cfg || {});
+    d = d || new Date();
+    if (cfg.paused) return { open: false, kitchen: false, reason: 'paused', next: null, kitchenNext: null, kitchenCats: cfg.kitchenCats || [] };
+    var q = cfg.useSchedule ? inRanges(cfg.days || [], 'qr', d) : { open: true, next: null };
+    var k = cfg.useSchedule ? inRanges(cfg.days || [], 'kitchen', d) : { open: true, next: null };
+    var kOpen = k.open && !(cfg.kitchenOffUntil && d.getTime() < cfg.kitchenOffUntil);
+    return {
+      open: q.open, kitchen: q.open && kOpen, reason: q.open ? null : 'hours', next: q.next,
+      kitchenNext: kOpen ? null : (cfg.kitchenOffUntil && d.getTime() < cfg.kitchenOffUntil ? null : k.next),
+      kitchenCats: cfg.kitchenCats || []
+    };
+  }
+
+  // Siguiente 06:00 (fin de la "jornada" para "cerrar cocina hoy")
+  function endOfService(d) {
+    d = new Date(d || Date.now());
+    var e = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 6, 0, 0);
+    if (e <= d) e.setDate(e.getDate() + 1);
+    return e.getTime();
+  }
+
+  function catOfItem(menu, pid) {
+    for (var i = 0; i < (menu || []).length; i++) {
+      if ((menu[i].items || []).some(function (it) { return it.id === pid; })) return menu[i].id;
+    }
+    return null;
+  }
+
+  var TABLE_ID_RE = /^[A-Z0-9][A-Z0-9-]{0,9}$/;
+
   function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
   function fmt(n) {
@@ -201,6 +273,12 @@
     findItem: findItem,
     findMod: findMod,
     modsText: modsText,
-    ticketTotals: ticketTotals
+    ticketTotals: ticketTotals,
+    DEFAULT_QR: DEFAULT_QR,
+    validRanges: validRanges,
+    qrStatus: qrStatus,
+    endOfService: endOfService,
+    catOfItem: catOfItem,
+    TABLE_ID_RE: TABLE_ID_RE
   };
 })();

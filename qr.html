@@ -28,24 +28,37 @@
 <body>
   <div class="controls">
     <input id="base" aria-label="Dirección de la página de pedidos">
-    <label><input type="checkbox" id="stools"> Incluir taburetes de barra (B1–B8)</label>
+    <label><input type="checkbox" id="stools"> Incluir taburetes de barra</label>
+    <label><input type="checkbox" id="temps"> Incluir mesas temporales</label>
     <button id="regen">Actualizar</button>
     <button onclick="window.print()">🖨️ Imprimir</button>
   </div>
   <div class="grid" id="grid"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="config.js"></script>
+  <script src="js/store.js"></script>
   <script src="js/common.js"></script>
   <script>
     (function () {
       var base = document.getElementById('base');
       var stools = document.getElementById('stools');
+      var temps = document.getElementById('temps');
       base.value = new URL('pedir.html', location.href).href;
+      // ?mesas=T5A,X1 -> solo esas mesas (botón «QR mesa» del TPV)
+      var only = (new URLSearchParams(location.search).get('mesas') || '').toUpperCase().split(',').filter(Boolean);
+      var layout = Platet.LAYOUT, temp = {};
+      Store.on('layout', function (v) { layout = (v && v.length) ? v : Platet.LAYOUT; draw(); });
+      Store.on('temp', function (v) { temp = v || {}; draw(); });
 
       function draw() {
         var grid = document.getElementById('grid');
         grid.innerHTML = '';
-        Platet.LAYOUT.filter(function (t) { return stools.checked || t.shape !== 'stool'; }).forEach(function (t) {
+        var list = only.length
+          ? only.map(function (id) { return { id: id, shape: 'square' }; })
+          : layout.filter(function (t) { return stools.checked || t.shape !== 'stool'; })
+            .concat(temps.checked ? Object.keys(temp).map(function (k) { return { id: k, shape: 'square' }; }) : []);
+        list.forEach(function (t) {
           var url = base.value.trim() + '?mesa=' + encodeURIComponent(t.id);
           var card = document.createElement('div');
           card.className = 'card';
@@ -57,6 +70,7 @@
       }
       document.getElementById('regen').onclick = draw;
       stools.onchange = draw;
+      temps.onchange = draw;
       draw();
     })();
   </script>
