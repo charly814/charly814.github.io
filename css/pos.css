@@ -426,3 +426,6 @@ table.split td { padding: 6px; }
 .cust-row span { grid-row: 1 / span 2; grid-column: 2; align-self: center; }
 .form-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .chip.on { background: #dbeafe; border-color: var(--accent); }
+tr.voided td { text-decoration: line-through; color: var(--muted); }
+tr.voided td:last-child, tr.voided td:nth-child(2) { text-decoration: none; }
+@media (max-width: 860px) { .actions .act[data-act="move"], .actions .act[data-act="split"] { display: flex !important; } }

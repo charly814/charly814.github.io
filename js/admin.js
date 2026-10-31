@@ -1091,23 +1091,26 @@
   function report() {
     var b = rangeBounds();
     var sales = allSales().filter(function (s) { return s.closedAt >= b[0] && s.closedAt < b[1]; });
-    var r = { from: b[0], to: b[1], total: 0, count: sales.length, units: 0, discounts: 0, guests: 0, guestTotal: 0, byMethod: {}, byWaiter: {}, products: {}, cats: {}, series: [] };
+    var r = { from: b[0], to: b[1], total: 0, count: sales.filter(function (x) { return !x.voided && x.invoiceType !== 'R'; }).length, units: 0, discounts: 0, guests: 0, guestTotal: 0, byMethod: {}, byWaiter: {}, products: {}, cats: {}, series: [] };
     var days = Math.round((b[1] - b[0]) / 86400000);
     var hourly = days <= 1;
     var buckets = {}, visits = {};
     sales.forEach(function (s) {
       r.total += s.total;
       r.discounts += s.discount || 0;
+      P.salePayments(s).forEach(function (p) { r.byMethod[p.method] = (r.byMethod[p.method] || 0) + p.amount; });
+      var d = new Date(s.closedAt);
+      var bk = hourly ? d.getHours() : dayStart(d);
+      buckets[bk] = (buckets[bk] || 0) + s.total;
+      // venta anulada + su rectificativa: se compensan en los importes, pero no
+      // cuentan como ticket, ni como productos vendidos, ni para el camarero
+      if (s.voided || s.invoiceType === 'R') return;
       // una mesa dividida en varios tickets es una sola visita (mismos comensales)
       var vk = (s.table || '') + '@' + (s.openedAt || s.id);
       var vis = visits[vk] = visits[vk] || { total: 0, guests: 0 };
       vis.total += s.total; vis.guests = Math.max(vis.guests, s.guests || 0);
-      P.salePayments(s).forEach(function (p) { r.byMethod[p.method] = (r.byMethod[p.method] || 0) + p.amount; });
       var w = r.byWaiter[s.cashier] = r.byWaiter[s.cashier] || { n: 0, total: 0 };
       w.n++; w.total += s.total;
-      var d = new Date(s.closedAt);
-      var bk = hourly ? d.getHours() : dayStart(d);
-      buckets[bk] = (buckets[bk] || 0) + s.total;
       // reparte el descuento del ticket entre sus líneas para que los importes cuadren
       var k = s.subtotal ? s.total / s.subtotal : 1;
       (Array.isArray(s.lines) ? s.lines : Object.keys(s.lines || {}).map(function (x) { return s.lines[x]; })).forEach(function (l) {

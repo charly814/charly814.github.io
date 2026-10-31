@@ -629,7 +629,7 @@
   }
 
   function summarize(sales) {
-    var s = { count: sales.length, total: 0, byMethod: {}, byUser: {}, discounts: 0 };
+    var s = { count: sales.filter(function (x) { return !x.voided && x.invoiceType !== 'R'; }).length, total: 0, byMethod: {}, byUser: {}, discounts: 0 };
     sales.forEach(function (x) {
       s.total += x.total;
       s.discounts += x.discount || 0;
@@ -672,9 +672,11 @@
       '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
-          return '<tr><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + P.salePayments(x).map(function (p) { return t('m.' + p.method); }).join(' + ') + '</td><td class="num">' + fmt(x.total) + '</td>' +
+          var tag = x.voided ? ' <small class="bad-t">' + t('caja.voided', { n: esc(x.voided.by) }) + '</small>' : x.invoiceType === 'R' ? ' <small class="muted">' + t('caja.rect', { n: esc(x.rectifies) }) + '</small>' : '';
+          return '<tr class="' + (x.voided ? 'voided' : '') + '"><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + tag + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + P.salePayments(x).map(function (p) { return t('m.' + p.method); }).join(' + ') + '</td><td class="num">' + fmt(x.total) + '</td>' +
             '<td><button class="btn" data-act="reprint" data-id="' + esc(x.id) + '">🖨️</button>' +
-            (x.invoiceType === 'F' || x.fullInvoice ? ' <span class="chip">' + esc(x.invoiceType === 'F' ? x.invoice : x.fullInvoice.invoice) + '</span>'
+            (x.voided || x.invoiceType === 'R' ? '' : ' <button class="btn" data-act="reopen" data-id="' + esc(x.id) + '" title="' + t('reopen.btn') + '">↩</button>') +
+            (x.invoiceType === 'R' || x.voided ? '' : x.invoiceType === 'F' || x.fullInvoice ? ' <span class="chip">' + esc(x.invoiceType === 'F' ? x.invoice : x.fullInvoice.invoice) + '</span>'
               : ' <button class="btn" data-act="canje" data-id="' + esc(x.id) + '" title="' + t('cust.canje') + '">📄</button>') + '</td></tr>';
         }).join('') + '</table></div>' : '<p class="muted">' + t('caja.noSales') + '</p>') + '</div>' +
       '<div class="card"><h3>' + t('k.title') + '</h3>' + (function () {
@@ -700,7 +702,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', split: 'pay', tarifa: 'price', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    pay: 'pay', split: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
@@ -765,6 +767,53 @@
     },
     'debt-pay': function () {
       pickCustomer(null, function (c) { if (c) openDebtPay(c); }, true);
+    },
+    // Ticket cobrado por error: factura rectificativa (serie R) que lo anula y
+    // los productos vuelven a la mesa, todo en una sola escritura.
+    reopen: function (d) {
+      var sale = S.sales[d.id];
+      if (!sale || sale.voided || sale.invoiceType === 'R') return;
+      if (!confirm(t('reopen.confirm', { n: sale.invoice, t: tableLabel(sale.table), a: fmt(sale.total) }))) return;
+      var authBy = S.authBy;   // quien lo autorizó (la escritura termina después)
+      nextInvoice('R').then(function (num) {
+        var now = Date.now(), rid = Store.newId(), neg = function (v) { return round2(-(v || 0)); };
+        var rect = {
+          id: rid, invoice: num.invoice, invoiceType: 'R', rectifies: sale.invoice, rectifiesId: sale.id,
+          table: sale.table, lines: sale.lines, openedAt: sale.openedAt, guests: 0, customer: sale.customer || null,
+          total: neg(sale.total), subtotal: neg(sale.subtotal), discount: neg(sale.discount), vatRate: sale.vatRate, base: neg(sale.base), vatAmount: neg(sale.vatAmount),
+          method: sale.method, payments: P.salePayments(sale).map(function (x) { return Object.assign({}, x, { amount: neg(x.amount) }); }),
+          given: neg(sale.total), change: 0, cashier: S.user.name, closedAt: now, reason: 'reopen'
+        };
+        var upd = {};
+        upd[num.key] = num.n;
+        upd['sales/' + rid] = rect;
+        upd['sales/' + sale.id + '/voided'] = { by: num.invoice, at: now, user: S.user.name, authBy: S.authBy || null };
+        // lo pagado "a cuenta" deja de deberse
+        var onAcc = round2(P.salePayments(sale).filter(function (x) { return x.method === 'cuenta'; }).reduce(function (a, x) { return a + x.amount; }, 0));
+        var cust = sale.customer && S.customers[sale.customer.id];
+        if (onAcc && cust) {
+          upd['customers/' + cust.id + '/balance'] = round2((cust.balance || 0) - onAcc);
+          upd['custlog/' + cust.id + '/' + rid] = { at: now, type: 'pay', amount: onAcc, ref: num.invoice, user: S.user.name, method: 'rectificativa' };
+        }
+        // los productos vuelven a la mesa (si está ocupada, se juntan)
+        var tk = ticketOf(sale.table);
+        if (!tk.lines.length) {
+          tk.discountPct = sale.discountPct || 0; tk.discountEur = sale.discountEur || 0;
+          tk.guests = tk.guests || sale.guests || 0; tk.customer = tk.customer || sale.customer || null; tk.tarifa = tk.tarifa || sale.tarifa || null;
+          tk.openedAt = sale.openedAt || now; tk.user = sale.user || sale.cashier;
+        }
+        (sale.lines || []).forEach(function (l) { var c = Object.assign({}, l); delete c.id; delete c.ord; tk.lines.push(c); });
+        ticketPatch(tk, upd);
+        S.tickets[sale.table] = tk;
+        return Store.update('', upd).then(function () {
+          S.authBy = authBy;
+          audit('reopen', sale.invoice + ' → ' + num.invoice + ' · ' + fmt(sale.total) + ' · ' + tableLabel(sale.table));
+          S.authBy = null;
+          printTicket(rect, rect);
+          toast(t('reopen.done', { t: tableLabel(sale.table), n: num.invoice }));
+          S.table = sale.table; S.view = 'ticket'; S.sel = -1; render();
+        });
+      });
     },
     canje: function (d) {
       var sale = S.sales[d.id];
@@ -1660,8 +1709,9 @@
   // El contador se guarda en la MISMA escritura que la venta y la mesa libre,
   // así un corte de luz no deja huecos en la numeración ni mesas a medias.
   function nextInvoice(full) {
-    // factura completa (con NIF del cliente): serie propia F<año>
-    var series = full ? 'F' + new Date().getFullYear() : (S.settings.series || P.DEFAULT_SETTINGS.series);
+    // factura completa (con NIF del cliente): serie F<año>; rectificativa: serie R<año>
+    var y = new Date().getFullYear();
+    var series = full === 'R' ? 'R' + y : full ? 'F' + y : (S.settings.series || P.DEFAULT_SETTINGS.series);
     return Store.get('counters/' + series).then(function (n) {
       n = (Number(n) || 0) + 1;
       return { key: 'counters/' + series, n: n, invoice: series + '-' + String(n).padStart(6, '0') };

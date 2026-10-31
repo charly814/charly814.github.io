@@ -275,7 +275,7 @@
   // el valor guardado en user.perms o, si no hay, el de esta lista.
   var PERMS = [
     ['pay', true], ['caja', true], ['reprint', true], ['drawer', true], ['free', true],
-    ['qrOrders', true], ['qrControl', true], ['tables', true], ['cashMoves', false],
+    ['qrOrders', true], ['qrControl', true], ['tables', true], ['cashMoves', false], ['reopen', false],
     ['discount', false], ['price', false], ['delSent', false], ['cancel', false], ['closeZ', false]
   ];
   function can(user, perm) {
@@ -341,7 +341,10 @@
   // ctx: { table: 'Mesa T5', user: 'ANA', logo: 'data:image/…' }
   function receiptDoc(tk, sale, st, ctx) {
     var T = Object.assign({}, DEFAULT_TICKET, (st && st.ticket) || {});
+    var rect = sale && sale.invoiceType === 'R';
+    var sg = rect ? -1 : 1;      // la rectificativa va en negativo
     var tot = ticketTotals(tk);
+    tot = { subtotal: sg * tot.subtotal, discount: sg * tot.discount, total: sale ? sale.total : tot.total };
     var vat = sale && sale.vatRate != null ? sale.vatRate : (Number(st.vat) || 0);
     var base = round2(tot.total / (1 + vat / 100));
     var when = sale ? sale.closedAt : Date.now();
@@ -354,9 +357,12 @@
     lines(T.headerExtra).forEach(function (l) { doc.push(['c', l]); });
     doc.push(['hr']);
     // factura completa (con datos del cliente) o simplificada
-    var full = sale && (ctx.full || sale.invoiceType === 'F');
+    var full = sale && !rect && (ctx.full || sale.invoiceType === 'F');
     var cust = (ctx.full && ctx.full.customer) || (sale && sale.customer) || tk.customer;
-    if (full) {
+    if (rect) {
+      doc.push(['b', 'FACTURA RECTIFICATIVA ' + sale.invoice], ['t', 'Rectifica a la factura ' + sale.rectifies + ' (anulación)']);
+      if (cust) doc.push(['t', 'Cliente: ' + cust.name + (cust.nif ? ' · NIF ' + cust.nif : '')]);
+    } else if (full) {
       doc.push(['b', 'FACTURA ' + (ctx.full ? ctx.full.invoice : sale.invoice)]);
       if (ctx.full && ctx.full.replaces) doc.push(['t', 'Sustituye a la factura simplificada ' + ctx.full.replaces]);
       if (cust) {
@@ -376,7 +382,7 @@
       var extras = T.showMods ? (l.mods || []).filter(function (m) { return m.type === 'extra'; }).map(function (m) { return m.name; }) : [];
       // menú del día: solo se detallan los platos con suplemento
       (l.combo || []).forEach(function (c) { if (c.extra) extras.push(c.choice); });
-      doc.push(['item', fmtQty(l.qty), l.name, extras.length ? ['+ ' + extras.join(', ')] : [], fmt(l.price * l.qty)]);
+      doc.push(['item', fmtQty(sg * l.qty), l.name, extras.length ? ['+ ' + extras.join(', ')] : [], fmt(sg * l.price * l.qty)]);
     });
     doc.push(['hr']);
     if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);

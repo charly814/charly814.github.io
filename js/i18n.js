@@ -678,6 +678,15 @@
     'adm.tar.none': ['No hay tarifas: se cobran los precios de carta.', 'No price lists: menu prices are charged.', '没有价格表：按菜单原价收费。'],
     'adm.tar.allDays': ['Copiar a todos los días', 'Copy to every day', '复制到每一天'],
 
+    // ---- reabrir ticket cobrado
+    'perm.reopen': ['Reabrir tickets ya cobrados', 'Reopen tickets already paid', '重新打开已结账的单'],
+    'reopen.btn': ['Reabrir (cobrado por error)', 'Reopen (paid by mistake)', '重新打开（误按已付款）'],
+    'reopen.confirm': ['¿Reabrir {n} ({t}, {a})? Se emite una factura rectificativa que la anula y los productos vuelven a la mesa.', 'Reopen {n} ({t}, {a})? A rectifying invoice cancels it and the items go back to the table.', '重新打开 {n}（{t}，{a}）？系统会开一张红字发票（factura rectificativa）冲销它，商品回到桌上。'],
+    'reopen.done': ['Reabierto en {t} · rectificativa {n}', 'Reopened on {t} · rectifying invoice {n}', '已在 {t} 重新打开 · 红字发票 {n}'],
+    'caja.voided': ['anulada ({n})', 'cancelled ({n})', '已冲销（{n}）'],
+    'caja.rect': ['rectifica {n}', 'rectifies {n}', '冲销 {n}'],
+    'audit.reopen': ['Ticket reabierto (rectificativa)', 'Ticket reopened (rectifying invoice)', '重新打开已结账的单（红字发票）'],
+
     // ---- carta QR del cliente
     'c.scan': ['Escanea el código QR de tu mesa para pedir.', 'Scan the QR code on your table to order.', '请扫描桌上的二维码点餐。'],
     'c.seeMenu': ['Ver la carta', 'See the menu', '查看菜单'],
