@@ -430,3 +430,6 @@ table.split td { padding: 6px; }
 tr.voided td { text-decoration: line-through; color: var(--muted); }
 tr.voided td:last-child, tr.voided td:nth-child(2) { text-decoration: none; }
 @media (max-width: 860px) { .actions .act[data-act="move"], .actions .act[data-act="split"] { display: flex !important; } }
+/* tarjetas regalo y puntos */
+.seg-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.modal-box .btn.on { background: var(--dark); color: #fff; border-color: var(--dark); }

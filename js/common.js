@@ -302,7 +302,27 @@
     showPayment: true,   // forma de pago, entregado y cambio
     big: false           // letra más grande (impresión por navegador)
   };
-  var METHOD_ES = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', bizum: 'Bizum', cuenta: 'A cuenta' };
+  var METHOD_ES = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', bizum: 'Bizum', cuenta: 'A cuenta', regalo: 'Tarjeta regalo' };
+
+  // ---------------------------------------------------------------- fidelización
+  // settings.loyalty = { on, perEuro: puntos por cada €, value: € que valen 100 puntos, min: puntos mínimos para canjear }
+  var DEFAULT_LOYALTY = { on: false, perEuro: 1, value: 1, min: 100 };
+  function loyaltyCfg(settings) { return Object.assign({}, DEFAULT_LOYALTY, (settings && settings.loyalty) || {}); }
+  // Canje posible para un cliente y un importe: { points, amount } o null
+  function loyaltyRedeem(cfg, points, total) {
+    points = Math.floor(points || 0);
+    if (!cfg.on || !(cfg.value > 0) || points < (cfg.min || 0) || !(total > 0)) return null;
+    var amount = Math.min(Math.floor(points * cfg.value) / 100, total);
+    var used = Math.min(points, Math.ceil(round2(amount * 100 / cfg.value)));
+    return amount > 0 ? { points: used, amount: round2(amount) } : null;
+  }
+  function loyaltyEarn(cfg, total) { return cfg.on && total > 0 ? Math.floor(total * (Number(cfg.perEuro) || 0)) : 0; }
+  function giftCode() {
+    var A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', out = '';
+    var r = window.crypto && crypto.getRandomValues ? crypto.getRandomValues(new Uint32Array(8)) : null;
+    for (var i = 0; i < 8; i++) out += A[(r ? r[i] : Math.floor(Math.random() * 1e9)) % A.length];
+    return out.slice(0, 4) + '-' + out.slice(4);
+  }
 
   // ---------------------------------------------------------------- caja
   // Pagos de una venta: varias formas de pago en un mismo ticket (sale.payments)
@@ -387,21 +407,26 @@
     doc.push(['hr']);
     if (tot.discount) {
       doc.push(['lr', 'Subtotal', fmt(tot.subtotal)]);
-      promoList(tk.promo).forEach(function (x) { doc.push(['lr', x.name, '-' + fmt(sg * x.amount)]); });
-      var manual = round2(Math.abs(tot.discount) - sg * sg * promoList(tk.promo).reduce(function (a, x) { return a + x.amount; }, 0));
-      if (manual > 0.004) doc.push(['lr', 'Descuento', '-' + fmt(sg * manual)]);
+      promoList(tk.promo).forEach(function (x) { doc.push(['lr', x.name, fmt(-sg * x.amount)]); });
+      var loy = (tk.loyalty && tk.loyalty.amount) || 0;
+      var manual = round2(Math.abs(tot.discount) - promoList(tk.promo).reduce(function (a, x) { return a + x.amount; }, 0) - loy);
+      if (manual > 0.004) doc.push(['lr', 'Descuento', fmt(-sg * manual)]);
+      if (loy) doc.push(['lr', 'Puntos canjeados (' + tk.loyalty.points + ')', fmt(-sg * loy)]);
     }
     doc.push(['lrb', 'TOTAL', fmt(tot.total)]);
     if (T.showVat || full) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
     else doc.push(['c', 'IVA incluido']);       // obligatorio en la factura simplificada si no se desglosa
     if (sale && T.showPayment) {
       var pays = salePayments(sale);
-      if (pays.length > 1) pays.forEach(function (x) { doc.push(['lr', METHOD_ES[x.method] || x.method, fmt(x.amount)]); });
+      var pname = function (x) { return (METHOD_ES[x.method] || x.method) + (x.ref ? ' ' + x.ref : ''); };
+      if (pays.length > 1) pays.forEach(function (x) { doc.push(['lr', pname(x), fmt(x.amount)]); });
       else {
-        doc.push(['lr', METHOD_ES[sale.method] || sale.method, fmt(sale.given != null ? sale.given : sale.total)]);
+        doc.push(['lr', pname(pays[0]), fmt(sale.given != null ? sale.given : sale.total)]);
         if (sale.change) doc.push(['lr', 'Cambio', fmt(sale.change)]);
       }
+      pays.forEach(function (x) { if (x.method === 'regalo' && x.left != null && !rect) doc.push(['t', 'Saldo tarjeta ' + x.ref + ': ' + fmt(x.left)]); });
     }
+    if (sale && sale.points && !rect) doc.push(['t', 'Puntos: ' + (sale.points.earned ? '+' + sale.points.earned : '0') + (sale.points.used ? ' / -' + sale.points.used : '') + ' · saldo ' + sale.points.balance]);
     var foot = lines(st.footer);
     if (foot.length) { doc.push(['hr']); foot.forEach(function (l) { doc.push(['c', l]); }); }
     return doc;
@@ -487,7 +512,10 @@
     if (promo > sub) promo = sub;
     var disc = round2(promo + (sub - promo) * ((t && t.discountPct) || 0) / 100 + ((t && t.discountEur) || 0));
     if (disc > sub) disc = sub;
-    return { subtotal: sub, discount: disc, promo: promo, total: round2(sub - disc) };
+    // puntos canjeados: lo último, sobre lo que queda
+    var loy = round2(Math.min((t && t.loyalty && t.loyalty.amount) || 0, sub - disc));
+    disc = round2(disc + loy);
+    return { subtotal: sub, discount: disc, promo: promo, loyalty: loy, total: round2(sub - disc) };
   }
 
   // ---------------------------------------------------------------- promociones
@@ -553,6 +581,10 @@
     modsText: modsText,
     ticketTotals: ticketTotals,
     promoCalc: promoCalc,
+    loyaltyCfg: loyaltyCfg,
+    loyaltyRedeem: loyaltyRedeem,
+    loyaltyEarn: loyaltyEarn,
+    giftCode: giftCode,
     promoList: promoList,
     DEFAULT_QR: DEFAULT_QR,
     validRanges: validRanges,

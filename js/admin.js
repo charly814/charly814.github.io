@@ -104,6 +104,7 @@
     ['customers', 'adm.nav.customers', secCustomers],
     ['tarifas', 'adm.nav.tarifas', secTarifas],
     ['promos', 'adm.nav.promos', secPromos],
+    ['loyalty', 'adm.nav.loyalty', secLoyalty],
     ['mods', 'adm.nav.mods', secMods],
     ['tables', 'adm.nav.tables', secTables],
     ['hours', 'adm.nav.hours', secHours],
@@ -518,6 +519,39 @@
     return { head: head, html: html };
   }
 
+  // ---------------------------------------------------------------- puntos y tarjetas regalo
+
+  function secLoyalty() {
+    var L = P.loyaltyCfg(A.settings);
+    var num = function (k, label) {
+      return '<div class="field"><label>' + t(label) + '</label><input type="text" inputmode="decimal" style="max-width:120px" data-edit="loy" data-k="' + k + '" value="' + String(L[k]).replace('.', ',') + '"></div>';
+    };
+    var ex = P.loyaltyEarn(Object.assign({}, L, { on: true }), 50);
+    var custs = Object.keys(A.customers || {}).map(function (k) { return A.customers[k]; }).filter(function (c) { return c.points > 0; })
+      .sort(function (a, b) { return b.points - a.points; });
+    var q = norm(A.gq || '');
+    var cards = Object.keys(A.giftcards || {}).map(function (k) { return A.giftcards[k]; }).sort(function (a, b) { return b.at - a.at; });
+    var live = round2(cards.filter(function (g) { return g.active !== false; }).reduce(function (a, g) { return a + (g.balance || 0); }, 0));
+    var shown = cards.filter(function (g) { return !q || norm(g.code).indexOf(q) >= 0; });
+    var html = '<div class="card"><h3>⭐ ' + t('loy.title') + '</h3><p class="muted">' + t('loy.help') + '</p>' +
+      '<label class="chk-line"><label class="switch"><input type="checkbox" data-edit="loy" data-k="on"' + (L.on ? ' checked' : '') + '><span></span></label> ' + t('loy.on') + '</label>' +
+      '<div class="form-grid" style="margin-top:12px">' + num('perEuro', 'loy.perEuro') + num('value', 'loy.value') + num('min', 'loy.min') + '</div>' +
+      '<p class="promo-sum">' + t('loy.example', { e: ex, p: L.min, v: fmt(L.min * L.value / 100) }) + '</p>' +
+      (custs.length ? '<h4>' + t('loy.top') + '</h4><table class="grid">' + custs.slice(0, 20).map(function (c) {
+        return '<tr><td>' + esc(c.name) + '<small>' + esc(c.phone || '') + '</small></td><td class="num">⭐ ' + c.points + '</td><td class="num muted">' + fmt(c.points * L.value / 100) + '</td></tr>';
+      }).join('') + '</table>' : '') + '</div>' +
+      '<div class="card"><h3>🎁 ' + t('gift.title') + '</h3><p class="muted">' + t('gift.admHelp') + '</p>' +
+      '<div class="kpis">' + '<div class="kpi"><small>' + t('gift.count') + '</small><b>' + cards.length + '</b></div><div class="kpi"><small>' + t('gift.live') + '</small><b>' + fmt(live) + '</b></div></div>' +
+      '<div class="toolbar" style="margin:12px 0"><input id="gq" type="search" placeholder="' + t('gift.code') + '" value="' + esc(A.gq || '') + '"></div>' +
+      (shown.length ? '<div class="scroll-x"><table class="grid"><tr><th>' + t('gift.code') + '</th><th>' + t('caja.date') + '</th><th>' + t('adm.log.who') + '</th><th class="num">' + t('gift.initial') + '</th><th class="num">' + t('gift.left') + '</th><th>' + t('adm.tar.active') + '</th></tr>' +
+        shown.slice(0, 300).map(function (g) {
+          return '<tr class="' + (g.active === false ? 'off-row' : '') + '"><td><b>' + esc(g.code) + '</b></td><td>' + new Date(g.at).toLocaleDateString('es-ES') + '</td><td>' + esc(g.by || '') + '</td>' +
+            '<td class="num">' + fmt(g.initial) + '</td><td class="num">' + fmt(g.balance) + '</td>' +
+            '<td><label class="switch"><input type="checkbox" data-edit="gift-active" data-c="' + esc(g.code) + '"' + (g.active !== false ? ' checked' : '') + '><span></span></label></td></tr>';
+        }).join('') + '</table></div>' : '<p class="muted">' + t('gift.none') + '</p>') + '</div>';
+    return { html: html };
+  }
+
   // ---------------------------------------------------------------- clientes
 
   function secCustomers() {
@@ -611,7 +645,10 @@
     });
   }
 
-  app.addEventListener('input', function (e) { if (e.target.id === 'cq') { A.cq = e.target.value; render(); } });
+  app.addEventListener('input', function (e) {
+    if (e.target.id === 'cq') { A.cq = e.target.value; render(); }
+    if (e.target.id === 'gq') { A.gq = e.target.value; render(); var g = document.getElementById('gq'); if (g) { g.focus(); g.setSelectionRange(g.value.length, g.value.length); } }
+  });
 
   // ---------------------------------------------------------------- modificadores
 
@@ -1075,7 +1112,7 @@
 
   // ---------------------------------------------------------------- copias de seguridad
 
-  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'promos', 'layout', 'customers', 'custlog'];
+  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'promos', 'layout', 'customers', 'custlog', 'giftcards'];
 
   function secBackup() {
     var html = '<div class="card"><h3>' + t('adm.backupTitle') + '</h3><p class="muted">' + t('adm.backupHelp') + '</p>' +
@@ -1487,6 +1524,12 @@
         if (val) cats.push(d.cid);
         return Store.update('public/qr', { kitchenCats: cats });
       case 'cust-credit': return Store.update('customers/' + d.cid, { credit: !!val });
+      case 'loy':
+        var lc = P.loyaltyCfg(A.settings);
+        lc[d.k] = d.k === 'on' ? !!val : Math.max(0, Number(String(val).replace(',', '.')) || 0);
+        if (d.k === 'min') lc.min = Math.floor(lc.min);
+        return Store.update('settings', { loyalty: lc });
+      case 'gift-active': return Store.update('giftcards/' + d.c, { active: !!val });
       case 'tar': case 'tar-set': case 'tar-day': case 'tar-price':
         var tl = clone(A.tarifas || []), tx = tl[d.ti];
         if (!tx) return;
@@ -1905,6 +1948,7 @@
     Store.on('cash', function (v) { A.cash = v || {}; render(); });
     Store.on('customers', function (v) { A.customers = v || {}; render(); });
     Store.on('promos', function (v) { A.promos = P.promoList(v); render(); });
+    Store.on('giftcards', function (v) { A.giftcards = v || {}; if (A.sec === 'loyalty') render(); });
     Store.on('public/tarifas', function (v) { A.tarifas = v || []; render(); });
     Store.on('users', function (v) {
       A.users = v || P.DEFAULT_USERS;

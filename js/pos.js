@@ -10,7 +10,7 @@
   var t = function (k, v) { return I.t(k, v); };
   var QUICK = 'RAPIDA';
   var METHODS = ['efectivo', 'tarjeta', 'bizum'];
-  var METHOD_ES = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', bizum: 'Bizum' };
+  var METHOD_ES = P.METHOD_ES;
 
   var S = {
     view: 'login',
@@ -125,6 +125,7 @@
   Store.on('audit', function (v) { S.audit = v || {}; });
   Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; render(); });
   Store.on('customers', function (v) { S.customers = v || {}; render(); });
+  Store.on('giftcards', function (v) { S.giftcards = v || {}; });
   Store.on('public/tarifas', function (v) { S.tarifas = v || []; render(); });
   Store.on('promos', function (v) { S.promos = P.promoList(v); render(); });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
@@ -561,7 +562,8 @@
       '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + (S.temp[S.table] ? ' <i class="tag temp">' + t('legend.temp') + '</i>' : '') + '</h2><small>' + esc(tk.user || S.user.name) + '</small> ' +
         '<button class="chip" data-act="guests">👥 ' + (tk.guests || '–') + '</button> ' +
         (function () { var tf = tarifaOf(S.table); return tf || tk.tarifa ? '<button class="chip on" data-act="tarifa">🏷️ ' + esc(tf ? tf.name : t('tar.none')) + '</button> ' : (S.tarifas && S.tarifas.length ? '<button class="chip" data-act="tarifa">🏷️</button> ' : ''); })() +
-        '<button class="chip' + (tk.customer ? ' on' : '') + '" data-act="customer">👤 ' + esc(tk.customer ? tk.customer.name : t('cust.btn')) + '</button></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
+        '<button class="chip' + (tk.customer ? ' on' : '') + '" data-act="customer">👤 ' + esc(tk.customer ? tk.customer.name : t('cust.btn')) +
+          (function () { var c = tk.customer && P.loyaltyCfg(S.settings).on && S.customers[tk.customer.id]; return c ? ' ⭐ ' + (c.points || 0) : ''; })() + '</button></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
       (childrenOf(S.table).length ? '<div class="joined-row">🔗 ' + t('tk.joined') + ': ' + childrenOf(S.table).map(function (c) {
         return '<button class="chip" data-act="unjoin" data-id="' + esc(c) + '" title="' + esc(t('tk.unjoin', { c: c })) + '">' + esc(c) + ' ✕</button>';
       }).join('') + '</div>' : '') +
@@ -675,6 +677,7 @@
       '<button class="btn" data-act="csv">' + t('caja.csv') + '</button>' +
       '<button class="btn" data-act="drawer">💶 ' + t('act.drawer') + '</button>' +
       '<button class="btn" data-act="debt-pay">' + t('cust.debtPay') + '</button>' +
+      '<button class="btn" data-act="gift">' + t('gift.btn') + '</button>' +
       '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
@@ -708,7 +711,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', split: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    pay: 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
@@ -771,6 +774,7 @@
         saveTicket(tk); render();
       });
     },
+    gift: function () { openGift(); },
     'debt-pay': function () {
       pickCustomer(null, function (c) { if (c) openDebtPay(c); }, true);
     },
@@ -786,6 +790,7 @@
         var rect = {
           id: rid, invoice: num.invoice, invoiceType: 'R', rectifies: sale.invoice, rectifiesId: sale.id,
           table: sale.table, lines: sale.lines, openedAt: sale.openedAt, guests: 0, customer: sale.customer || null,
+          promo: sale.promo || null, discountPct: sale.discountPct || 0, discountEur: sale.discountEur || 0, loyalty: sale.loyalty || null,
           total: neg(sale.total), subtotal: neg(sale.subtotal), discount: neg(sale.discount), vatRate: sale.vatRate, base: neg(sale.base), vatAmount: neg(sale.vatAmount),
           method: sale.method, payments: P.salePayments(sale).map(function (x) { return Object.assign({}, x, { amount: neg(x.amount) }); }),
           given: neg(sale.total), change: 0, cashier: S.user.name, closedAt: now, reason: 'reopen'
@@ -800,6 +805,18 @@
         if (onAcc && cust) {
           upd['customers/' + cust.id + '/balance'] = round2((cust.balance || 0) - onAcc);
           upd['custlog/' + cust.id + '/' + rid] = { at: now, type: 'pay', amount: onAcc, ref: num.invoice, user: S.user.name, method: 'rectificativa' };
+        }
+        // las tarjetas regalo recuperan su saldo y los puntos vuelven atrás
+        P.salePayments(sale).forEach(function (x) {
+          var g = x.method === 'regalo' && S.giftcards[x.ref];
+          if (!g) return;
+          upd['giftcards/' + x.ref + '/balance'] = round2((upd['giftcards/' + x.ref + '/balance'] != null ? upd['giftcards/' + x.ref + '/balance'] : g.balance) + x.amount);
+          upd['giftlog/' + x.ref + '/' + rid] = { at: now, amount: x.amount, ref: num.invoice, user: S.user.name };
+        });
+        var pcu = sale.points && sale.customer && S.customers[sale.customer.id];
+        if (pcu) {
+          upd['customers/' + pcu.id + '/points'] = Math.max(0, (pcu.points || 0) - sale.points.earned + sale.points.used);
+          upd['pointlog/' + pcu.id + '/' + rid] = { at: now, type: 'points', points: sale.points.used - sale.points.earned, ref: num.invoice, user: S.user.name };
         }
         // los productos vuelven a la mesa (si está ocupada, se juntan)
         var tk = ticketOf(sale.table);
@@ -1729,8 +1746,21 @@
   // Se puede pagar en varias partes (a partes iguales o con varias formas de pago).
   function openPay(tk, opts) {
     opts = opts || {};
-    var tot = P.ticketTotals(tk);
-    var st = { method: 'efectivo', given: '', print: true, busy: false, multi: false, parts: [], part: '' };
+    var st = { method: 'efectivo', given: '', print: true, busy: false, multi: false, parts: [], part: '', gift: '', usePts: false };
+    var LC = P.loyaltyCfg(S.settings);
+    var lcust = LC.on && tk.customer && S.customers[tk.customer.id];
+    var redeem = lcust ? P.loyaltyRedeem(LC, lcust.points, P.ticketTotals(Object.assign({}, tk, { loyalty: null })).total) : null;
+    function calc() { return P.ticketTotals(Object.assign({}, tk, { loyalty: st.usePts ? redeem : null })); }
+    var tot = calc();
+    // tarjeta regalo: código normalizado y saldo que queda sin contar lo ya puesto en este cobro
+    function giftOf(code) {
+      code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (code.length === 8) code = code.slice(0, 4) + '-' + code.slice(4);
+      var g = (S.giftcards || {})[code];
+      if (!g || g.active === false) return null;
+      var used = st.parts.filter(function (x) { return x.ref === code; }).reduce(function (a, x) { return a + x.amount; }, 0);
+      return { code: code, left: round2(g.balance - used) };
+    }
     function paid() { return round2(st.parts.reduce(function (a, x) { return a + x.amount; }, 0)); }
     function left() { return round2(tot.total - paid()); }
     function draw() {
@@ -1740,8 +1770,11 @@
         return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>';
       }).join('') + '</div>';
       var body;
+      var giftField = st.method === 'regalo' ? '<div class="field"><label>' + t('gift.code') + '</label><input id="pay-gift" type="text" autocapitalize="characters" value="' + esc(st.gift) + '" placeholder="ABCD-2345">' +
+        (function () { var g = st.gift && giftOf(st.gift); return st.gift ? '<small class="' + (g ? 'ok-t' : 'bad-t') + '">' + (g ? t('gift.balance', { n: fmt(g.left) }) : t('gift.notFound')) + '</small>' : ''; })() + '</div>' : '';
+      var ptsBtn = redeem ? '<p><button class="btn' + (st.usePts ? ' on' : '') + '" data-k="pts"' + (st.parts.length ? ' disabled' : '') + '>⭐ ' + t(st.usePts ? 'loy.using' : 'loy.use', { p: redeem.points, a: fmt(redeem.amount), b: lcust.points }) + '</button></p>' : '';
       if (!st.multi) {
-        body = methods + (st.method === 'efectivo'
+        body = ptsBtn + methods + giftField + (st.method === 'efectivo'
           ? '<div class="field"><label>' + t('pay.given') + '</label><input id="pay-given" type="text" inputmode="decimal" value="' + esc(st.given) + '" placeholder="' + fmt(tot.total) + '"></div>' +
           '<div class="quick-cash">' + quickCash(tot.total).map(function (v) {
             return '<button data-k="g:' + v + '">' + fmt(v) + '</button>';
@@ -1751,15 +1784,15 @@
           '<p><button class="btn" data-k="multi">' + t('pay.parts') + '</button></p>';
       } else {
         var rem = left();
-        body = '<div class="parts">' + st.parts.map(function (x, i) {
-          return '<span class="chip">' + t('m.' + x.method) + ' ' + fmt(x.amount) + ' <button data-k="del:' + i + '">✕</button></span>';
+        body = ptsBtn + '<div class="parts">' + st.parts.map(function (x, i) {
+          return '<span class="chip">' + t('m.' + x.method) + (x.ref ? ' ' + esc(x.ref) : '') + ' ' + fmt(x.amount) + ' <button data-k="del:' + i + '">✕</button></span>';
         }).join('') + '</div>' +
           '<p class="pay-left">' + t('pay.remaining', { n: fmt(rem) }) + '</p>' +
           (rem > 0 ? '<div class="quick-cash">' + [2, 3, 4, 5, 6].map(function (n) {
             return '<button data-k="n:' + n + '">÷ ' + n + ' = ' + fmt(round2(tot.total / n)) + '</button>';
           }).join('') + '</div>' +
             '<div class="field"><label>' + t('cash.amount') + '</label><input id="pay-part" type="text" inputmode="decimal" value="' + esc(st.part) + '" placeholder="' + fmt(rem) + '"></div>' +
-            methods + '<p><button class="btn primary" data-k="addpart">' + t('pay.addPart') + '</button></p>' : '');
+            methods + giftField + '<p><button class="btn primary" data-k="addpart">' + t('pay.addPart') + '</button></p>' : '');
       }
       modalBox.className = 'modal-box';
       modalBox.innerHTML = '<h2>' + t('pay.title', { t: esc(tableLabel(tk.table)) }) + '</h2>' +
@@ -1771,6 +1804,12 @@
       if (inp) inp.oninput = function () { st.given = inp.value; var p = inp.selectionStart; draw(); var n = document.getElementById('pay-given'); n.focus(); n.setSelectionRange(p, p); };
       var pp = document.getElementById('pay-part');
       if (pp) pp.oninput = function () { st.part = pp.value; };
+      var pg = document.getElementById('pay-gift');
+      if (pg) {
+        pg.oninput = function () { st.gift = pg.value; };
+        pg.onchange = function () { st.gift = pg.value; draw(); };
+        pg.onkeydown = function (e) { if (e.key === 'Enter') { st.gift = pg.value; draw(); } };
+      }
     }
     openModal('pay', draw, function (k) {
       if (st.busy) return;
@@ -1779,6 +1818,9 @@
       if (k.indexOf('m:') === 0) { st.method = k.slice(2); return draw(); }
       if (k.indexOf('g:') === 0) { st.given = k.slice(2).replace('.', ','); return draw(); }
       if (k === 'multi') { st.multi = true; return draw(); }
+      if (k === 'pts') { if (st.parts.length) return; st.usePts = !st.usePts; tot = calc(); return draw(); }
+      var gin = document.getElementById('pay-gift');
+      if (gin) st.gift = gin.value;
       if (k.indexOf('n:') === 0) { st.part = String(Math.min(left(), round2(tot.total / Number(k.slice(2))))).replace('.', ','); return draw(); }
       if (k.indexOf('del:') === 0) { st.parts.splice(Number(k.slice(4)), 1); return draw(); }
       if (k === 'addpart') {
@@ -1787,7 +1829,14 @@
         amt = Math.min(amt, left());
         // la última parte se lleva el redondeo (p. ej. 10 € entre 3)
         if (round2(left() - amt) > 0 && round2(left() - amt) < 0.03) amt = left();
-        st.parts.push({ method: st.method, amount: amt });
+        var part = { method: st.method, amount: amt };
+        if (st.method === 'regalo') {
+          var g = giftOf(st.gift);
+          if (!g) { toast(t('gift.notFound')); return draw(); }
+          if (!(g.left > 0)) return toast(t('gift.empty'));
+          part.amount = Math.min(amt, g.left); part.ref = g.code;
+        }
+        st.parts.push(part);
         st.part = '';
         return draw();
       }
@@ -1801,7 +1850,18 @@
           given = st.method === 'efectivo' ? (Number(String(st.given).replace(',', '.')) || tot.total) : tot.total;
           if (given < tot.total) return toast(t('msg.givenLow'));
           payments = [{ method: st.method, amount: tot.total }];
+          if (st.method === 'regalo') {
+            var gc = giftOf(st.gift);
+            if (!gc) { toast(t('gift.notFound')); return draw(); }
+            if (gc.left < tot.total) return toast(t('gift.short', { n: fmt(gc.left) }));
+            payments[0].ref = gc.code;
+          }
         }
+        // saldo de cada tarjeta regalo usada (se descuenta en la misma escritura)
+        var giftUse = {};
+        payments.forEach(function (x) { if (x.method === 'regalo') giftUse[x.ref] = round2((giftUse[x.ref] || 0) + x.amount); });
+        if (Object.keys(giftUse).some(function (c) { var g = S.giftcards[c]; return !g || g.balance < giftUse[c] - 0.004; })) return toast(t('gift.notFound'));
+        payments.forEach(function (x) { if (x.method === 'regalo') x.left = round2(S.giftcards[x.ref].balance - giftUse[x.ref]); });
         var onAccount = round2(payments.filter(function (x) { return x.method === 'cuenta'; }).reduce(function (a, x) { return a + x.amount; }, 0));
         var cust = tk.customer && S.customers[tk.customer.id];
         if (onAccount && !(cust && cust.credit)) return toast(t('cust.noCredit'));
@@ -1817,10 +1877,23 @@
             method: payments.length > 1 ? 'mixto' : payments[0].method, payments: payments,
             invoiceType: full ? 'F' : 'S', customer: tk.customer || null,
             given: round2(given), change: round2(given - tot.total),
-            cashier: S.user.name, closedAt: Date.now()
+            cashier: S.user.name, closedAt: Date.now(), loyalty: st.usePts ? redeem : null
           });
           var upd = {};
           upd[num.key] = num.n;
+          Object.keys(giftUse).forEach(function (c) {
+            upd['giftcards/' + c + '/balance'] = round2(S.giftcards[c].balance - giftUse[c]);
+            upd['giftlog/' + c + '/' + id] = { at: sale.closedAt, amount: -giftUse[c], ref: num.invoice, user: S.user.name };
+          });
+          // puntos: se restan los canjeados y se suman los ganados con lo pagado
+          var pc = LC.on && tk.customer && S.customers[tk.customer.id];
+          if (pc) {
+            var used = st.usePts && redeem ? redeem.points : 0, earned = P.loyaltyEarn(LC, tot.total);
+            var bal = Math.max(0, Math.floor((pc.points || 0) - used + earned));
+            sale.points = { used: used, earned: earned, balance: bal };
+            upd['customers/' + pc.id + '/points'] = bal;
+            if (used || earned) upd['pointlog/' + pc.id + '/' + id] = { at: sale.closedAt, type: 'points', points: earned - used, ref: num.invoice, user: S.user.name };
+          }
           upd['sales/' + id] = sale;
           if (onAccount) {
             // la deuda del cliente sube en la misma escritura
@@ -1973,7 +2046,8 @@
   }
   function payMethods(tk) {
     var c = tk.customer && S.customers[tk.customer.id];
-    return METHODS.concat(c && c.credit ? ['cuenta'] : []);
+    var gifts = Object.keys(S.giftcards || {}).some(function (k) { return S.giftcards[k].active !== false && S.giftcards[k].balance > 0; });
+    return METHODS.concat(gifts ? ['regalo'] : [], c && c.credit ? ['cuenta'] : []);
   }
 
   // Buscar o crear un cliente. cb(cliente | null). debtOnly: solo los que deben.
@@ -2030,6 +2104,62 @@
   }
 
   // Cobrar lo que debe un cliente (todo o parte)
+  // Tarjetas regalo: vender (entra en caja como entrada de dinero, no es una venta:
+  // el IVA se paga cuando se consume) y consultar el saldo.
+  function openGift() {
+    var st = { tab: 'sell', amount: '', method: 'efectivo', code: '' };
+    function draw() {
+      var g = st.code && (S.giftcards || {})[String(st.code).toUpperCase().trim()];
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + t('gift.btn') + '</h2><div class="seg-tabs"><button class="btn' + (st.tab === 'sell' ? ' on' : '') + '" data-k="tab:sell">' + t('gift.sell') + '</button>' +
+        '<button class="btn' + (st.tab === 'check' ? ' on' : '') + '" data-k="tab:check">' + t('gift.check') + '</button></div>' +
+        (st.tab === 'sell'
+          ? '<div class="field"><label>' + t('cash.amount') + '</label><input id="gf-amount" type="text" inputmode="decimal" value="' + esc(st.amount) + '" placeholder="20,00"></div>' +
+            '<div class="quick-cash">' + [10, 20, 30, 50, 100].map(function (v) { return '<button data-k="a:' + v + '">' + fmt(v) + '</button>'; }).join('') + '</div>' +
+            '<div class="pay-methods">' + METHODS.map(function (m) { return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>'; }).join('') + '</div>' +
+            '<p class="muted">' + t('gift.sellHelp') + '</p>' +
+            '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('gift.create') + '</button></div>'
+          : '<div class="field"><label>' + t('gift.code') + '</label><input id="gf-code" type="text" autocapitalize="characters" value="' + esc(st.code) + '" placeholder="ABCD-2345"></div>' +
+            (st.code ? (g ? '<p class="pay-total">' + fmt(g.balance) + '</p><p class="muted">' + t('gift.info', { i: fmt(g.initial), d: new Date(g.at).toLocaleDateString('es-ES') }) + (g.active === false ? ' · <b class="bad-t">' + t('gift.off') + '</b>' : '') + '</p>'
+              : '<p class="bad-t">' + t('gift.notFound') + '</p>') : '') +
+            '<div class="btn-row"><button class="btn" data-k="X">' + t('close') + '</button><button class="btn primary" data-k="look" style="flex:1">' + t('gift.look') + '</button></div>');
+      var a = document.getElementById('gf-amount');
+      if (a) a.oninput = function () { st.amount = a.value; };
+      var c = document.getElementById('gf-code');
+      if (c) { c.oninput = function () { st.code = c.value; }; c.onkeydown = function (e) { if (e.key === 'Enter') { st.code = c.value; draw(); } }; c.focus(); }
+    }
+    openModal('gift', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('tab:') === 0) { st.tab = k.slice(4); return draw(); }
+      if (k.indexOf('a:') === 0) { st.amount = k.slice(2); return draw(); }
+      if (k.indexOf('m:') === 0) { st.method = k.slice(2); return draw(); }
+      if (k === 'look') {
+        var cc = String(st.code).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        st.code = cc.length === 8 ? cc.slice(0, 4) + '-' + cc.slice(4) : cc;
+        return draw();
+      }
+      if (k !== 'OK') return;
+      var amt = round2(String(st.amount).replace(',', '.'));
+      if (!(amt > 0)) return toast(t('cash.needAmount'));
+      var code;
+      do { code = P.giftCode(); } while ((S.giftcards || {})[code]);
+      var id = Store.newId(), now = Date.now(), upd = {};
+      upd['giftcards/' + code] = { code: code, initial: amt, balance: amt, at: now, by: S.user.name, method: st.method, active: true };
+      upd['giftlog/' + code + '/' + id] = { at: now, amount: amt, ref: 'venta', user: S.user.name };
+      upd['cash/moves/' + id] = { id: id, at: now, user: S.user.name, type: 'in', amount: amt, method: st.method, reason: t('gift.reason', { c: code }), gift: code };
+      Store.update('', upd);
+      audit('giftSell', code + ' · ' + fmt(amt) + ' · ' + st.method);
+      if (st.method === 'efectivo') Devices.openDrawer().catch(function () { /* navegador */ });
+      printGift(code, amt, now);
+      closeModal();
+      toast(t('gift.done', { c: code }));
+    });
+  }
+  function printGift(code, amt, at) {
+    printDoc(header().concat([['cb', 'TARJETA REGALO'], ['hr'], ['h1', code], ['lrb', 'IMPORTE', fmt(amt)], ['c', new Date(at).toLocaleDateString('es-ES')], ['hr'],
+      ['c', 'Presente este código al pagar.'], ['c', 'Se puede usar en varias veces.']]), 'receipt');
+  }
+
   function openDebtPay(c) {
     if (!((c.balance || 0) > 0)) return toast(t('cust.noDebt'));
     var st = { amount: String(c.balance).replace('.', ','), method: 'efectivo' };
