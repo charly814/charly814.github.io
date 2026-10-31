@@ -911,7 +911,7 @@
     sales.forEach(function (s) {
       r.total += s.total;
       r.discounts += s.discount || 0;
-      r.byMethod[s.method] = (r.byMethod[s.method] || 0) + s.total;
+      P.salePayments(s).forEach(function (p) { r.byMethod[p.method] = (r.byMethod[p.method] || 0) + p.amount; });
       var w = r.byWaiter[s.cashier] = r.byWaiter[s.cashier] || { n: 0, total: 0 };
       w.n++; w.total += s.total;
       var d = new Date(s.closedAt);
@@ -1000,14 +1000,39 @@
         '<div class="card"><h3>' + t('adm.rep.top') + '</h3><div class="scroll-x">' + rankTable(products.slice(0, 15), [t('adm.col.product'), t('adm.rep.units1')]) + '</div></div>' +
         '<div class="two-col"><div class="card"><h3>' + t('adm.rep.byCat') + '</h3>' +
         rankTable(Object.keys(r.cats).map(function (k) { return { name: k, amount: r.cats[k] }; }).sort(function (a, b) { return b.amount - a.amount; }), [t('adm.col.cat')]) + '</div>' +
-        '<div class="card"><h3>' + t('adm.rep.byMethod') + '</h3><table class="grid">' + ['efectivo', 'tarjeta', 'bizum'].map(function (m) {
+        '<div class="card"><h3>' + t('adm.rep.byMethod') + '</h3><table class="grid">' + ['efectivo', 'tarjeta', 'bizum'].concat(Object.keys(r.byMethod).filter(function (m) { return ['efectivo', 'tarjeta', 'bizum'].indexOf(m) < 0; })).map(function (m) {
           return '<tr><td>' + t('m.' + m) + '</td><td class="num">' + fmt(r.byMethod[m] || 0) + '</td><td class="num muted">' + (r.total ? Math.round((r.byMethod[m] || 0) / r.total * 100) : 0) + '%</td></tr>';
         }).join('') + '</table><h3 style="margin-top:16px">' + t('adm.rep.byWaiter') + '</h3><table class="grid">' + Object.keys(r.byWaiter).map(function (w) {
           return '<tr><td>' + esc(w) + '</td><td class="num">' + r.byWaiter[w].n + ' tickets</td><td class="num">' + fmt(r.byWaiter[w].total) + '</td></tr>';
         }).join('') + '</table></div></div>'
-        : '<div class="card"><p class="muted">' + t('adm.rep.none') + '</p></div>');
+        : '<div class="card"><p class="muted">' + t('adm.rep.none') + '</p></div>') + closuresCard(r.from, r.to);
     A.lastProducts = products;
     return { head: head, html: html };
+  }
+
+  // Cierres Z del periodo con su arqueo, y las entradas/salidas de dinero
+  function closuresCard(from, to) {
+    var cl = Object.keys(A.closures || {}).map(function (k) { return A.closures[k]; })
+      .filter(function (c) { return c.closedAt >= from && c.closedAt < to; }).sort(function (a, b) { return b.closedAt - a.closedAt; });
+    var moves = [];
+    cl.forEach(function (c) { ((c.cash && c.cash.moves) || []).forEach(function (m) { moves.push(m); }); });
+    Object.keys((A.cash && A.cash.moves) || {}).forEach(function (k) { var m = A.cash.moves[k]; if (m.at >= from && m.at < to) moves.push(m); });
+    moves.sort(function (a, b) { return b.at - a.at; });
+    if (!cl.length && !moves.length) return '';
+    var diffCell = function (d) {
+      if (d == null) return '—';
+      return '<span class="' + (d === 0 ? 'ok-t' : d < 0 ? 'bad-t' : 'warn-t') + '">' + (d === 0 ? t('arq.ok') : d < 0 ? t('arq.short', { n: fmt(-d) }) : t('arq.over', { n: fmt(d) })) + '</span>';
+    };
+    return '<div class="card"><h3>' + t('adm.rep.closures') + '</h3><div class="scroll-x"><table class="grid"><tr><th>' + t('caja.date') + '</th><th>' + t('caja.by') + '</th>' +
+      '<th class="num">' + t('adm.rep.sales') + '</th><th class="num">' + t('adm.rep.expectedCash') + '</th><th class="num">' + t('adm.rep.countedCash') + '</th><th>' + t('arq.diff') + '</th></tr>' +
+      cl.map(function (c) {
+        var x = c.cash || {};
+        return '<tr><td>' + new Date(c.closedAt).toLocaleString('es-ES') + '</td><td>' + esc(c.user) + '</td><td class="num">' + fmt(c.summary.total) + '</td>' +
+          '<td class="num">' + (x.expected != null ? fmt(x.expected) : '—') + '</td><td class="num">' + (x.counted != null ? fmt(x.counted) : '—') + '</td><td>' + diffCell(x.diff) + '</td></tr>';
+      }).join('') + '</table></div>' +
+      (moves.length ? '<h3 style="margin-top:16px">' + t('adm.rep.cashMoves') + '</h3><table class="grid">' + moves.map(function (m) {
+        return '<tr><td>' + new Date(m.at).toLocaleString('es-ES') + '</td><td>' + esc(m.user) + (m.by ? ' (' + esc(m.by) + ')' : '') + '</td><td>' + (m.type === 'in' ? '➕' : '➖') + ' ' + esc(m.reason || '') + '</td><td class="num">' + (m.type === 'in' ? '' : '−') + fmt(m.amount) + '</td></tr>';
+      }).join('') + '</table>' : '') + '</div>';
   }
 
   function repCsv() {
@@ -1345,6 +1370,8 @@
     Store.on('temp', function (v) { A.temp = v || {}; render(); });
     Store.on('sales', function (v) { A.sales = v || {}; render(); });
     Store.on('audit', function (v) { A.audit = v || {}; render(); });
+    Store.on('closures', function (v) { A.closures = v || {}; render(); });
+    Store.on('cash', function (v) { A.cash = v || {}; render(); });
     Store.on('users', function (v) {
       A.users = v || P.DEFAULT_USERS;
       if (!A.user) {

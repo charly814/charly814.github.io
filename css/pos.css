@@ -395,3 +395,17 @@ label.chk { display: inline-flex; align-items: center; gap: 4px; border: 1px sol
 .paper .big { font-size: 18px; font-weight: 700; }
 .paper img.logo { display: block; margin: 0 auto 4px; max-width: 100%; filter: grayscale(1) contrast(1.4); }
 .paper.thermal img.logo { image-rendering: pixelated; filter: none; }
+
+/* ---------- caja: efectivo y arqueo ---------- */
+.btn.mini { min-height: 28px; padding: 2px 8px; font-size: 12px; margin-left: 6px; }
+table.cash-sum td { padding: 6px 4px; }
+table.cash-sum tr.tot td { font-weight: 700; font-size: 17px; border-top: 2px solid var(--ink); }
+.arq { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 14px; }
+.denoms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.denoms label { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+.denoms span { min-width: 52px; font-weight: 600; font-size: 14px; }
+.denoms input { width: 100%; min-width: 0; border: 0; font-size: 16px; padding: 4px; background: #f5f6fa; border-radius: 4px; }
+.ok-t { color: var(--ok); font-weight: 700; }
+.bad-t { color: var(--alert); font-weight: 700; }
+.warn-t { color: #b45309; font-weight: 700; }
+@media (max-width: 860px) { .arq { grid-template-columns: 1fr; } .denoms { grid-template-columns: repeat(2, 1fr); } }

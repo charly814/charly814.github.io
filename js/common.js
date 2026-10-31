@@ -232,7 +232,7 @@
   // el valor guardado en user.perms o, si no hay, el de esta lista.
   var PERMS = [
     ['pay', true], ['caja', true], ['reprint', true], ['drawer', true], ['free', true],
-    ['qrOrders', true], ['qrControl', true], ['tables', true],
+    ['qrOrders', true], ['qrControl', true], ['tables', true], ['cashMoves', false],
     ['discount', false], ['price', false], ['delSent', false], ['cancel', false], ['closeZ', false]
   ];
   function can(user, perm) {
@@ -259,7 +259,38 @@
     showPayment: true,   // forma de pago, entregado y cambio
     big: false           // letra más grande (impresión por navegador)
   };
-  var METHOD_ES = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', bizum: 'Bizum' };
+  var METHOD_ES = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', bizum: 'Bizum', cuenta: 'A cuenta' };
+
+  // ---------------------------------------------------------------- caja
+  // Pagos de una venta: varias formas de pago en un mismo ticket (sale.payments)
+  // o, en ventas antiguas, una sola (sale.method).
+  function salePayments(sale) {
+    if (sale && sale.payments && sale.payments.length) return sale.payments;
+    return sale ? [{ method: sale.method, amount: sale.total }] : [];
+  }
+  var DENOMS = [500, 200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01];
+
+  // Efectivo que debería haber en el cajón.
+  // cash: { float, moves: {id: {type:'in'|'out', amount}} }; extraCash: cobros de deudas en efectivo
+  function cashExpected(cash, sales, extraCash) {
+    var r = { float: round2((cash && cash.float) || 0), cashSales: 0, ins: 0, outs: 0, card: 0, other: 0 };
+    (sales || []).forEach(function (s) {
+      salePayments(s).forEach(function (p) {
+        if (p.method === 'efectivo') r.cashSales += p.amount;
+        else if (p.method === 'tarjeta') r.card += p.amount;
+        else r.other += p.amount;
+      });
+    });
+    var moves = (cash && cash.moves) || {};
+    Object.keys(moves).forEach(function (k) {
+      var m = moves[k];
+      if (m.type === 'in') r.ins += m.amount; else r.outs += m.amount;
+    });
+    r.ins += extraCash || 0;
+    r.cashSales = round2(r.cashSales); r.ins = round2(r.ins); r.outs = round2(r.outs); r.card = round2(r.card); r.other = round2(r.other);
+    r.expected = round2(r.float + r.cashSales + r.ins - r.outs);
+    return r;
+  }
   function fmtQty(q) { return String(round2(q)).replace('.', ','); }
 
   // Documento de impresión (ver js/devices.js) de un ticket o pre-cuenta.
@@ -381,6 +412,9 @@
     PERMS: PERMS,
     DEFAULT_TICKET: DEFAULT_TICKET,
     METHOD_ES: METHOD_ES,
+    salePayments: salePayments,
+    DENOMS: DENOMS,
+    cashExpected: cashExpected,
     fmtQty: fmtQty,
     receiptDoc: receiptDoc,
     can: can,

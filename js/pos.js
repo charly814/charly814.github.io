@@ -123,6 +123,7 @@
   var archiving = {};
   Store.on('prints', function (v) { S.prints = v || {}; render(); });
   Store.on('audit', function (v) { S.audit = v || {}; });
+  Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; render(); });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
   Store.on('temp', function (v) { S.temp = v || {}; render(); });
   Store.on('joins', function (v) { S.joins = v || {}; render(); });
@@ -622,7 +623,7 @@
     sales.forEach(function (x) {
       s.total += x.total;
       s.discounts += x.discount || 0;
-      s.byMethod[x.method] = round2((s.byMethod[x.method] || 0) + x.total);
+      P.salePayments(x).forEach(function (p) { s.byMethod[p.method] = round2((s.byMethod[p.method] || 0) + p.amount); });
       s.byUser[x.cashier] = round2((s.byUser[x.cashier] || 0) + x.total);
     });
     s.total = round2(s.total);
@@ -636,7 +637,19 @@
     var open = Object.keys(S.tickets).length;
     var closures = Object.keys(S.closures).map(function (k) { return S.closures[k]; })
       .sort(function (a, b) { return b.closedAt - a.closedAt; }).slice(0, 15);
-    return topbar(t('caja.title')) + '<div class="page">' +
+    var cx = P.cashExpected(S.cash, sales);
+    var moves = Object.keys((S.cash && S.cash.moves) || {}).map(function (k) { return S.cash.moves[k]; }).sort(function (a, b) { return b.at - a.at; });
+    var cashCard = '<div class="card"><h3>' + t('cash.title') + '</h3><table class="list cash-sum">' +
+      '<tr><td>' + t('cash.float') + ' <button class="btn mini" data-act="cash-float">' + t('cash.setFloat') + '</button></td><td class="num">' + fmt(cx.float) + '</td></tr>' +
+      '<tr><td>' + t('cash.sales') + '</td><td class="num">' + fmt(cx.cashSales) + '</td></tr>' +
+      '<tr><td>' + t('cash.ins') + '</td><td class="num">' + fmt(cx.ins) + '</td></tr>' +
+      '<tr><td>' + t('cash.outs') + '</td><td class="num">−' + fmt(cx.outs) + '</td></tr>' +
+      '<tr class="tot"><td>' + t('cash.expected') + '</td><td class="num">' + fmt(cx.expected) + '</td></tr></table>' +
+      '<div class="btn-row" style="margin-top:10px"><button class="btn" data-act="cash-in">' + t('cash.in') + '</button><button class="btn" data-act="cash-out">' + t('cash.out') + '</button></div>' +
+      (moves.length ? '<h4>' + t('cash.moves') + '</h4><table class="list">' + moves.map(function (m) {
+        return '<tr><td>' + time(m.at) + '</td><td>' + esc(m.user) + '</td><td>' + (m.type === 'in' ? '➕' : '➖') + ' ' + esc(m.reason || '') + '</td><td class="num">' + (m.type === 'in' ? '' : '−') + fmt(m.amount) + '</td></tr>';
+      }).join('') + '</table>' : '') + '</div>';
+    return topbar(t('caja.title')) + '<div class="page">' + cashCard +
       '<div class="card"><h3>' + t('caja.shift') + '</h3><div class="kpis">' +
       kpi(t('caja.sold'), fmt(s.total)) + kpi(t('caja.tickets'), s.count) +
       METHODS.map(function (m) { return kpi(t('m.' + m), fmt(s.byMethod[m] || 0)); }).join('') +
@@ -677,7 +690,8 @@
     pay: 'pay', free: 'free', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
-    'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders'
+    'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
+    'cash-in': 'cashMoves', 'cash-out': 'cashMoves', 'cash-float': 'cashMoves'
   };
   app.addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]');
@@ -846,28 +860,40 @@
 
     'print-x': function () { printReport('INFORME X (sin cierre)', summarize(salesList()), Date.now()); },
     csv: function () { exportCsv(); },
+    'cash-in': function () { openCashMove('in'); },
+    'cash-out': function () { openCashMove('out'); },
+    'cash-float': function () { openCashMove('float'); },
     'close-z': function () {
       var sales = salesList();
-      if (!sales.length) return toast(t('caja.nothing'));
+      if (!sales.length && !Object.keys((S.cash && S.cash.moves) || {}).length) return toast(t('caja.nothing'));
       if (Object.keys(S.tickets).length && !confirm(t('caja.openWarn'))) return;
-      if (!confirm(t('caja.zConfirm', { n: fmt(summarize(sales).total) }))) return;
-      var id = Store.newId();
-      var c = { id: id, closedAt: Date.now(), user: S.user.name, summary: summarize(sales) };
-      // 1) ventas al archivo (IndexedDB + nube)  2) cierre + vaciar turno, de una vez
-      Store.archive(id, { id: id, closedAt: c.closedAt, sales: S.sales }).then(function () {
-        var upd = { sales: null };
-        upd['closures/' + id] = c;
-        // limpia avisos QR ya atendidos
-        Object.keys(S.orders).forEach(function (k) { if (S.orders[k].status !== 'new') upd['orders/' + k] = null; });
-        return Store.update('', upd);
-      }).then(function () {
-        audit('closeZ', fmt(c.summary.total) + ' · ' + c.summary.count + ' tickets');
-        printReport('CIERRE Z', c.summary, c.closedAt);
-      }).catch(function (e) { toast(t('sync.storageErr', { e: e.message })); });
-    },
+      openArqueo(sales);
+    }
+  };
+
+  // Cierre Z después del arqueo: cash = resultado del conteo
+  function closeZ(sales, cash) {
+    var id = Store.newId();
+    var c = { id: id, closedAt: Date.now(), user: S.user.name, summary: summarize(sales), cash: cash };
+    // 1) ventas al archivo (IndexedDB + nube)  2) cierre + vaciar turno, de una vez
+    Store.archive(id, { id: id, closedAt: c.closedAt, sales: S.sales }).then(function () {
+      var upd = { sales: null };
+      upd['closures/' + id] = c;
+      // la caja sigue con el fondo que se deja para mañana
+      upd.cash = { float: cash.nextFloat, openedAt: Date.now(), openedBy: S.user.name };
+      // limpia avisos QR ya atendidos
+      Object.keys(S.orders).forEach(function (k) { if (S.orders[k].status !== 'new') upd['orders/' + k] = null; });
+      return Store.update('', upd);
+    }).then(function () {
+      audit('closeZ', fmt(c.summary.total) + ' · ' + c.summary.count + ' tickets');
+      printReport('CIERRE Z', c.summary, c.closedAt, c.cash);
+    }).catch(function (e) { toast(t('sync.storageErr', { e: e.message })); });
+  }
+
+  Object.assign(ACTIONS, {
     'print-z': function (d) {
       var c = S.closures[d.id];
-      if (c) printReport('CIERRE Z (copia)', c.summary, c.closedAt);
+      if (c) printReport('CIERRE Z (copia)', c.summary, c.closedAt, c.cash);
     },
     reprint: function (d) {
       var s = S.sales[d.id];
@@ -880,7 +906,7 @@
         audit('drawer', '');
       }).catch(function (e) { toast(e.message === 'browser' ? t('dev.drawerBrowser') : t('dev.err', { e: e.message })); });
     }
-  };
+  });
 
   // ---------------------------------------------------------------- ticket
 
@@ -1415,6 +1441,97 @@
     });
   }
 
+  // ---------------------------------------------------------------- caja: movimientos y arqueo
+
+  function openCashMove(type) {
+    var st = { amount: type === 'float' ? String((S.cash && S.cash.float) || '').replace('.', ',') : '', reason: '' };
+    var reasons = type === 'float' ? [] : t(type === 'in' ? 'cash.reasonsIn' : 'cash.reasonsOut').split(/\s*,\s*/);
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + t(type === 'in' ? 'cash.inTitle' : type === 'out' ? 'cash.outTitle' : 'cash.floatTitle') + '</h2>' +
+        '<div class="field"><label>' + t('cash.amount') + '</label><input id="cm-amount" type="text" inputmode="decimal" value="' + esc(st.amount) + '" placeholder="0,00"></div>' +
+        (type === 'float' ? '' : '<div class="field"><label>' + t('cash.reason') + '</label><input id="cm-reason" type="text" maxlength="60" value="' + esc(st.reason) + '"></div>' +
+          '<div class="chips-sel">' + reasons.map(function (r) { return '<button data-k="r:' + esc(r) + '">' + esc(r) + '</button>'; }).join('') + '</div>') +
+        '<div class="btn-row" style="margin-top:14px"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('save') + '</button></div>';
+      document.getElementById('cm-amount').oninput = function (e) { st.amount = e.target.value; };
+      var r = document.getElementById('cm-reason');
+      if (r) r.oninput = function (e) { st.reason = e.target.value; };
+      document.getElementById('cm-amount').focus();
+    }
+    openModal('cash', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('r:') === 0) { st.reason = k.slice(2); return draw(); }
+      if (k !== 'OK') return;
+      var amount = round2(String(st.amount).replace(',', '.'));
+      if (type === 'float') {
+        if (isNaN(amount) || amount < 0) return toast(t('cash.needAmount'));
+        Store.update('cash', { float: amount, openedAt: (S.cash && S.cash.openedAt) || Date.now(), openedBy: S.user.name });
+        audit('float', fmt(amount));
+      } else {
+        if (!(amount > 0)) return toast(t('cash.needAmount'));
+        var id = Store.newId();
+        Store.set('cash/moves/' + id, { id: id, at: Date.now(), user: S.user.name, by: S.authBy || null, type: type, amount: amount, reason: st.reason.trim().slice(0, 60) });
+        audit(type === 'in' ? 'cashIn' : 'cashOut', fmt(amount) + ' · ' + st.reason);
+        Devices.openDrawer().catch(function () { /* navegador: sin cajón */ });
+      }
+      closeModal();
+    });
+  }
+
+  // Arqueo: contar billetes y monedas (o el total), comparar con lo esperado y cerrar Z
+  function openArqueo(sales) {
+    var cx = P.cashExpected(S.cash, sales);
+    var st = { counts: {}, total: '', card: '', next: String(cx.float).replace('.', ',') };
+    function counted() {
+      if (String(st.total).trim()) return round2(String(st.total).replace(',', '.'));
+      var any = false, sum = P.DENOMS.reduce(function (a, d) { var n = Number(st.counts[d]) || 0; if (n) any = true; return a + n * d; }, 0);
+      return any ? round2(sum) : null;
+    }
+    function summary() {
+      var c = counted();
+      var diff = c == null ? null : round2(c - cx.expected);
+      var next = round2(String(st.next).replace(',', '.')) || 0;
+      var cardC = String(st.card).trim() ? round2(String(st.card).replace(',', '.')) : null;
+      return '<table class="list cash-sum"><tr><td>' + t('cash.expected') + '</td><td class="num">' + fmt(cx.expected) + '</td></tr>' +
+        '<tr class="tot"><td>' + t('arq.counted') + '</td><td class="num">' + (c == null ? '—' : fmt(c)) + '</td></tr>' +
+        (diff == null ? '' : '<tr><td>' + t('arq.diff') + '</td><td class="num ' + (diff === 0 ? 'ok-t' : diff < 0 ? 'bad-t' : 'warn-t') + '">' +
+          (diff === 0 ? t('arq.ok') : diff < 0 ? t('arq.short', { n: fmt(-diff) }) : t('arq.over', { n: fmt(diff) })) + '</td></tr>') +
+        (cardC != null ? '<tr><td>' + t('arq.cardExpected', { n: fmt(cx.card) }) + '</td><td class="num ' + (round2(cardC - cx.card) === 0 ? 'ok-t' : 'bad-t') + '">' + fmt(round2(cardC - cx.card)) + '</td></tr>' : '') +
+        '<tr><td colspan="2" class="muted">' + t('arq.withdraw', { n: fmt(round2((c == null ? cx.expected : c) - next)) }) + '</td></tr></table>';
+    }
+    function draw() {
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>' + t('arq.title') + '</h2>' +
+        '<div class="arq"><div><h4>' + t('arq.count') + '</h4><div class="denoms">' + P.DENOMS.map(function (d) {
+          return '<label><span>' + (d >= 1 ? d + ' €' : Math.round(d * 100) + ' c') + '</span><input type="number" min="0" step="1" inputmode="numeric" data-den="' + d + '" value="' + (st.counts[d] || '') + '"></label>';
+        }).join('') + '</div>' +
+        '<div class="field" style="margin-top:10px"><label>' + t('arq.or') + '</label><input id="arq-total" type="text" inputmode="decimal" value="' + esc(st.total) + '"></div></div>' +
+        '<div><div id="arq-sum">' + summary() + '</div>' +
+        '<div class="field"><label>' + t('arq.card') + '</label><input id="arq-card" type="text" inputmode="decimal" value="' + esc(st.card) + '"></div>' +
+        '<div class="field"><label>' + t('arq.next') + '</label><input id="arq-next" type="text" inputmode="decimal" value="' + esc(st.next) + '"></div></div></div>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn danger" data-k="OK" style="flex:1">' + t('arq.close') + '</button></div>';
+      var upd = function () { document.getElementById('arq-sum').innerHTML = summary(); };
+      modalBox.querySelectorAll('[data-den]').forEach(function (el) { el.oninput = function () { st.counts[el.dataset.den] = el.value; upd(); }; });
+      document.getElementById('arq-total').oninput = function (e) { st.total = e.target.value; upd(); };
+      document.getElementById('arq-card').oninput = function (e) { st.card = e.target.value; upd(); };
+      document.getElementById('arq-next').oninput = function (e) { st.next = e.target.value; upd(); };
+    }
+    openModal('arqueo', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k !== 'OK') return;
+      var c = counted();
+      if (!confirm(t('caja.zConfirm', { n: fmt(summarize(sales).total) }))) return;
+      var moves = Object.keys((S.cash && S.cash.moves) || {}).map(function (x) { return S.cash.moves[x]; });
+      var cash = Object.assign({}, cx, {
+        counted: c, diff: c == null ? null : round2(c - cx.expected), counts: st.counts,
+        cardCounted: String(st.card).trim() ? round2(String(st.card).replace(',', '.')) : null,
+        nextFloat: round2(String(st.next).replace(',', '.')) || 0, moves: moves
+      });
+      closeModal();
+      closeZ(sales, cash);
+    });
+  }
+
   // ---------------------------------------------------------------- autorización
   function askSupervisor(perm, fn) {
     var pin = '';
@@ -1747,11 +1864,21 @@
     return printDoc(doc, 'kitchen');
   }
 
-  function printReport(title, s, when) {
+  function printReport(title, s, when, cash) {
     var doc = header().concat([['cb', title], ['c', new Date(when).toLocaleString('es-ES')], ['hr'], ['lr', 'Tickets', String(s.count)]]);
-    METHODS.forEach(function (m) { doc.push(['lr', METHOD_ES[m], fmt(s.byMethod[m] || 0)]); });
+    Object.keys(s.byMethod).forEach(function (m) { doc.push(['lr', METHOD_ES[m] || m, fmt(s.byMethod[m] || 0)]); });
     doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)], ['hr']);
     Object.keys(s.byUser).forEach(function (u) { doc.push(['lr', u, fmt(s.byUser[u])]); });
+    if (cash) {
+      doc.push(['hr'], ['b', 'ARQUEO DE CAJA'], ['lr', 'Fondo inicial', fmt(cash.float)], ['lr', '+ Ventas efectivo', fmt(cash.cashSales)],
+        ['lr', '+ Entradas', fmt(cash.ins)], ['lr', '- Salidas', fmt(cash.outs)], ['lr', '= Esperado', fmt(cash.expected)]);
+      if (cash.counted != null) {
+        doc.push(['lrb', 'Contado', fmt(cash.counted)], ['lr', 'Diferencia', (cash.diff > 0 ? '+' : '') + fmt(cash.diff)]);
+      }
+      if (cash.cardCounted != null) doc.push(['lr', 'Tarjeta TPV / datáfono', fmt(cash.card) + ' / ' + fmt(cash.cardCounted)]);
+      doc.push(['lr', 'Fondo para mañana', fmt(cash.nextFloat)], ['lr', 'Retirado', fmt(round2((cash.counted != null ? cash.counted : cash.expected) - cash.nextFloat))]);
+      (cash.moves || []).forEach(function (m) { doc.push(['lr', (m.type === 'in' ? '+ ' : '- ') + (m.reason || '') + ' (' + m.user + ')', fmt(m.amount)]); });
+    }
     return printDoc(doc, 'receipt');
   }
 
