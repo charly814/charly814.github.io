@@ -1088,10 +1088,10 @@
     return Object.keys(byId).map(function (k) { return byId[k]; });
   }
 
-  function report() {
-    var b = rangeBounds();
+  function report(b) {
+    b = b || rangeBounds();
     var sales = allSales().filter(function (s) { return s.closedAt >= b[0] && s.closedAt < b[1]; });
-    var r = { from: b[0], to: b[1], total: 0, count: sales.filter(function (x) { return !x.voided && x.invoiceType !== 'R'; }).length, units: 0, discounts: 0, guests: 0, guestTotal: 0, byMethod: {}, byWaiter: {}, products: {}, cats: {}, series: [] };
+    var r = { from: b[0], to: b[1], total: 0, count: sales.filter(function (x) { return !x.voided && x.invoiceType !== 'R'; }).length, units: 0, discounts: 0, guests: 0, guestTotal: 0, byMethod: {}, byWaiter: {}, products: {}, cats: {}, series: [], heat: {} };
     var days = Math.round((b[1] - b[0]) / 86400000);
     var hourly = days <= 1;
     var buckets = {}, visits = {};
@@ -1105,12 +1105,14 @@
       // venta anulada + su rectificativa: se compensan en los importes, pero no
       // cuentan como ticket, ni como productos vendidos, ni para el camarero
       if (s.voided || s.invoiceType === 'R') return;
+      var hk = d.getDay() + '-' + d.getHours();
+      r.heat[hk] = (r.heat[hk] || 0) + s.total;
       // una mesa dividida en varios tickets es una sola visita (mismos comensales)
       var vk = (s.table || '') + '@' + (s.openedAt || s.id);
       var vis = visits[vk] = visits[vk] || { total: 0, guests: 0 };
       vis.total += s.total; vis.guests = Math.max(vis.guests, s.guests || 0);
-      var w = r.byWaiter[s.cashier] = r.byWaiter[s.cashier] || { n: 0, total: 0 };
-      w.n++; w.total += s.total;
+      var w = r.byWaiter[s.cashier] = r.byWaiter[s.cashier] || { n: 0, total: 0, discounts: 0, guests: 0 };
+      w.n++; w.total += s.total; w.discounts += s.discount || 0; w.guests += s.guests || 0;
       // reparte el descuento del ticket entre sus líneas para que los importes cuadren
       var k = s.subtotal ? s.total / s.subtotal : 1;
       (Array.isArray(s.lines) ? s.lines : Object.keys(s.lines || {}).map(function (x) { return s.lines[x]; })).forEach(function (l) {
@@ -1118,7 +1120,7 @@
         r.units += l.qty;
         var it = l.pid && P.findItem(A.menu, l.pid);
         var key = it ? it.id : 'n:' + l.name;
-        var p = r.products[key] = r.products[key] || { name: it ? P.tr(it, I.lang) : l.name + (l.free ? ' ' + t('adm.rep.free') : ''), qty: 0, amount: 0 };
+        var p = r.products[key] = r.products[key] || { id: it ? it.id : null, name: it ? P.tr(it, I.lang) : l.name + (l.free ? ' ' + t('adm.rep.free') : ''), qty: 0, amount: 0 };
         var amount = l.price * l.qty * k;
         p.qty += l.qty; p.amount += amount;
         var cid = it ? P.catOfItem(A.menu, it.id) : null;
@@ -1185,7 +1187,10 @@
     }).join('') + '</span>' +
       '<label class="muted">' + t('adm.rep.from') + ' <input type="date" data-act-change="from" value="' + esc(A.from) + '"></label>' +
       '<label class="muted">' + t('adm.rep.to') + ' <input type="date" data-act-change="to" value="' + esc(A.to) + '"></label>' +
-      '<button class="btn" data-act="rep-csv">' + t('adm.rep.csv') + '</button></div>';
+      '<button class="btn" data-act="rep-csv">' + t('adm.rep.csv') + '</button></div>' +
+      '<div class="toolbar"><span class="seg tabs wrap">' + REP_TABS.map(function (x) {
+        return '<button class="' + ((A.repTab || 'sum') === x ? 'on' : '') + '" data-act="rep-tab" data-t="' + x + '">' + t('rt.' + x) + '</button>';
+      }).join('') + '</span></div>';
     var products = Object.keys(r.products).map(function (k) { return r.products[k]; }).sort(function (a, b) { return b.amount - a.amount; });
     var html = (A.archiveLoading ? '<p class="muted">' + t('adm.rep.loading') + '</p>' : '') +
       '<div class="kpis big">' + kpi(t('adm.rep.sales'), fmt(r.total)) + kpi(t('adm.rep.tickets'), r.count) +
@@ -1203,7 +1208,140 @@
         }).join('') + '</table></div></div>'
         : '<div class="card"><p class="muted">' + t('adm.rep.none') + '</p></div>') + closuresCard(r.from, r.to);
     A.lastProducts = products;
+    var tab = A.repTab || 'sum';
+    var loading = A.archiveLoading ? '<p class="muted">' + t('adm.rep.loading') + '</p>' : '';
+    if (tab === 'cmp') html = loading + repCompare(r);
+    else if (tab === 'heat') html = loading + repHeat(r);
+    else if (tab === 'prod') html = loading + repProducts(r, products);
+    else if (tab === 'staff') html = loading + repStaff(r);
+    else if (tab === 'void') html = repVoids(r);
     return { head: head, html: html };
+  }
+
+  var REP_TABS = ['sum', 'cmp', 'heat', 'prod', 'staff', 'void'];
+  var DAY_MS = 86400000;
+  function pct(a, b) {
+    if (!b) return a ? '<span class="muted">—</span>' : '';
+    var v = Math.round((a - b) / Math.abs(b) * 100);
+    return '<span class="' + (v > 0 ? 'ok-t' : v < 0 ? 'bad-t' : 'muted') + '">' + (v > 0 ? '▲ +' : v < 0 ? '▼ ' : '') + v + '%</span>';
+  }
+  function yearAgo(ms) { var d = new Date(ms); d.setFullYear(d.getFullYear() - 1); return d.getTime(); }
+  function dstr(ms) { return new Date(ms).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }); }
+
+  function repCompare(r) {
+    var len = r.to - r.from;
+    var prev = report([r.from - len, r.from]), ly = report([yearAgo(r.from), yearAgo(r.to)]);
+    var rows = [
+      ['adm.rep.sales', function (x) { return x.total; }, fmt],
+      ['adm.rep.tickets', function (x) { return x.count; }, String],
+      ['adm.rep.avg', function (x) { return x.count ? x.total / x.count : 0; }, fmt],
+      ['adm.rep.units', function (x) { return round2(x.units); }, function (v) { return String(v).replace('.', ','); }],
+      ['adm.rep.guests', function (x) { return x.guests; }, String],
+      ['adm.rep.perGuest', function (x) { return x.guests ? x.guestTotal / x.guests : 0; }, fmt],
+      ['adm.rep.discounts', function (x) { return x.discounts; }, fmt]
+    ];
+    return '<div class="card"><h3>' + t('rt.cmp') + '</h3><p class="muted">' + t('rc.help', { a: dstr(prev.from), b: dstr(prev.to - 1) }) + '</p>' +
+      '<div class="scroll-x"><table class="grid"><tr><th>' + t('rc.metric') + '</th><th class="num">' + t('rc.now') + '</th><th class="num">' + t('rc.prev') + '</th><th class="num"></th><th class="num">' + t('rc.ly') + '</th><th class="num"></th></tr>' +
+      rows.map(function (m) {
+        var a = m[1](r), b = m[1](prev), c = m[1](ly);
+        return '<tr><td>' + t(m[0]) + '</td><td class="num"><b>' + m[2](a) + '</b></td><td class="num">' + m[2](b) + '</td><td class="num">' + pct(a, b) + '</td><td class="num">' + m[2](c) + '</td><td class="num">' + pct(a, c) + '</td></tr>';
+      }).join('') + '</table></div></div>' +
+      '<div class="card"><h3>' + t('adm.rep.byCat') + '</h3><div class="scroll-x"><table class="grid"><tr><th>' + t('adm.col.cat') + '</th><th class="num">' + t('rc.now') + '</th><th class="num">' + t('rc.prev') + '</th><th class="num"></th><th class="num">' + t('rc.ly') + '</th><th class="num"></th></tr>' +
+      Object.keys(Object.assign({}, prev.cats, ly.cats, r.cats)).sort(function (x, y) { return (r.cats[y] || 0) - (r.cats[x] || 0); }).map(function (k) {
+        var a = r.cats[k] || 0, b = prev.cats[k] || 0, c = ly.cats[k] || 0;
+        return '<tr><td>' + esc(k) + '</td><td class="num"><b>' + fmt(a) + '</b></td><td class="num">' + fmt(b) + '</td><td class="num">' + pct(a, b) + '</td><td class="num">' + fmt(c) + '</td><td class="num">' + pct(a, c) + '</td></tr>';
+      }).join('') + '</table></div></div>';
+  }
+
+  // Mapa de calor día de la semana × hora: un solo tono, la intensidad es el importe
+  function repHeat(r) {
+    var days = [1, 2, 3, 4, 5, 6, 0];
+    var names = I.lang === 'zh' ? ['周日', '周一', '周二', '周三', '周四', '周五', '周六'] : I.lang === 'en' ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] : ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    var hs = Object.keys(r.heat).map(function (k) { return +k.split('-')[1]; });
+    var h0 = Math.min.apply(null, hs.concat([8])), h1 = Math.max.apply(null, hs.concat([23]));
+    var max = Math.max.apply(null, Object.keys(r.heat).map(function (k) { return r.heat[k]; }).concat([0]));
+    var head = '<tr><th></th>';
+    for (var h = h0; h <= h1; h++) head += '<th>' + String(h).padStart(2, '0') + '</th>';
+    head += '<th class="num">' + t('rh.total') + '</th></tr>';
+    var colTot = {};
+    var body = days.map(function (dw) {
+      var rowTot = 0, cells = '';
+      for (var h = h0; h <= h1; h++) {
+        var v = r.heat[dw + '-' + h] || 0;
+        rowTot += v; colTot[h] = (colTot[h] || 0) + v;
+        var a = max ? v / max : 0;
+        cells += '<td class="hm' + (a > .6 ? ' dk' : '') + '" style="--a:' + (v ? (0.08 + a * 0.92).toFixed(2) : 0) + '" data-tip="' + esc(names[dw] + ' ' + String(h).padStart(2, '0') + ':00 · ' + fmt(v)) + '">' + (v && a > .35 ? Math.round(v) : '') + '</td>';
+      }
+      return '<tr><th>' + names[dw] + '</th>' + cells + '<td class="num">' + fmt(rowTot) + '</td></tr>';
+    }).join('');
+    var foot = '<tr><th>' + t('rh.total') + '</th>';
+    for (h = h0; h <= h1; h++) foot += '<td class="num tiny">' + Math.round(colTot[h] || 0) + '</td>';
+    foot += '<td></td></tr>';
+    return '<div class="card"><h3>' + t('rh.title') + '</h3><p class="muted">' + t('rh.help') + '</p>' +
+      (max ? '<div class="scroll-x"><table class="heat">' + head + body + foot + '</table></div>' +
+        '<div class="heat-legend">' + t('rh.less') + ' <span style="--a:.1"></span><span style="--a:.35"></span><span style="--a:.6"></span><span style="--a:.85"></span><span style="--a:1"></span> ' + t('rh.more') + '</div>'
+        : '<p class="muted">' + t('adm.rep.none') + '</p>') + '</div>';
+  }
+
+  function repProducts(r, products) {
+    var total = products.reduce(function (a, p) { return a + p.amount; }, 0);
+    var sold = {};
+    products.forEach(function (p) { if (p.id) sold[p.id] = 1; });
+    var unsold = [];
+    A.menu.forEach(function (c) {
+      (c.items || []).forEach(function (it) { if (it.available !== false && !sold[it.id]) unsold.push((c.icon || '') + ' ' + P.tr(it, I.lang) + ' · ' + fmt(it.price)); });
+    });
+    var worst = products.slice().sort(function (a, b) { return a.qty - b.qty || a.amount - b.amount; }).slice(0, 10);
+    return '<div class="card"><h3>' + t('rp.all') + ' (' + products.length + ')</h3>' + (products.length ? '<div class="scroll-x"><table class="grid"><tr><th>#</th><th>' + t('adm.col.product') + '</th><th class="num">' + t('adm.rep.units1') + '</th><th class="num">' + t('adm.rep.amount') + '</th><th class="num">' + t('rp.share') + '</th><th class="num">' + t('rp.avgPrice') + '</th></tr>' +
+      products.map(function (p, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(p.name) + '</td><td class="num">' + String(round2(p.qty)).replace('.', ',') + '</td><td class="num">' + fmt(p.amount) + '</td><td class="num">' + (total ? (p.amount / total * 100).toFixed(1).replace('.', ',') : 0) + '%</td><td class="num">' + fmt(p.qty ? p.amount / p.qty : 0) + '</td></tr>';
+      }).join('') + '</table></div>' : '<p class="muted">' + t('adm.rep.none') + '</p>') + '</div>' +
+      '<div class="two-col"><div class="card"><h3>' + t('rp.worst') + '</h3>' + (worst.length ? '<table class="grid">' + worst.map(function (p) {
+        return '<tr><td>' + esc(p.name) + '</td><td class="num">' + String(round2(p.qty)).replace('.', ',') + '</td><td class="num">' + fmt(p.amount) + '</td></tr>';
+      }).join('') + '</table>' : '<p class="muted">—</p>') + '</div>' +
+      '<div class="card"><h3>' + t('rp.unsold', { n: unsold.length }) + '</h3><p class="muted">' + t('rp.unsoldHelp') + '</p>' +
+      (unsold.length ? '<ul class="plain-list">' + unsold.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' : '') + '</div></div>';
+  }
+
+  function auditIn(r) {
+    return Object.keys(A.audit || {}).map(function (k) { return A.audit[k]; })
+      .filter(function (x) { return x && x.at >= r.from && x.at < r.to; }).sort(function (a, b) { return b.at - a.at; });
+  }
+
+  var STAFF_ACTS = ['cancel', 'delSent', 'drawer', 'discount', 'price', 'reopen'];
+  function repStaff(r) {
+    var log = auditIn(r), acts = {};
+    log.forEach(function (x) {
+      var u = acts[x.user] = acts[x.user] || {};
+      u[x.action] = (u[x.action] || 0) + 1;
+    });
+    var names = Object.keys(Object.assign({}, r.byWaiter, acts)).filter(Boolean).sort(function (a, b) { return ((r.byWaiter[b] || {}).total || 0) - ((r.byWaiter[a] || {}).total || 0); });
+    var cols = [['cancel', 'rs.cancels'], ['delSent', 'rs.delSent'], ['drawer', 'rs.drawer'], ['discount', 'rs.discN'], ['price', 'rs.price'], ['reopen', 'rs.reopen']];
+    return '<div class="card"><h3>' + t('rs.title') + '</h3><p class="muted">' + t('rs.help') + '</p>' + (names.length ? '<div class="scroll-x"><table class="grid"><tr><th></th><th class="num">' + t('adm.rep.tickets') + '</th><th class="num">' + t('adm.rep.sales') + '</th><th class="num">' + t('adm.rep.avg') + '</th><th class="num">' + t('adm.rep.perGuest') + '</th><th class="num">' + t('adm.rep.discounts') + ' €</th>' +
+      cols.map(function (c) { return '<th class="num">' + t(c[1]) + '</th>'; }).join('') + '</tr>' +
+      names.map(function (n) {
+        var w = r.byWaiter[n] || { n: 0, total: 0, discounts: 0, guests: 0 }, a = acts[n] || {};
+        return '<tr><td><b>' + esc(n) + '</b></td><td class="num">' + w.n + '</td><td class="num">' + fmt(w.total) + '</td><td class="num">' + fmt(w.n ? w.total / w.n : 0) + '</td><td class="num">' + (w.guests ? fmt(w.total / w.guests) : '—') + '</td><td class="num">' + fmt(w.discounts) + '</td>' +
+          cols.map(function (c) { var v = a[c[0]] || 0; return '<td class="num' + (v && c[0] !== 'discount' && c[0] !== 'price' ? ' warn-t' : '') + '">' + (v || '·') + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</table></div>' : '<p class="muted">' + t('adm.rep.none') + '</p>') + '</div>';
+  }
+
+  function repVoids(r) {
+    var log = auditIn(r).filter(function (x) { return x.action !== 'closeZ'; });
+    var counts = {};
+    log.forEach(function (x) { counts[x.action] = (counts[x.action] || 0) + 1; });
+    var f = A.voidType || '';
+    var shown = f ? log.filter(function (x) { return x.action === f; }) : log;
+    var order = STAFF_ACTS.concat(Object.keys(counts).filter(function (k) { return STAFF_ACTS.indexOf(k) < 0; }));
+    return '<div class="card"><h3>' + t('rv.title') + '</h3><p class="muted">' + t('rv.help') + '</p>' +
+      '<div class="toolbar"><span class="seg wrap"><button class="' + (f ? '' : 'on') + '" data-act="void-type" data-v="">' + t('rv.all') + ' (' + log.length + ')</button>' +
+      order.filter(function (k) { return counts[k]; }).map(function (k) {
+        return '<button class="' + (f === k ? 'on' : '') + '" data-act="void-type" data-v="' + k + '">' + t('audit.' + k) + ' (' + counts[k] + ')</button>';
+      }).join('') + '</span></div>' +
+      (shown.length ? '<div class="scroll-x"><table class="grid"><tr><th>' + t('adm.log.when') + '</th><th>' + t('adm.log.who') + '</th><th>' + t('adm.log.auth') + '</th><th>' + t('rv.type') + '</th><th>' + t('adm.log.detail') + '</th></tr>' +
+        shown.slice(0, 500).map(function (x) {
+          return '<tr><td>' + new Date(x.at).toLocaleString('es-ES') + '</td><td>' + esc(x.user) + '</td><td>' + esc(x.by || '—') + '</td><td>' + t('audit.' + x.action) + '</td><td>' + esc(x.detail) + '</td></tr>';
+        }).join('') + '</table></div>' : '<p class="muted">' + t('rv.none') + '</p>') + '</div>';
   }
 
   // Cierres Z del periodo con su arqueo, y las entradas/salidas de dinero
@@ -1567,6 +1705,8 @@
     'backup-up': backupUpload,
 
     range: function (d) { A.range = d.r; A.from = ''; A.to = ''; render(); },
+    'rep-tab': function (d) { A.repTab = d.t; render(); },
+    'void-type': function (d) { A.voidType = d.v; render(); },
     'rep-csv': repCsv
   };
 

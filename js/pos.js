@@ -186,7 +186,7 @@
   }
 
   // Registro de acciones sensibles (se ve en Gestión → Permisos y registro)
-  var KEEP_AUDIT = 400;
+  var KEEP_AUDIT = 2000;
   function audit(action, detail) {
     var id = Store.newId();
     var rec = { id: id, at: Date.now(), user: S.user ? S.user.name : '', by: S.authBy || null, action: action, table: S.table || null, detail: String(detail || '').slice(0, 200) };
