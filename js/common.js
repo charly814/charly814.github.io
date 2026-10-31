@@ -385,7 +385,12 @@
       doc.push(['item', fmtQty(sg * l.qty), l.name, extras.length ? ['+ ' + extras.join(', ')] : [], fmt(sg * l.price * l.qty)]);
     });
     doc.push(['hr']);
-    if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);
+    if (tot.discount) {
+      doc.push(['lr', 'Subtotal', fmt(tot.subtotal)]);
+      promoList(tk.promo).forEach(function (x) { doc.push(['lr', x.name, '-' + fmt(sg * x.amount)]); });
+      var manual = round2(Math.abs(tot.discount) - sg * sg * promoList(tk.promo).reduce(function (a, x) { return a + x.amount; }, 0));
+      if (manual > 0.004) doc.push(['lr', 'Descuento', '-' + fmt(sg * manual)]);
+    }
     doc.push(['lrb', 'TOTAL', fmt(tot.total)]);
     if (T.showVat || full) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
     else doc.push(['c', 'IVA incluido']);       // obligatorio en la factura simplificada si no se desglosa
@@ -471,13 +476,66 @@
     }).join(' · ');
   }
 
+  function promoList(v) { return !v ? [] : Array.isArray(v) ? v.filter(Boolean) : Object.keys(v).map(function (k) { return v[k]; }); }
+
+  // Promociones automáticas primero; el descuento manual (% o €) va sobre lo que queda.
   function ticketTotals(t) {
     var sub = 0;
     ((t && t.lines) || []).forEach(function (l) { sub += l.price * l.qty; });
     sub = round2(sub);
-    var disc = round2(sub * ((t && t.discountPct) || 0) / 100 + ((t && t.discountEur) || 0));
+    var promo = round2(promoList(t && t.promo).reduce(function (a, x) { return a + (Number(x.amount) || 0); }, 0));
+    if (promo > sub) promo = sub;
+    var disc = round2(promo + (sub - promo) * ((t && t.discountPct) || 0) / 100 + ((t && t.discountEur) || 0));
     if (disc > sub) disc = sub;
-    return { subtotal: sub, discount: disc, total: round2(sub - disc) };
+    return { subtotal: sub, discount: disc, promo: promo, total: round2(sub - disc) };
+  }
+
+  // ---------------------------------------------------------------- promociones
+  // x = { id, name, active, type: 'qty'|'min', n, k, pct, min, eur, cats: [], items: [], useHours, days: [{h}] }
+  //  qty: de cada n unidades, las k más baratas con pct% de descuento (2x1: n2 k1 100%;
+  //       3x2: n3 k1 100%; 2ª unidad al 50%: n2 k1 50%). Sin productos ni categorías = toda la carta.
+  //  min: si el ticket llega a «min» €, pct% o «eur» € de descuento.
+  // La hora cuenta en el momento en que se pidió cada unidad (como la happy hour).
+  function promoInScope(x, menu, pid) {
+    var items = x.items || [], cats = x.cats || [];
+    if (!items.length && !cats.length) return true;
+    return items.indexOf(pid) >= 0 || cats.indexOf(catOfItem(menu, pid)) >= 0;
+  }
+  function promoOn(x, d) { return !x.useHours || inRanges(x.days || [], 'h', d).open; }
+  function promoCalc(promos, menu, tk, now) {
+    now = now || Date.now();
+    var lines = (tk && tk.lines) || [], out = [], used = {};
+    promoList(promos).forEach(function (x) {
+      if (!x.active || x.type === 'min') return;
+      var n = Math.max(2, Math.floor(Number(x.n)) || 2);
+      var k = Math.min(n - 1, Math.max(1, Math.floor(Number(x.k)) || 1));
+      var pct = x.pct == null || x.pct === '' ? 100 : Math.max(0, Math.min(100, Number(x.pct) || 0));
+      var units = [];
+      lines.forEach(function (l, i) {
+        if (!l.pid || l.free || (l.combo && l.combo.length) || !(l.price > 0)) return;
+        if (!promoInScope(x, menu, l.pid)) return;
+        if (!promoOn(x, new Date(l.at || (l.ord > 1e12 ? l.ord : now)))) return;
+        var q = Math.floor(l.qty) - (used[i] || 0);
+        for (var j = 0; j < q; j++) units.push({ i: i, p: l.price });
+      });
+      var blocks = Math.floor(units.length / n);
+      if (!blocks) return;
+      units.sort(function (a, b) { return b.p - a.p; });
+      // se pagan las más caras y el descuento va a las más baratas
+      var paid = units.slice(0, blocks * (n - k)), cheap = units.slice(units.length - blocks * k);
+      var amt = round2(cheap.reduce(function (a, u) { return a + u.p * pct / 100; }, 0));
+      paid.concat(cheap).forEach(function (u) { used[u.i] = (used[u.i] || 0) + 1; });
+      if (amt > 0) out.push({ id: x.id, name: x.name, amount: amt });
+    });
+    var left = round2(lines.reduce(function (a, l) { return a + l.price * l.qty; }, 0) - out.reduce(function (a, x) { return a + x.amount; }, 0));
+    promoList(promos).forEach(function (x) {
+      if (!x.active || x.type !== 'min' || !promoOn(x, new Date(now))) return;
+      if (!(left > 0) || left < (Number(x.min) || 0)) return;
+      var amt = round2(Number(x.eur) ? Number(x.eur) : left * (Number(x.pct) || 0) / 100);
+      amt = Math.min(amt, left);
+      if (amt > 0) { out.push({ id: x.id, name: x.name, amount: amt }); left = round2(left - amt); }
+    });
+    return out;
   }
 
   window.Platet = {
@@ -494,6 +552,8 @@
     findMod: findMod,
     modsText: modsText,
     ticketTotals: ticketTotals,
+    promoCalc: promoCalc,
+    promoList: promoList,
     DEFAULT_QR: DEFAULT_QR,
     validRanges: validRanges,
     tarifaFor: tarifaFor,

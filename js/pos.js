@@ -126,6 +126,7 @@
   Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; render(); });
   Store.on('customers', function (v) { S.customers = v || {}; render(); });
   Store.on('public/tarifas', function (v) { S.tarifas = v || []; render(); });
+  Store.on('promos', function (v) { S.promos = P.promoList(v); render(); });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
   Store.on('temp', function (v) { S.temp = v || {}; render(); });
   Store.on('joins', function (v) { S.joins = v || {}; render(); });
@@ -218,12 +219,12 @@
       return d;
     } catch (e) { return 'x'; }
   })();
-  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur', 'guests', 'customer', 'tarifa'];
+  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur', 'guests', 'customer', 'tarifa', 'promo'];
 
   function toTicket(table, raw) {
     if (!raw) return null;
     var tk = { table: table, discountPct: raw.discountPct || 0, discountEur: raw.discountEur || 0, openedAt: raw.openedAt, user: raw.user,
-      guests: raw.guests || 0, customer: raw.customer || null, tarifa: raw.tarifa || null };
+      guests: raw.guests || 0, customer: raw.customer || null, tarifa: raw.tarifa || null, promo: raw.promo ? P.promoList(raw.promo) : null };
     var src = raw.lines || {};
     // Una línea sin nombre es un resto de un cambio llegado tarde a una línea ya cobrada o borrada.
     tk.lines = Object.keys(src).map(function (id) { return Object.assign({}, src[id], { id: id }); })
@@ -238,6 +239,9 @@
   function ticketDiff(tk) {
     var old = S.raw[tk.table] || {};
     var d = {};
+    // promociones automáticas: se recalculan cada vez que cambia el ticket
+    var pr = P.promoCalc(S.promos, S.menu, tk);
+    tk.promo = pr.length ? pr : null;
     TK_FIELDS.forEach(function (k) { if (!same(old[k], tk[k])) d[k] = tk[k] == null ? null : tk[k]; });
     // orden: las líneas nuevas se colocan entre sus vecinas
     tk.lines.forEach(function (l, i) {
@@ -565,7 +569,9 @@
       '<div class="tk-lines">' + (lines || '<p class="muted" style="padding:14px">' + t('tk.empty') + '</p>') + '</div>' +
       (S.sel >= 0 ? '<p class="muted hint">' + t('tk.tapAgain') + '</p>' : '') +
       '<div class="tk-total">' +
-      (tot.discount ? '<div class="row"><span>' + t('subtotal') + '</span><span>' + fmt(tot.subtotal) + '</span></div><div class="row"><span>' + t('discount') + (tk.discountPct ? ' ' + tk.discountPct + '%' : '') + '</span><span>−' + fmt(tot.discount) + '</span></div>' : '') +
+      (tot.discount ? '<div class="row"><span>' + t('subtotal') + '</span><span>' + fmt(tot.subtotal) + '</span></div>' +
+        P.promoList(tk.promo).map(function (x) { return '<div class="row promo"><span>🎁 ' + esc(x.name) + '</span><span>−' + fmt(x.amount) + '</span></div>'; }).join('') +
+        (tot.discount - tot.promo > 0.004 ? '<div class="row"><span>' + t('discount') + (tk.discountPct ? ' ' + tk.discountPct + '%' : '') + '</span><span>−' + fmt(tot.discount - tot.promo) + '</span></div>' : '') : '') +
       '<div class="row big"><span>' + t('total') + '</span><span>' + fmt(tot.total) + '</span></div></div>' +
       '<div class="numpad"><div class="disp">' + (S.buf ? esc(S.buf) : '<span class="muted">' + t('tk.numHint') + '</span>') + '</div>' +
       key('7') + key('8') + key('9') + key('DTO%', 'DTO%', 'fn') +
@@ -1054,7 +1060,7 @@
       else {
         tk.lines.push({
           pid: a.pid, name: a.name, base: a.base, price: price, qty: a.qty, mods: mods,
-          note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV,
+          note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV, at: Date.now(),
           combo: a.combo || null
         });
       }

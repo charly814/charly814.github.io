@@ -103,6 +103,7 @@
     ['cats', 'adm.nav.cats', secCats],
     ['customers', 'adm.nav.customers', secCustomers],
     ['tarifas', 'adm.nav.tarifas', secTarifas],
+    ['promos', 'adm.nav.promos', secPromos],
     ['mods', 'adm.nav.mods', secMods],
     ['tables', 'adm.nav.tables', secTables],
     ['hours', 'adm.nav.hours', secHours],
@@ -441,6 +442,77 @@
           '<div class="combo-add"><select id="tp-' + i + '"><option value="">' + t('adm.tar.pickProduct') + '</option>' + A.menu.map(function (c) {
             return '<optgroup label="' + esc(c.name) + '">' + (c.items || []).map(function (it) { return '<option value="' + esc(it.id) + '">' + esc(it.name) + ' (' + fmt(it.price) + ')</option>'; }).join('') + '</optgroup>';
           }).join('') + '</select><input type="text" id="tpp-' + i + '" inputmode="decimal" placeholder="0,00" style="max-width:100px"><button class="btn" data-act="tar-price" ' + d + '>' + t('adm.tar.addPrice') + '</button></div>' +
+          '</div>';
+      }).join('');
+    return { head: head, html: html };
+  }
+
+  // ---------------------------------------------------------------- promociones
+
+  var PROMO_KINDS = {
+    '2x1': { type: 'qty', n: 2, k: 1, pct: 100 },
+    '3x2': { type: 'qty', n: 3, k: 1, pct: 100 },
+    second: { type: 'qty', n: 2, k: 1, pct: 50 },
+    nxm: { type: 'qty', n: 4, k: 1, pct: 100 },
+    min: { type: 'min', min: 50, pct: 10, eur: 0 }
+  };
+  function savePromos(list) { A.promos = list; return Store.set('promos', list); }
+  function promoKind(x) {
+    if (x.type === 'min') return 'min';
+    var n = +x.n, k = +x.k, pct = x.pct == null ? 100 : +x.pct;
+    if (k === 1 && pct === 100 && n === 2) return '2x1';
+    if (k === 1 && pct === 100 && n === 3) return '3x2';
+    if (k === 1 && n === 2) return 'second';
+    return 'nxm';
+  }
+  // Explicación en una frase de lo que hace la promoción
+  function promoSummary(x) {
+    var scope = (x.items || []).map(function (pid) { var it = P.findItem(A.menu, pid); return it ? P.tr(it, I.lang) : ''; })
+      .concat((x.cats || []).map(function (cid) { var c = A.menu.filter(function (m) { return m.id === cid; })[0]; return c ? P.tr(c, I.lang) : ''; })).filter(Boolean).join(', ') || t('pr.allMenu');
+    if (x.type === 'min') return t('pr.sumMin', { m: fmt(+x.min || 0), d: +x.eur ? fmt(+x.eur) : (+x.pct || 0) + '%' });
+    var pct = x.pct == null ? 100 : +x.pct;
+    return t(pct === 100 ? 'pr.sumFree' : 'pr.sumPct', { n: x.n, k: x.k, p: pct, s: scope });
+  }
+
+  function secPromos() {
+    var list = A.promos || [], days = t('sch.days');
+    var head = '<div class="toolbar">' + [['', 'pr.new'], ['2x1', 'pr.tpl2x1'], ['3x2', 'pr.tpl3x2'], ['second', 'pr.tplSecond'], ['min', 'pr.tplMin']].map(function (x) {
+      return '<button class="btn' + (x[0] ? '' : ' primary') + '" data-act="pr-new" data-tpl="' + x[0] + '">' + t(x[1]) + '</button>';
+    }).join('') + '</div>';
+    var html = '<p class="muted">' + t('pr.help') + '</p>' + (list.length ? '' : '<div class="card"><p class="muted">' + t('pr.none') + '</p></div>') +
+      list.map(function (x, i) {
+        var d = 'data-pi="' + i + '"', kind = promoKind(x);
+        var num = function (k, label, w) {
+          return '<div class="field"><label>' + t(label) + '</label><input type="text" inputmode="decimal" style="max-width:' + (w || 100) + 'px" data-edit="pr" data-k="' + k + '" ' + d + ' value="' + esc(String(x[k] == null ? '' : x[k]).replace('.', ',')) + '"></div>';
+        };
+        return '<div class="card tarifa' + (x.active ? '' : ' off') + '"><div class="tar-head">' +
+          '<input type="text" class="tar-name" data-edit="pr" data-k="name" ' + d + ' value="' + esc(x.name) + '">' +
+          '<label class="switch" title="' + t('adm.tar.active') + '"><input type="checkbox" data-edit="pr" data-k="active" ' + d + (x.active ? ' checked' : '') + '><span></span></label>' +
+          '<button class="icon-btn" data-act="pr-move" data-d="-1" ' + d + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+          '<button class="icon-btn" data-act="pr-move" data-d="1" ' + d + (i === list.length - 1 ? ' disabled' : '') + '>↓</button>' +
+          '<button class="icon-btn danger" data-act="pr-del" ' + d + '>🗑️</button></div>' +
+          '<p class="promo-sum">🎁 ' + esc(promoSummary(x)) + '</p>' +
+          '<div class="field"><label>' + t('pr.type') + '</label><select data-edit="pr-kind" ' + d + '>' + ['2x1', '3x2', 'second', 'nxm', 'min'].map(function (k) {
+            return '<option value="' + k + '"' + (kind === k ? ' selected' : '') + '>' + t('pr.k.' + k) + '</option>';
+          }).join('') + '</select></div>' +
+          (x.type === 'min'
+            ? '<div class="form-grid">' + num('min', 'pr.min') + num('pct', 'pr.pctOff') + num('eur', 'pr.eurOff') + '</div><p class="muted">' + t('pr.minHelp') + '</p>'
+            : '<div class="form-grid">' + (kind === 'second' ? num('pct', 'pr.secondPct') : kind === 'nxm' ? num('n', 'pr.n') + num('k', 'pr.k') + num('pct', 'pr.pct') : '') + '</div>' +
+              '<h4>' + t('adm.tar.cats') + '</h4><div class="chips-sel">' + A.menu.map(function (c) {
+                return '<label class="chk"><input type="checkbox" data-edit="pr-set" data-k="cats" data-v="' + esc(c.id) + '" ' + d + ((x.cats || []).indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</label>';
+              }).join('') + '</div>' +
+              '<h4>' + t('pr.items') + '</h4><div class="combo-opts">' + (x.items || []).map(function (pid) {
+                var it = P.findItem(A.menu, pid);
+                return '<span class="chip">' + esc(it ? it.name : pid) + ' <button data-act="pr-unitem" data-pid="' + esc(pid) + '" ' + d + '>✕</button></span>';
+              }).join('') + '</div>' +
+              '<div class="combo-add"><select data-edit="pr-item" ' + d + '><option value="">' + t('adm.tar.pickProduct') + '</option>' + A.menu.map(function (c) {
+                return '<optgroup label="' + esc(c.name) + '">' + (c.items || []).map(function (it) { return '<option value="' + esc(it.id) + '">' + esc(it.name) + ' (' + fmt(it.price) + ')</option>'; }).join('') + '</optgroup>';
+              }).join('') + '</select></div>') +
+          '<h4><label><input type="checkbox" data-edit="pr" data-k="useHours" ' + d + (x.useHours ? ' checked' : '') + '> ' + t('pr.hours') + '</label></h4>' +
+          (x.useHours ? '<div class="scroll-x"><table class="grid sch">' + [0, 1, 2, 3, 4, 5, 6].map(function (di) {
+            return '<tr><td>' + days[di] + '</td><td><input type="text" data-edit="pr-day" data-di="' + di + '" ' + d + ' value="' + esc(((x.days || [])[di] || {}).h || '') + '" placeholder="00:00-24:00"></td>' +
+              (di === 0 ? '<td><button class="btn mini" data-act="pr-alldays" ' + d + '>' + t('adm.tar.allDays') + '</button></td>' : '<td></td>') + '</tr>';
+          }).join('') + '</table></div><p class="muted">' + t('pr.hoursHelp') + '</p>' : '') +
           '</div>';
       }).join('');
     return { head: head, html: html };
@@ -1003,7 +1075,7 @@
 
   // ---------------------------------------------------------------- copias de seguridad
 
-  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'layout', 'customers', 'custlog'];
+  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'promos', 'layout', 'customers', 'custlog'];
 
   function secBackup() {
     var html = '<div class="card"><h3>' + t('adm.backupTitle') + '</h3><p class="muted">' + t('adm.backupHelp') + '</p>' +
@@ -1431,6 +1503,32 @@
           tx.prices[d.pid] = round2(String(val).replace(',', '.'));
         }
         return saveTarifas(tl);
+      case 'pr': case 'pr-set': case 'pr-day': case 'pr-kind': case 'pr-item':
+        var pl = clone(A.promos || []), px = pl[d.pi];
+        if (!px) return;
+        if (d.edit === 'pr') {
+          if (el.type === 'checkbox') px[d.k] = !!val;
+          else if (d.k === 'name') px.name = String(val).trim() || px.name;
+          else px[d.k] = String(val).trim() === '' ? 0 : (Number(String(val).replace(',', '.')) || 0);
+          if (d.k === 'n') px.n = Math.max(2, Math.floor(px.n) || 2);
+          if (d.k === 'k') px.k = Math.max(1, Math.min((px.n || 2) - 1, Math.floor(px.k) || 1));
+          if (d.k === 'pct') px.pct = Math.max(0, Math.min(100, px.pct));
+          if (d.k === 'eur' && px.eur) px.pct = 0;
+          if (d.k === 'pct' && px.type === 'min' && px.pct) px.eur = 0;
+        } else if (d.edit === 'pr-set') {
+          px[d.k] = (px[d.k] || []).filter(function (v) { return v !== d.v; });
+          if (val) px[d.k].push(d.v);
+        } else if (d.edit === 'pr-item') {
+          if (!val) return;
+          px.items = (px.items || []).filter(function (v) { return v !== val; }).concat([val]);
+        } else if (d.edit === 'pr-kind') {
+          Object.assign(px, PROMO_KINDS[val]);
+        } else {
+          if (!P.validRanges(val)) { toast(t('sch.bad', { v: val })); el.value = ((px.days || [])[d.di] || {}).h || ''; return; }
+          px.days = px.days || [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: '' }; });
+          px.days[d.di] = { h: String(val).trim() };
+        }
+        return savePromos(pl);
       case 'mod-name': case 'mod-en': case 'mod-zh':
         mods[d.mi][d.edit.slice(4)] = String(val).trim(); return saveMods(mods);
       case 'mod-price': mods[d.mi].price = round2(String(val).replace(',', '.')); return saveMods(mods);
@@ -1575,6 +1673,32 @@
       var tl = clone(A.tarifas || []);
       delete tl[d.ti].prices[d.pid];
       saveTarifas(tl);
+    },
+    'pr-new': function (d) {
+      var pl = clone(A.promos || []);
+      var x = Object.assign({ id: 'p' + Store.newId(), name: t('pr.k.' + (d.tpl || '2x1')), active: true, cats: [], items: [], useHours: false,
+        days: [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: '' }; }) }, PROMO_KINDS[d.tpl || '2x1']);
+      if (d.tpl === 'second') x.name = t('pr.k.second') + ' -50%';
+      if (d.tpl === 'min') Object.assign(x, { name: '-10% ' + t('pr.from') + ' 50 €', min: 50, pct: 10 });
+      pl.push(x); savePromos(pl);
+    },
+    'pr-move': function (d) {
+      var pl = clone(A.promos || []), i = +d.pi, j = i + Number(d.d);
+      if (j < 0 || j >= pl.length) return;
+      pl.splice(j, 0, pl.splice(i, 1)[0]); savePromos(pl);
+    },
+    'pr-del': function (d) {
+      var pl = clone(A.promos || []);
+      if (!confirm(t('adm.tar.delConfirm', { n: pl[d.pi].name }))) return;
+      pl.splice(+d.pi, 1); savePromos(pl);
+    },
+    'pr-alldays': function (d) {
+      var pl = clone(A.promos || []), px = pl[d.pi], h = ((px.days || [])[0] || {}).h || '';
+      px.days = [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: h }; }); savePromos(pl);
+    },
+    'pr-unitem': function (d) {
+      var pl = clone(A.promos || []);
+      pl[d.pi].items = (pl[d.pi].items || []).filter(function (v) { return v !== d.pid; }); savePromos(pl);
     },
     'cust-new': function () { openCustomer(null); },
     'cust-edit': function (d) { openCustomer(d.cid); },
@@ -1780,6 +1904,7 @@
     Store.on('closures', function (v) { A.closures = v || {}; render(); });
     Store.on('cash', function (v) { A.cash = v || {}; render(); });
     Store.on('customers', function (v) { A.customers = v || {}; render(); });
+    Store.on('promos', function (v) { A.promos = P.promoList(v); render(); });
     Store.on('public/tarifas', function (v) { A.tarifas = v || []; render(); });
     Store.on('users', function (v) {
       A.users = v || P.DEFAULT_USERS;

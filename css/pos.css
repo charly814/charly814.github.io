@@ -131,6 +131,7 @@ input, select, textarea { font: inherit; }
 .tag.sent { background: #dcfce7; color: var(--ok); }
 .tk-total { padding: 8px 14px; border-top: 1px solid var(--line); }
 .tk-total .row { display: flex; justify-content: space-between; color: var(--muted); }
+.tk-total .row.promo { color: #15803d; font-weight: 600; }
 .tk-total .big { font-size: 30px; font-weight: 700; color: var(--ink); }
 .numpad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 14px 14px; }
 .numpad .disp { grid-column: span 4; text-align: right; font-size: 20px; padding: 6px 10px; background: #f5f6fa; border-radius: 6px; min-height: 40px; }

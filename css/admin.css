@@ -126,3 +126,6 @@ table.heat td.tiny { font-size: 10px; color: var(--muted); text-align: center; }
 ul.plain-list { margin: 0; padding-left: 18px; columns: 2; font-size: 14px; }
 @media (max-width: 900px) { ul.plain-list { columns: 1; } }
 @media (max-width: 900px) { .toolbar .seg.tabs button { padding: 8px 10px; white-space: nowrap; } .toolbar .seg { flex-wrap: wrap; } }
+
+/* promociones */
+.promo-sum { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; }
