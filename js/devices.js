@@ -18,6 +18,7 @@
 //   ['item', cant, nombre, [subs], importe]  línea de ticket
 //   ['kitem', cant, nombre, [subs]]          línea de comanda (grande)
 //   ['hr']                   separador
+//   ['img', dataURL, ancho%] imagen (logo), centrada; en térmicas se convierte a blanco y negro
 (function () {
   'use strict';
 
@@ -64,14 +65,16 @@
         case 'item': return '<table><tr><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + (r[3] || []).map(function (x) { return '<br>&nbsp;' + esc(x); }).join('') + '</td><td class="r">' + esc(r[4]) + '</td></tr></table>';
         case 'kitem': return '<table class="kitchen"><tr><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + (r[3] || []).map(function (x) { return '<br>» ' + esc(x); }).join('') + '</td></tr></table>';
         case 'hr': return '<hr>';
+        case 'img': return '<div class="c"><img class="logo" src="' + esc(r[1]) + '" alt="" style="width:' + (Number(r[2]) || 50) + '%"></div>';
         default: return '<div>' + esc(r[1]) + '</div>';
       }
     }).join('');
   }
 
-  function printBrowser(doc) {
+  function printBrowser(doc, t, opts) {
     var pa = document.getElementById('print-area');
     if (!pa) { pa = document.createElement('div'); pa.id = 'print-area'; document.body.appendChild(pa); }
+    pa.className = (Number(t && t.width) === 32 ? 'w58' : '') + (opts && opts.big ? ' bigtext' : '');
     pa.innerHTML = toHtml(doc);
     return new Promise(function (resolve) { setTimeout(function () { window.print(); resolve(); }, 50); });
   }
@@ -118,6 +121,7 @@
           (r[3] || []).forEach(function (x) { push(wrap(x, W - 4).map(function (l) { return '  > ' + l; }), { dh: true }); });
           break;
         case 'hr': push([new Array(W + 1).join('-')], {}); break;
+        case 'img': if (r.raster) out.push({ img: r.raster, a: 'center' }); break;
         default: push(wrap(r[1] || '', W), {});
       }
     });
@@ -152,6 +156,14 @@
   function escpos(doc, W, opts) {
     var b = [ESC, 0x40, ESC, 0x74, 19];                   // inicializar + PC858
     layout(doc, W).forEach(function (l) {
+      if (l.img) {
+        // GS v 0: imagen de bits (1 = negro), ancho en bytes y alto en puntos
+        var bw = l.img.w / 8, h = l.img.h;
+        b.push(ESC, 0x61, 1, GS, 0x76, 0x30, 0, bw & 255, bw >> 8, h & 255, h >> 8);
+        for (var i = 0; i < l.img.bytes.length; i++) b.push(l.img.bytes[i]);
+        b.push(0x0A);
+        return;
+      }
       b.push(ESC, 0x61, l.a === 'center' ? 1 : 0);
       b.push(ESC, 0x45, l.b ? 1 : 0);
       b.push(GS, 0x21, (l.dw ? 0x10 : 0) | (l.dh ? 0x01 : 0));
@@ -170,6 +182,9 @@
     var body = '';
     if (doc) {
       body = layout(doc, W).map(function (l) {
+        if (l.img) {
+          return '<text align="center"/><image width="' + l.img.w + '" height="' + l.img.h + '" color="color_1" mode="mono">' + b64(l.img.bytes) + '</image><feed/>';
+        }
         return '<text align="' + l.a + '" em="' + l.b + '" dw="' + l.dw + '" dh="' + l.dh + '">' + esc(l.s.replace(/\s+$/, '')) + '&#10;</text>';
       }).join('') + '<text align="left" em="false" dw="false" dh="false"/><feed line="3"/><cut type="feed"/>';
     }
@@ -217,14 +232,71 @@
     return navigator.serial.requestPort().then(function (p) { port = p; return true; });
   }
 
+  // ---------------------------------------------------------------- imágenes para térmicas
+
+  function b64(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+
+  // Imagen -> mapa de bits de 1 bit (difusión de error Floyd–Steinberg),
+  // `dots` puntos de ancho (múltiplo de 8). Resultado en caché.
+  var rasterCache = {};
+  function rasterize(src, dots) {
+    var key = dots + '|' + src.length + '|' + src.slice(-40);
+    if (rasterCache[key]) return Promise.resolve(rasterCache[key]);
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      img.onload = function () {
+        var w = Math.max(8, dots - dots % 8);
+        var h = Math.max(1, Math.round(img.naturalHeight * w / img.naturalWidth));
+        var c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        var g = c.getContext('2d');
+        g.fillStyle = '#fff'; g.fillRect(0, 0, w, h);
+        g.drawImage(img, 0, 0, w, h);
+        var px = g.getImageData(0, 0, w, h).data;
+        var lum = new Float32Array(w * h);
+        for (var i = 0; i < w * h; i++) lum[i] = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+        var bytes = new Uint8Array(w / 8 * h);
+        for (var y = 0; y < h; y++) {
+          for (var x = 0; x < w; x++) {
+            var k = y * w + x, old = lum[k], nw = old < 128 ? 0 : 255, err = old - nw;
+            if (nw === 0) bytes[y * w / 8 + (x >> 3)] |= 0x80 >> (x & 7);
+            if (x + 1 < w) lum[k + 1] += err * 7 / 16;
+            if (y + 1 < h) {
+              if (x > 0) lum[k + w - 1] += err * 3 / 16;
+              lum[k + w] += err * 5 / 16;
+              if (x + 1 < w) lum[k + w + 1] += err / 16;
+            }
+          }
+        }
+        resolve(rasterCache[key] = { w: w, h: h, bytes: bytes });
+      };
+      img.onerror = function () { reject(new Error('logo')); };
+      img.src = src;
+    });
+  }
+
+  // 80 mm = 576 puntos, 58 mm = 384 puntos (203 ppp)
+  function prepare(doc, W) {
+    var dots = W <= 32 ? 384 : 576;
+    return Promise.all(doc.map(function (r) {
+      if (r[0] !== 'img') return r;
+      var d = Math.round(dots * (Number(r[2]) || 50) / 100 / 8) * 8;
+      return rasterize(r[1], d).then(function (ras) { var c = r.slice(); c.raster = ras; return c; }, function () { return ['t', '']; });
+    }));
+  }
+
   // ---------------------------------------------------------------- API
 
   function print(doc, which, opts) {
     var t = target(which || 'receipt');
     var W = Number(t.width) || 48;
-    if (t.mode === 'epos') return sendEpos(t, eposXml(doc, W, opts));
-    if (t.mode === 'serial') return sendSerial(escpos(doc, W, opts));
-    return printBrowser(doc);
+    if (t.mode === 'epos') return prepare(doc, W).then(function (d) { return sendEpos(t, eposXml(d, W, opts)); });
+    if (t.mode === 'serial') return prepare(doc, W).then(function (d) { return sendSerial(escpos(d, W, opts)); });
+    return printBrowser(doc, t, opts);
   }
 
   function openDrawer() {
@@ -241,9 +313,12 @@
     openDrawer: openDrawer,
     connectSerial: connectSerial,
     hasSerial: 'serial' in navigator,
+    toHtml: toHtml,
+    rasterize: rasterize,
     // para pruebas
     _layout: layout,
     _escpos: escpos,
+    _prepare: prepare,
     _eposXml: eposXml
   };
 })();

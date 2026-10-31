@@ -84,3 +84,7 @@ details.chart-table summary { cursor: pointer; color: var(--accent); font-size: 
 /* permisos */
 table.perms th.c, table.perms td.c { text-align: center; }
 table.perms td:first-child { white-space: nowrap; }
+
+/* el logo se ve entero (no recortado) */
+.photo-box .preview.contain { width: 200px; background: #fff; }
+.photo-box .preview.contain img { object-fit: contain; padding: 6px; }

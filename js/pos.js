@@ -92,7 +92,13 @@
     }
     render();
   });
-  Store.on('settings', function (v) { S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {}); render(); });
+  Store.on('settings', function (v) {
+    S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {});
+    // logo del ticket: se carga una vez para tenerlo listo al imprimir
+    if (S.settings.logoImg) Store.getImage('logo', S.settings.logoImg).then(function (d) { S.logo = d; });
+    else S.logo = null;
+    render();
+  });
   Store.on('tickets', function (v) {
     S.raw = v || {};
     S.tickets = {};
@@ -1698,29 +1704,12 @@
     return [['h1', st.name], ['c', st.address]].concat(st.nif ? [['c', 'NIF ' + st.nif]] : []).concat([['hr']]);
   }
 
+  // El diseño del ticket (logo, líneas, qué se muestra) es el mismo que se ve
+  // en la vista previa de Gestión → Diseño del ticket.
   function printTicket(tk, sale, opts) {
-    var tot = P.ticketTotals(tk);
-    var vat = sale && sale.vatRate != null ? sale.vatRate : (Number(S.settings.vat) || 0);
-    var base = round2(tot.total / (1 + vat / 100));
-    var when = sale ? sale.closedAt : Date.now();
-    var doc = header().concat([
-      sale ? ['t', 'Factura simplificada ' + (sale.invoice || sale.id.toUpperCase())] : ['b', 'PRE-CUENTA (no válida como factura)'],
-      ['t', tableLabelEs(tk.table) + ' · ' + (sale ? sale.cashier : S.user.name)],
-      ['t', new Date(when).toLocaleString('es-ES')], ['hr']
-    ]);
-    tk.lines.forEach(function (l) {
-      var extras = (l.mods || []).filter(function (m) { return m.type === 'extra'; });
-      doc.push(['item', fmtQty(l.qty), l.name, extras.length ? ['+ ' + extras.map(function (m) { return m.name; }).join(', ')] : [], fmt(l.price * l.qty)]);
-    });
-    doc.push(['hr']);
-    if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);
-    doc.push(['lrb', 'TOTAL', fmt(tot.total)], ['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
-    if (sale) {
-      doc.push(['lr', METHOD_ES[sale.method] || sale.method, fmt(sale.given)]);
-      if (sale.change) doc.push(['lr', 'Cambio', fmt(sale.change)]);
-    }
-    doc.push(['hr'], ['c', S.settings.footer]);
-    return printDoc(doc, 'receipt', opts);
+    var doc = P.receiptDoc(tk, sale, S.settings, { table: tableLabelEs(tk.table), user: S.user.name, logo: S.logo });
+    var big = !!(S.settings.ticket && S.settings.ticket.big);
+    return printDoc(doc, 'receipt', Object.assign({ big: big }, opts));
   }
 
   // Comanda numerada (#57) guardada ANTES de imprimir: si la impresora o la luz

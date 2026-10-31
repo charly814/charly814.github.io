@@ -108,6 +108,7 @@
     ['audit', 'adm.nav.audit', secAudit],
     ['devices', 'adm.nav.devices', secDevices],
     ['business', 'adm.nav.business', secBusiness],
+    ['ticket', 'adm.nav.ticket', secTicket],
     ['voice', 'adm.nav.voice', secVoice],
     ['backup', 'adm.nav.backup', secBackup]
   ];
@@ -699,6 +700,86 @@
     }
   });
 
+  // ---------------------------------------------------------------- diseño del ticket
+
+  function sampleTicket() {
+    var lines = [
+      { qty: 2, name: 'Caña', price: 1.5, mods: [] },
+      { qty: 1, name: 'Hamburguesa Supersónica', price: 6.8, mods: [{ type: 'extra', name: 'Bacon', price: 1 }, { type: 'sin', name: 'Cebolla' }] },
+      { qty: 1, name: 'Patatas bravas', price: 4.5, mods: [] }
+    ];
+    var tk = { table: 'T5', lines: lines };
+    var total = P.ticketTotals(tk).total;
+    var sale = { id: 'x', invoice: (A.settings.series || 'T') + '-000123', cashier: A.user ? A.user.name : 'ANA', closedAt: Date.now(),
+      method: 'efectivo', given: 20, change: round2(20 - total), vatRate: Number(A.settings.vat) || 0 };
+    return { tk: tk, sale: sale };
+  }
+
+  // Logo tal como lo imprime una térmica (1 bit), para "ver como impresora térmica"
+  function thermalLogo(src, pct, wide) {
+    var key = src.length + '|' + pct + '|' + wide;
+    if (A.thermal && A.thermal.key === key) return A.thermal.url;
+    var dots = Math.round((wide ? 576 : 384) * pct / 100 / 8) * 8;
+    Devices.rasterize(src, dots).then(function (r) {
+      var c = document.createElement('canvas');
+      c.width = r.w; c.height = r.h;
+      var g = c.getContext('2d'), im = g.createImageData(r.w, r.h);
+      for (var i = 0; i < r.w * r.h; i++) {
+        var on = r.bytes[(i / r.w | 0) * r.w / 8 + ((i % r.w) >> 3)] & (0x80 >> (i % r.w & 7));
+        im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = on ? 0 : 255;
+        im.data[i * 4 + 3] = 255;
+      }
+      g.putImageData(im, 0, 0);
+      A.thermal = { key: key, url: c.toDataURL() };
+      later();
+    });
+    return null;
+  }
+
+  function secTicket() {
+    var st = A.settings, T = Object.assign({}, P.DEFAULT_TICKET, st.ticket || {});
+    var wide = Number(Devices.cfg().receipt.width) !== 32;
+    var logo = st.logoImg ? Store.imageURL('logo', st.logoImg, later) : '';
+    // la vista previa usa el logo en data URL (como al imprimir)
+    if (st.logoImg && !A.logoData) Store.getImage('logo', st.logoImg).then(function (d) { A.logoData = d; later(); });
+    var src = A.logoData;
+    if (src && A.showThermal) src = thermalLogo(src, T.logoWidth, wide) || src;
+    var sm = sampleTicket();
+    var doc = P.receiptDoc(sm.tk, sm.sale, st, { table: 'Mesa T5', user: sm.sale.cashier, logo: src });
+    var chk = function (k) { return '<label style="display:block;margin:4px 0"><input type="checkbox" data-edit="tk" data-k="' + k + '"' + (T[k] ? ' checked' : '') + '> ' + t('tk.' + k) + '</label>'; };
+    var form = '<div class="card"><h3>' + t('tk.logo') + '</h3><div class="photo-box"><div class="preview contain">' + (logo ? '<img src="' + logo + '" alt="">' : '🍴') + '</div><div>' +
+      '<label class="btn primary" style="display:inline-flex;align-items:center;cursor:pointer">' + t('tk.upload') + '<input id="logo-file" type="file" accept="image/*" hidden></label> ' +
+      (st.logoImg ? '<button class="btn" data-act="logo-del">' + t('tk.remove') + '</button>' : '') +
+      '<p class="muted">' + t('tk.logoHelp') + '</p></div></div>' +
+      (st.logoImg ? '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="tk" data-k="logo"' + (T.logo ? ' checked' : '') + '> ' + t('tk.useLogo') + '</label>' +
+        '<div class="field"><label>' + t('tk.logoWidth', { n: T.logoWidth }) + '</label><input type="range" min="20" max="100" step="5" value="' + T.logoWidth + '" data-edit="tk" data-k="logoWidth"></div>' : '') +
+      '</div><div class="card">' + chk('showName') +
+      '<div class="field" style="margin-top:8px"><label>' + t('tk.headerExtra') + '</label><textarea rows="3" data-edit="tk" data-k="headerExtra" placeholder="Tel. 965 00 00 00&#10;www.restauranteplatet.es">' + esc(T.headerExtra) + '</textarea><small class="muted">' + t('tk.headerHelp') + '</small></div>' +
+      '<div class="field"><label>' + t('tk.footer') + '</label><textarea rows="3" data-edit="footer" placeholder="¡Gracias por su visita!">' + esc(st.footer || '') + '</textarea><small class="muted">' + t('tk.footerHelp') + '</small></div></div>' +
+      '<div class="card"><h3>' + t('tk.show') + '</h3>' + ['showTable', 'showWaiter', 'showDate', 'showMods', 'showVat', 'showPayment', 'big'].map(chk).join('') + '</div>';
+    var prev = '<div class="card ticket-prev"><h3>' + t('tk.preview') + '</h3>' +
+      (!st.nif ? '<p class="warn">' + t('tk.noNif') + '</p>' : '') +
+      '<label style="display:block;margin-bottom:10px"><input type="checkbox" data-act-change="thermal"' + (A.showThermal ? ' checked' : '') + '> ' + t('tk.thermal') + '</label>' +
+      '<div class="paper' + (wide ? '' : ' w58') + (T.big ? ' bigtext' : '') + (A.showThermal ? ' thermal' : '') + '">' + Devices.toHtml(doc) + '</div>' +
+      '<p class="muted" style="text-align:center">' + t('tk.paperNote') + '</p>' +
+      '<div class="btn-row" style="justify-content:center"><button class="btn primary" data-act="tk-test">' + t('tk.printTest') + '</button></div></div>';
+    return { html: '<div class="two-col ticket-design"><div>' + form + '</div><div>' + prev + '</div></div>' };
+  }
+
+  app.addEventListener('change', function (e) {
+    if (e.target.id !== 'logo-file') return;
+    var f = e.target.files[0];
+    if (!f) return;
+    compress(f).then(function (d) {
+      var v = Date.now();
+      A.logoData = d; A.thermal = null;
+      return Store.putImage('logo', d, v).then(function () {
+        var tk = Object.assign({}, P.DEFAULT_TICKET, A.settings.ticket || {}, { logo: true });
+        return Store.update('settings', { logoImg: v, ticket: tk });
+      });
+    }).catch(function () { toast(t('adm.photoErr')); });
+  });
+
   // ---------------------------------------------------------------- negocio
 
   function secBusiness() {
@@ -706,7 +787,7 @@
     var f = function (k) {
       return '<div class="field"><label>' + t('admin.f.' + k) + '</label><input type="text" value="' + esc(st[k]) + '" data-edit="set" data-k="' + k + '"></div>';
     };
-    var html = '<div class="card"><h3>' + t('admin.ticketData') + '</h3><div class="form-grid">' + f('name') + f('address') + f('nif') + f('vat') + f('footer') + f('series') + '</div>' +
+    var html = '<div class="card"><h3>' + t('admin.ticketData') + '</h3><div class="form-grid">' + f('name') + f('address') + f('nif') + f('vat') + f('series') + '</div>' +
       '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
       '<div class="card"><h3>' + t('admin.qr') + '</h3><p>' + t('admin.mode', { m: '<b>' + t(Store.mode === 'local' ? 'admin.local' : 'admin.cloud') + '</b>' }) + '</p>' +
       (Store.mode === 'local' ? '<p class="warn">' + t('admin.localWarn') + '</p>'
@@ -757,7 +838,9 @@
     var data = {};
     Promise.all(BACKUP_PATHS.map(function (p) { return Store.get(p).then(function (v) { data[p] = v; }); })).then(function () {
       var images = {};
-      return Promise.all(imageKeys(data.menu || A.menu).map(function (k) {
+      var keys = imageKeys(data.menu || A.menu);
+      if (data.settings && data.settings.logoImg) keys.push(['logo', data.settings.logoImg]);
+      return Promise.all(keys.map(function (k) {
         return Store.getImage(k[0], k[1]).then(function (d) { if (d) images[k[0]] = { v: k[1], data: d }; });
       })).then(function () { return images; });
     }).then(function (images) {
@@ -956,6 +1039,7 @@
     var ac = el.dataset && el.dataset.actChange;
     if (ac === 'catF') { A.catF = el.value; return render(); }
     if (ac === 'from' || ac === 'to') { A[ac] = el.value; A.range = 'custom'; return render(); }
+    if (ac === 'thermal') { A.showThermal = el.checked; return render(); }
     if (ac === 'ai-auto') { try { localStorage.setItem('platet-ai-auto', el.checked ? '1' : '0'); } catch (err) { /* ignorar */ } return; }
     if (!el.dataset || !el.dataset.edit) return;
     var d = el.dataset;
@@ -990,6 +1074,12 @@
         days[d.i] = Object.assign({}, days[d.i]);
         days[d.i][d.f] = String(val).trim();
         return Store.update('public/qr', { days: days });
+      case 'tk':
+        var tk = Object.assign({}, P.DEFAULT_TICKET, A.settings.ticket || {});
+        tk[d.k] = el.type === 'checkbox' ? !!val : d.k === 'logoWidth' ? Number(val) : String(val);
+        A.thermal = null;
+        return Store.update('settings', { ticket: tk });
+      case 'footer': return Store.update('settings', { footer: String(val) });
       case 'set':
         var st = Object.assign({}, A.settings);
         if (d.k === 'vat') st.vat = Number(String(val).replace(',', '.')) || 0;
@@ -1141,6 +1231,16 @@
     },
 
     'backup-dl': backupDownload,
+    'logo-del': function () {
+      Store.removeImage('logo');
+      A.logoData = null; A.thermal = null;
+      Store.update('settings', { logoImg: 0 });
+    },
+    'tk-test': function () {
+      var sm = sampleTicket(), T = Object.assign({}, P.DEFAULT_TICKET, A.settings.ticket || {});
+      var doc = P.receiptDoc(sm.tk, sm.sale, A.settings, { table: 'Mesa T5', user: sm.sale.cashier, logo: A.logoData });
+      Devices.print(doc, 'receipt', { big: T.big }).then(function () { toast(t('dev.sent')); }).catch(function (e) { toast(t('dev.err', { e: e.message })); });
+    },
     'imp-paste': function () {
       var txt = document.getElementById('imp-paste').value;
       if (txt.trim()) startImport(parseCsv(txt), 'Excel');

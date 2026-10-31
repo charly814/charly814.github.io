@@ -244,6 +244,63 @@
     return d ? d[1] : false;
   }
 
+  // ---------------------------------------------------------------- ticket
+  // Diseño del ticket (settings.ticket); se edita en Gestión → Diseño del ticket
+  var DEFAULT_TICKET = {
+    logo: true,          // imprimir el logo si hay uno subido (settings.logoImg)
+    logoWidth: 50,       // % del ancho del papel
+    showName: true,      // nombre del local en grande
+    headerExtra: '',     // líneas extra bajo la dirección (teléfono, web, Instagram…)
+    showTable: true,
+    showWaiter: true,
+    showDate: true,
+    showMods: true,      // extras de cada línea
+    showVat: true,       // desglose base imponible / IVA
+    showPayment: true,   // forma de pago, entregado y cambio
+    big: false           // letra más grande (impresión por navegador)
+  };
+  var METHOD_ES = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', bizum: 'Bizum' };
+  function fmtQty(q) { return String(round2(q)).replace('.', ','); }
+
+  // Documento de impresión (ver js/devices.js) de un ticket o pre-cuenta.
+  // ctx: { table: 'Mesa T5', user: 'ANA', logo: 'data:image/…' }
+  function receiptDoc(tk, sale, st, ctx) {
+    var T = Object.assign({}, DEFAULT_TICKET, (st && st.ticket) || {});
+    var tot = ticketTotals(tk);
+    var vat = sale && sale.vatRate != null ? sale.vatRate : (Number(st.vat) || 0);
+    var base = round2(tot.total / (1 + vat / 100));
+    var when = sale ? sale.closedAt : Date.now();
+    var lines = function (txt) { return String(txt || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean); };
+    var doc = [];
+    if (T.logo && ctx.logo) doc.push(['img', ctx.logo, T.logoWidth]);
+    if (T.showName && st.name) doc.push(['h1', st.name]);
+    lines(st.address).forEach(function (l) { doc.push(['c', l]); });
+    if (st.nif) doc.push(['c', 'NIF ' + st.nif]);
+    lines(T.headerExtra).forEach(function (l) { doc.push(['c', l]); });
+    doc.push(['hr']);
+    doc.push(sale ? ['t', 'Factura simplificada ' + (sale.invoice || String(sale.id).toUpperCase())] : ['b', 'PRE-CUENTA (no válida como factura)']);
+    var who = [T.showTable ? ctx.table : '', T.showWaiter ? (sale ? sale.cashier : ctx.user) : ''].filter(Boolean).join(' · ');
+    if (who) doc.push(['t', who]);
+    if (T.showDate) doc.push(['t', new Date(when).toLocaleString('es-ES')]);
+    doc.push(['hr']);
+    (tk.lines || []).forEach(function (l) {
+      var extras = T.showMods ? (l.mods || []).filter(function (m) { return m.type === 'extra'; }) : [];
+      doc.push(['item', fmtQty(l.qty), l.name, extras.length ? ['+ ' + extras.map(function (m) { return m.name; }).join(', ')] : [], fmt(l.price * l.qty)]);
+    });
+    doc.push(['hr']);
+    if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);
+    doc.push(['lrb', 'TOTAL', fmt(tot.total)]);
+    if (T.showVat) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
+    else doc.push(['c', 'IVA incluido']);       // obligatorio en la factura simplificada si no se desglosa
+    if (sale && T.showPayment) {
+      doc.push(['lr', METHOD_ES[sale.method] || sale.method, fmt(sale.given)]);
+      if (sale.change) doc.push(['lr', 'Cambio', fmt(sale.change)]);
+    }
+    var foot = lines(st.footer);
+    if (foot.length) { doc.push(['hr']); foot.forEach(function (l) { doc.push(['c', l]); }); }
+    return doc;
+  }
+
   // Descripción de un producto en el idioma pedido (desc, desc_en, desc_zh)
   function trDesc(it, lang) {
     if (!it) return '';
@@ -322,6 +379,10 @@
     TABLE_ID_RE: TABLE_ID_RE,
     ALLERGENS: ALLERGENS,
     PERMS: PERMS,
+    DEFAULT_TICKET: DEFAULT_TICKET,
+    METHOD_ES: METHOD_ES,
+    fmtQty: fmtQty,
+    receiptDoc: receiptDoc,
     can: can,
     trDesc: trDesc
   };
