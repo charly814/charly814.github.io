@@ -537,7 +537,7 @@
     var count = tk.lines.reduce(function (s, l) { return s + l.qty; }, 0);
 
     var lines = tk.lines.map(function (l, i) {
-      var sub = [P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
+      var sub = [comboText(l, I.lang), P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
       return '<div class="tk-line' + (i === S.sel ? ' sel' : '') + '" data-act="sel-line" data-i="' + i + '">' +
         '<span>' + fmtQty(l.qty) + '</span>' +
         '<span>' + esc(lineName(l)) + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.src === 'voice' ? '<i class="tag voice">🎤</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
@@ -799,6 +799,7 @@
       var it = P.findItem(S.menu, d.id);
       if (!it) return;
       var qty = takeNumber() || 1;
+      if (it.combo && (it.combo.courses || []).length) return openCombo(it, qty);
       addLines(S.table, [{ pid: it.id, name: it.name, base: it.price, qty: qty }]);
       if (mobile()) {
         toast(t('msg.added', { q: fmtQty(qty), n: P.tr(it, I.lang) }));
@@ -946,16 +947,17 @@
   function mergeLines(tk, add) {
     add.forEach(function (a) {
       var mods = a.mods || [];
-      var price = round2(a.base + extrasOf(mods));
+      var price = round2(a.base + extrasOf(mods) + comboExtra(a.combo));
       var same = tk.lines.filter(function (l) {
         return l.pid === a.pid && l.name === a.name && l.price === price && !l.sent && (l.note || '') === (a.note || '') &&
-          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV;
+          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV && !a.combo && !l.combo;
       })[0];
       if (same) same.qty = round2(same.qty + a.qty);
       else {
         tk.lines.push({
           pid: a.pid, name: a.name, base: a.base, price: price, qty: a.qty, mods: mods,
-          note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV
+          note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV,
+          combo: a.combo || null
         });
       }
     });
@@ -1775,6 +1777,54 @@
     });
   }
 
+  // ---------------------------------------------------------------- menú del día
+  function comboExtra(combo) { return round2((combo || []).reduce(function (a, c) { return a + (Number(c.extra) || 0); }, 0)); }
+  function comboText(l, lang) {
+    if (!l.combo || !l.combo.length) return '';
+    return l.combo.map(function (c) {
+      var it = c.pid && P.findItem(S.menu, c.pid);
+      return (it ? P.tr(it, lang) : c.choice) + (c.extra ? ' +' + fmt(c.extra) : '');
+    }).join(' · ');
+  }
+
+  // Elegir los platos de un menú (primero, segundo, postre…)
+  function openCombo(it, qty) {
+    var courses = it.combo.courses;
+    var picks = courses.map(function () { return []; });
+    function draw() {
+      var extra = comboExtra(P.comboChoices(S.menu, it, picks));
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + (qty > 1 ? ' × ' + fmtQty(qty) : '') + '</h2>' +
+        courses.map(function (c, ci) {
+          var need = Number(c.pick) || 1;
+          return '<h4 class="mod-h">' + esc(P.tr(c, I.lang)) + (need > 1 ? ' (' + need + ')' : '') + '</h4><div class="chips-sel combo-opts">' +
+            c.options.map(function (o, oi) {
+              return '<button class="' + (picks[ci].indexOf(oi) >= 0 ? 'on' : '') + '" data-k="o:' + ci + ':' + oi + '">' + esc(P.comboOptName(S.menu, o, I.lang)) +
+                (o.extra ? ' +' + fmt(o.extra) : '') + '</button>';
+            }).join('') + '</div>';
+        }).join('') +
+        '<p class="pay-left">' + fmt(it.price + extra) + '</p>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1"' +
+        (P.comboComplete(it, picks) ? '' : ' disabled') + '>' + t('add') + '</button></div>';
+    }
+    openModal('combo', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('o:') === 0) {
+        var a = k.split(':'), ci = +a[1], oi = +a[2], need = Number(courses[ci].pick) || 1, cur = picks[ci];
+        var at = cur.indexOf(oi);
+        if (at >= 0) cur.splice(at, 1);
+        else { if (cur.length >= need) cur.shift(); cur.push(oi); }
+        // con un solo plato por curso, al elegir se pasa directamente al siguiente
+        draw();
+        if (P.comboComplete(it, picks) && courses.every(function (c) { return (Number(c.pick) || 1) === 1; }) && courses.length && ci === courses.length - 1) modalHandler('OK');
+        return;
+      }
+      if (k !== 'OK' || !P.comboComplete(it, picks)) return;
+      closeModal();
+      addLines(S.table, [{ pid: it.id, name: it.name, base: it.price, qty: qty, combo: P.comboChoices(S.menu, it, picks) }]);
+    });
+  }
+
   // Comensales (pax) de la mesa
   function openGuests(table) {
     function draw() {
@@ -1851,7 +1901,7 @@
           var lines = priceOrder(o);
           var total = lines.reduce(function (s, l) { return s + (l.item ? l.price * l.qty : 0); }, 0);
           return '<div class="order-card">' + head + '<ul>' + lines.map(function (l) {
-            var sub = [P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
+            var sub = [comboText(l, I.lang), P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
             return '<li>' + l.qty + ' × ' + esc(l.item ? P.tr(l.item, I.lang) : l.name) +
               (l.item ? ' — ' + fmt(l.price * l.qty) : ' <span class="warn">(' + t('orders.notFound') + ')</span>') +
               (l.item && l.item.available === false ? ' <span class="warn">(' + t('orders.soldOut') + ')</span>' : '') +
@@ -1895,17 +1945,19 @@
       var item = P.findItem(S.menu, l.pid);
       var mods = (l.mods || []).map(function (id) { return P.findMod(S.mods, id); }).filter(Boolean)
         .map(function (m) { return { id: m.id, type: m.type, name: m.name, en: m.en || '', zh: m.zh || '', price: m.price || 0 }; });
+      // menú del día: índices de los platos elegidos -> platos y suplementos según la carta del TPV
+      var combo = item && item.combo && Array.isArray(l.combo) && P.comboComplete(item, l.combo) ? P.comboChoices(S.menu, item, l.combo) : null;
       return {
-        item: item, name: String(l.name || '?'), qty: qty, mods: mods,
+        item: item, name: String(l.name || '?'), qty: qty, mods: mods, combo: combo,
         note: String(l.note || '').slice(0, 120),
-        price: item ? round2(item.price + extrasOf(mods)) : 0
+        price: item ? round2(item.price + extrasOf(mods) + comboExtra(combo)) : 0
       };
     });
   }
 
   function acceptOrder(o, kitchen) {
     var add = priceOrder(o).filter(function (l) { return l.item; }).map(function (l) {
-      return { pid: l.item.id, name: l.item.name, base: l.item.price, qty: l.qty, mods: l.mods, note: l.note, src: 'qr' };
+      return { pid: l.item.id, name: l.item.name, base: l.item.price, qty: l.qty, mods: l.mods, combo: l.combo, note: l.note, src: 'qr' };
     });
     if (o.note && add.length) {
       var last = add[add.length - 1];
@@ -1962,7 +2014,7 @@
     var rec = {
       id: Store.newId(), n: n, table: tk.table, user: S.user.name, at: Date.now(), reprints: 0,
       lines: tk.lines.filter(function (l) { return !l.sent; }).map(function (l) {
-        return { qty: l.qty, name: l.name, mods: P.modsText(l.mods, 'es'), note: l.note || '' };
+        return { qty: l.qty, name: l.name, mods: P.modsText(l.mods, 'es'), note: l.note || '', combo: (l.combo || []).map(function (c) { return c.course + ': ' + c.choice; }) };
       })
     };
     tk.lines.forEach(function (l) { l.sent = true; });
@@ -1984,7 +2036,7 @@
     doc.push(['cb', tableLabelEs(r.table)], ['c', time(r.at) + ' · ' + r.user]);
     if (reprint) doc.push(['c', 'reimpresa ' + time(Date.now())]);
     doc.push(['hr']);
-    r.lines.forEach(function (l) { doc.push(['kitem', fmtQty(l.qty) + ' x', l.name, [l.mods, l.note].filter(Boolean)]); });
+    r.lines.forEach(function (l) { doc.push(['kitem', fmtQty(l.qty) + ' x', l.name, (l.combo || []).concat([l.mods, l.note]).filter(Boolean)]); });
     return printDoc(doc, 'kitchen');
   }
 

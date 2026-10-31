@@ -63,6 +63,21 @@
       ['Pan', 0.5, 'Bread', '面包'], ['Suplemento', 1, 'Supplement', '附加费']]]
   ];
 
+  // Menú del día por defecto: platos a elegir por plato (curso). Las opciones
+  // apuntan a productos de la carta (pid) o son platos escritos a mano (name).
+  var DEFAULT_COMBOS = {
+    'menu-1': { courses: [
+      { name: 'Primero', en: 'Starter', zh: '头盘', pick: 1, options: [{ pid: 'ensalada-1' }, { pid: 'ent-frias-3' }, { pid: 'ent-calientes-4' }, { name: 'Sopa del día', en: 'Soup of the day', zh: '今日汤' }] },
+      { name: 'Segundo', en: 'Main course', zh: '主菜', pick: 1, options: [{ pid: 'pescado-1' }, { pid: 'carne-1' }, { pid: 'carne-3' }, { pid: 'carne-4', extra: 2 }] },
+      { name: 'Postre o café', en: 'Dessert or coffee', zh: '甜品或咖啡', pick: 1, options: [{ pid: 'postre-1' }, { pid: 'postre-3' }, { pid: 'postre-4' }, { pid: 'cafe-1' }] },
+      { name: 'Bebida', en: 'Drink', zh: '饮料', pick: 1, options: [{ pid: 'cerveza-1' }, { pid: 'licor-1' }, { pid: 'refresco-8' }, { pid: 'refresco-1' }] }
+    ] },
+    'menu-2': { courses: [
+      { name: 'Plato', en: 'Dish', zh: '主菜', pick: 1, options: [{ pid: 'ensalada-1' }, { pid: 'pescado-1' }, { pid: 'carne-1' }, { pid: 'carne-3' }] },
+      { name: 'Bebida', en: 'Drink', zh: '饮料', pick: 1, options: [{ pid: 'cerveza-1' }, { pid: 'refresco-8' }, { pid: 'refresco-1' }] }
+    ] }
+  };
+
   var DEFAULT_MENU = CATS.map(function (c) {
     return {
       id: c[0],
@@ -71,7 +86,10 @@
       zh: c[1][2],
       icon: c[2],
       items: c[3].map(function (it, i) {
-        return { id: c[0] + '-' + (i + 1), name: it[0], price: it[1], en: it[2], zh: it[3], available: true };
+        var id = c[0] + '-' + (i + 1);
+        var item = { id: id, name: it[0], price: it[1], en: it[2], zh: it[3], available: true };
+        if (DEFAULT_COMBOS[id]) item.combo = DEFAULT_COMBOS[id];
+        return item;
       })
     };
   });
@@ -315,8 +333,10 @@
     if (T.showDate) doc.push(['t', new Date(when).toLocaleString('es-ES')]);
     doc.push(['hr']);
     (tk.lines || []).forEach(function (l) {
-      var extras = T.showMods ? (l.mods || []).filter(function (m) { return m.type === 'extra'; }) : [];
-      doc.push(['item', fmtQty(l.qty), l.name, extras.length ? ['+ ' + extras.map(function (m) { return m.name; }).join(', ')] : [], fmt(l.price * l.qty)]);
+      var extras = T.showMods ? (l.mods || []).filter(function (m) { return m.type === 'extra'; }).map(function (m) { return m.name; }) : [];
+      // menú del día: solo se detallan los platos con suplemento
+      (l.combo || []).forEach(function (c) { if (c.extra) extras.push(c.choice); });
+      doc.push(['item', fmtQty(l.qty), l.name, extras.length ? ['+ ' + extras.join(', ')] : [], fmt(l.price * l.qty)]);
     });
     doc.push(['hr']);
     if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);
@@ -334,6 +354,28 @@
     var foot = lines(st.footer);
     if (foot.length) { doc.push(['hr']); foot.forEach(function (l) { doc.push(['c', l]); }); }
     return doc;
+  }
+
+  // Nombre de una opción de menú en el idioma pedido
+  function comboOptName(menu, opt, lang) {
+    var it = opt && opt.pid && findItem(menu, opt.pid);
+    return it ? tr(it, lang) : tr(opt || {}, lang);
+  }
+  // picks: [[índices elegidos del plato 0], [del plato 1], …] ->
+  // [{course, choice, extra, pid}] con nombres en español (para cocina y ticket)
+  function comboChoices(menu, item, picks) {
+    var out = [];
+    ((item && item.combo && item.combo.courses) || []).forEach(function (c, ci) {
+      (picks[ci] || []).forEach(function (oi) {
+        var o = c.options[oi];
+        if (o) out.push({ course: c.name, choice: comboOptName(menu, o, 'es'), extra: Number(o.extra) || 0, pid: o.pid || null });
+      });
+    });
+    return out;
+  }
+  // ¿Están elegidos todos los platos?
+  function comboComplete(item, picks) {
+    return ((item.combo && item.combo.courses) || []).every(function (c, ci) { return (picks[ci] || []).length === (Number(c.pick) || 1); });
   }
 
   // Descripción de un producto en el idioma pedido (desc, desc_en, desc_zh)
@@ -414,6 +456,9 @@
     TABLE_ID_RE: TABLE_ID_RE,
     ALLERGENS: ALLERGENS,
     PERMS: PERMS,
+    comboOptName: comboOptName,
+    comboChoices: comboChoices,
+    comboComplete: comboComplete,
     DEFAULT_TICKET: DEFAULT_TICKET,
     METHOD_ES: METHOD_ES,
     salePayments: salePayments,

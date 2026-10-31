@@ -605,6 +605,15 @@
     'adm.rep.guests': ['Comensales', 'Diners', '用餐人数'],
     'adm.rep.perGuest': ['Gasto por comensal', 'Spend per diner', '人均消费'],
 
+    // ---- menú del día
+    'adm.combo': ['Es un menú con platos a elegir (menú del día, combos)', 'It is a menu with dishes to choose (set menu, combos)', '这是可以选菜的套餐（今日套餐、组合）'],
+    'adm.coursePh': ['Primero, Segundo, Postre…', 'Starter, Main, Dessert…', '头盘、主菜、甜品……'],
+    'adm.pick': ['Elige', 'Choose', '选'],
+    'adm.addCourse': ['＋ Añadir plato (primero, segundo, postre, bebida…)', '＋ Add course (starter, main, dessert, drink…)', '＋ 添加一道（头盘、主菜、甜品、饮料……）'],
+    'adm.optFromMenu': ['— un producto de la carta —', '— an item from the menu —', '— 从菜单里选 —'],
+    'adm.optFree': ['o escribe un plato del día', 'or type a dish of the day', '或输入今日菜'],
+    'adm.comboBadge': ['Menú', 'Set menu', '套餐'],
+
     // ---- carta QR del cliente
     'c.scan': ['Escanea el código QR de tu mesa para pedir.', 'Scan the QR code on your table to order.', '请扫描桌上的二维码点餐。'],
     'c.seeMenu': ['Ver la carta', 'See the menu', '查看菜单'],
@@ -646,6 +655,7 @@
     'c.kitchenNote': ['La cocina está cerrada: ahora solo se pueden pedir bebidas y productos de barra.', 'The kitchen is closed: right now you can only order drinks and bar items.', '厨房已下班：现在只能点酒水和吧台的东西。'],
     'c.removed': ['Se han quitado del pedido los platos que ya no se pueden pedir.', 'Dishes that can no longer be ordered were removed from your order.', '已从订单里移除现在不能点的菜。'],
     'c.allergens2': ['Alérgenos', 'Allergens', '过敏原'],
+    'c.pickDishes': ['Elige los platos del menú', 'Choose the dishes of the menu', '请选择套餐里的菜'],
     'c.other': ['¿Quieres algo que no está en la carta? Escríbelo en la nota o pídelo al camarero.', 'Want something not on the menu? Write it in the note or ask the waiter.', '想要菜单上没有的？写在备注里或者问服务员。']
   };
 

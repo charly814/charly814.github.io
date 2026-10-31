@@ -88,3 +88,17 @@ table.perms td:first-child { white-space: nowrap; }
 /* el logo se ve entero (no recortado) */
 .photo-box .preview.contain { width: 200px; background: #fff; }
 .photo-box .preview.contain img { object-fit: contain; padding: 6px; }
+
+/* editor de menús */
+.combo-ed .chk-line { font-weight: 600; color: var(--ink); }
+.combo-course { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin: 8px 0; background: #fafbfc; }
+.combo-head { display: grid; grid-template-columns: 1.4fr 1fr 1fr auto auto; gap: 6px; align-items: center; }
+.combo-head input[type=text] { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.combo-opts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.combo-opts .chip input { width: 46px; border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+.combo-opts .chip button { border: 0; background: transparent; color: var(--alert); }
+.combo-add { display: flex; gap: 6px; flex-wrap: wrap; }
+.combo-add select, .combo-add input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; min-width: 0; flex: 1; }
+@media (max-width: 900px) { .combo-head { grid-template-columns: 1fr 1fr; } }
+.combo-ed .chk-line { display: flex; align-items: center; gap: 8px; }
+.combo-ed .chk-line input { width: auto; }

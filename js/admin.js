@@ -182,7 +182,7 @@
         var it = r.it, id = esc(it.id);
         return '<tr class="' + (it.available === false ? 'off-row' : '') + '">' +
           '<td>' + imgTag('p-' + it.id, it.img, r.c.icon) + '</td>' +
-          '<td><b>' + esc(it.name) + '</b>' + ((it.en || it.zh) ? '<small>' + esc([it.en, it.zh].filter(Boolean).join(' · ')) + '</small>' : '') + '</td>' +
+          '<td><b>' + esc(it.name) + '</b>' + (it.combo ? ' <span class="chip">📋 ' + t('adm.comboBadge') + ' · ' + it.combo.courses.length + '</span>' : '') + ((it.en || it.zh) ? '<small>' + esc([it.en, it.zh].filter(Boolean).join(' · ')) + '</small>' : '') + '</td>' +
           '<td class="hide-sm">' + esc(r.c.icon || '') + ' ' + esc(P.tr(r.c, I.lang)) + '</td>' +
           '<td class="num">' + fmt(it.price) + '</td>' +
           '<td><label class="switch"><input type="checkbox" data-edit="avail" data-pid="' + id + '"' + (it.available !== false ? ' checked' : '') + '><span></span></label></td>' +
@@ -209,6 +209,7 @@
     var st = cur ? clone(cur) : { name: '', en: '', zh: '', desc: '', desc_en: '', desc_zh: '', price: '', available: true, allergens: [], img: 0 };
     st.cat = loc ? A.menu[loc.ci].id : (catId || A.catF || (A.menu[0] && A.menu[0].id));
     st.allergens = st.allergens || [];
+    st.combo = st.combo ? clone(st.combo) : null;
     var photo = { data: null, removed: false };     // foto nueva sin guardar
 
     function field(k, label, type, extra) {
@@ -238,6 +239,7 @@
         '<p class="muted">' + t('adm.photoHelp') + '</p></div></div></div>' +
         field('desc', t('adm.descEs'), 'textarea', 'full') + field('desc_en', t('adm.descEn'), 'textarea') + field('desc_zh', t('adm.descZh'), 'textarea') +
         '<p class="muted full">' + t('adm.descHelp') + '</p>' +
+        comboEditor() +
         '<div class="field full"><label>' + t('adm.col.allergens') + '</label><div class="allergen-pick">' + P.ALLERGENS.map(function (al) {
           return '<button class="' + (st.allergens.indexOf(al.id) >= 0 ? 'on' : '') + '" data-k="al:' + al.id + '">' + al.icon + ' ' + esc(P.tr(al, I.lang)) + '</button>';
         }).join('') + '</div><p class="muted">' + t('adm.allergensHelp') + '</p></div>' +
@@ -251,9 +253,46 @@
         if (!f) return;
         compress(f).then(function (d) { photo.data = d; photo.removed = false; draw(); }).catch(function () { toast(t('adm.photoErr')); });
       };
+      modalBox.querySelectorAll('[data-cf]').forEach(function (el) {
+        el.addEventListener('input', function () { var c = st.combo.courses[+el.dataset.ci]; c[el.dataset.cf] = el.dataset.cf === 'pick' ? Math.max(1, Number(el.value) || 1) : el.value; });
+      });
+      modalBox.querySelectorAll('[data-of]').forEach(function (el) {
+        el.addEventListener('input', function () { st.combo.courses[+el.dataset.ci].options[+el.dataset.oi].extra = round2(String(el.value).replace(',', '.')) || 0; });
+      });
+    }
+    // Menú con platos a elegir: platos (primero, segundo…) y sus opciones
+    function comboEditor() {
+      var html = '<div class="field full combo-ed"><label class="chk-line"><input type="checkbox" data-k="combo-toggle"' + (st.combo ? ' checked' : '') + '> ' + t('adm.combo') + '</label>';
+      if (!st.combo) return html + '</div>';
+      html += st.combo.courses.map(function (c, ci) {
+        var d = 'data-ci="' + ci + '"';
+        return '<div class="combo-course"><div class="combo-head">' +
+          '<input type="text" data-cf="name" ' + d + ' value="' + esc(c.name || '') + '" placeholder="' + t('adm.coursePh') + '">' +
+          '<input type="text" data-cf="en" ' + d + ' value="' + esc(c.en || '') + '" placeholder="EN">' +
+          '<input type="text" data-cf="zh" ' + d + ' value="' + esc(c.zh || '') + '" placeholder="中文">' +
+          '<label class="muted">' + t('adm.pick') + ' <input type="number" min="1" max="9" data-cf="pick" ' + d + ' value="' + (c.pick || 1) + '" style="width:56px"></label>' +
+          '<button class="icon-btn danger" data-k="cdel:' + ci + '">🗑️</button></div>' +
+          '<div class="combo-opts">' + c.options.map(function (o, oi) {
+            return '<span class="chip">' + esc(P.comboOptName(A.menu, o, I.lang)) + ' <span class="muted">+€</span><input type="text" inputmode="decimal" data-of="extra" ' + d + ' data-oi="' + oi + '" value="' + (o.extra ? String(o.extra).replace('.', ',') : '') + '" placeholder="0"><button data-k="odel:' + ci + ':' + oi + '">✕</button></span>';
+          }).join('') + '</div>' +
+          '<div class="combo-add"><select id="osel-' + ci + '"><option value="">' + t('adm.optFromMenu') + '</option>' + A.menu.map(function (cat) {
+            return '<optgroup label="' + esc(cat.name) + '">' + (cat.items || []).filter(function (x) { return !x.combo; }).map(function (x) { return '<option value="' + esc(x.id) + '">' + esc(x.name) + '</option>'; }).join('') + '</optgroup>';
+          }).join('') + '</select><input type="text" id="oname-' + ci + '" placeholder="' + t('adm.optFree') + '"><button class="btn" data-k="oadd:' + ci + '">' + t('add') + '</button></div></div>';
+      }).join('') + '<button class="btn" data-k="cadd">' + t('adm.addCourse') + '</button></div>';
+      return html;
     }
     openModal('product', draw, function (k) {
       if (k === 'X') return closeModal();
+      if (k === 'combo-toggle') { st.combo = st.combo ? null : { courses: [{ name: 'Primero', pick: 1, options: [] }] }; return draw(); }
+      if (k === 'cadd') { st.combo.courses.push({ name: '', pick: 1, options: [] }); return draw(); }
+      if (k.indexOf('cdel:') === 0) { st.combo.courses.splice(+k.slice(5), 1); return draw(); }
+      if (k.indexOf('odel:') === 0) { var od = k.split(':'); st.combo.courses[+od[1]].options.splice(+od[2], 1); return draw(); }
+      if (k.indexOf('oadd:') === 0) {
+        var ci = +k.slice(5), sel = document.getElementById('osel-' + ci).value, nm = document.getElementById('oname-' + ci).value.trim();
+        if (sel) st.combo.courses[ci].options.push({ pid: sel });
+        else if (nm) st.combo.courses[ci].options.push({ name: nm });
+        return draw();
+      }
       if (k === 'nophoto') { photo.data = null; photo.removed = true; return draw(); }
       if (k.indexOf('al:') === 0) {
         var a = k.slice(3), i = st.allergens.indexOf(a);
@@ -271,6 +310,11 @@
         price: price, available: st.available !== false, allergens: st.allergens.slice(), img: cur && !photo.removed ? (cur.img || 0) : 0,
         barcode: String(st.barcode || '').trim()
       };
+      if (st.combo) {
+        var courses = st.combo.courses.filter(function (c) { return c.options.length; })
+          .map(function (c) { return Object.assign({}, c, { name: String(c.name || '').trim() || '—' }); });
+        if (courses.length) item.combo = { courses: courses };
+      }
       var key = 'p-' + id;
       var p = Promise.resolve();
       if (photo.data) { item.img = Date.now(); p = Store.putImage(key, photo.data, item.img); }

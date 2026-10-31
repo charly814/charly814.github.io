@@ -239,8 +239,10 @@
     function unitPrice(l) {
       var it = P.findItem(menu, l.pid);
       if (!it) return 0;
-      return it.price + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0);
+      return it.price + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0) +
+        P.comboChoices(menu, it, l.combo || []).reduce(function (s, c) { return s + c.extra; }, 0);
     }
+    function isCombo(it) { return !!(it && it.combo && (it.combo.courses || []).length); }
     function validLines() { return cart.filter(function (l) { return P.findItem(menu, l.pid) && l.qty > 0; }); }
     function cartTotal() { return validLines().reduce(function (s, l) { return s + unitPrice(l) * l.qty; }, 0); }
     function cartCount() { return validLines().reduce(function (s, l) { return s + l.qty; }, 0); }
@@ -258,7 +260,8 @@
       sheet.innerHTML = '<h2>' + t('c.yourOrder', { t: esc(t('table', { t: table })) }) + '</h2>' +
         lines.map(function (l) {
           var it = P.findItem(menu, l.pid);
-          var sub = [P.modsText(modObjs(l.mods), I.lang), l.note].filter(Boolean).join(' · ');
+          var sub = [l.combo ? P.comboChoices(menu, it, l.combo).map(function (c) { var x = c.pid && P.findItem(menu, c.pid); return x ? P.tr(x, I.lang) : c.choice; }).join(' · ') : '',
+            P.modsText(modObjs(l.mods), I.lang), l.note].filter(Boolean).join(' · ');
           return '<div class="item cart-line"><span class="name">' + esc(P.tr(it, I.lang)) + (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
             '<span class="price">' + fmt(unitPrice(l) * l.qty) + '</span>' +
             '<span class="stepper"><button data-a="minus" data-key="' + esc(l.key) + '">−</button><b>' + l.qty + '</b><button class="add" data-a="inc" data-key="' + esc(l.key) + '">+</button></span></div>';
@@ -281,17 +284,26 @@
     function openCustom(pid) {
       var it = P.findItem(menu, pid);
       if (!it) return;
-      sheetMode = sheetMode && sheetMode.pid === pid ? sheetMode : { pid: pid, sel: {}, note: '', qty: 1 };
+      sheetMode = sheetMode && sheetMode.pid === pid ? sheetMode : { pid: pid, sel: {}, note: '', qty: 1, picks: ((it.combo && it.combo.courses) || []).map(function () { return []; }) };
       var st = sheetMode;
       var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
-      var price = unitPrice({ pid: pid, mods: ids }) * st.qty;
-      sheet.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + '</h2>' +
-        '<h4 class="mod-h sin">' + t('mod.sin') + '</h4>' + chipsFor('sin', st) +
-        '<h4 class="mod-h extra">' + t('mod.extra') + '</h4>' + chipsFor('extra', st) +
-        '<h4 class="mod-h">' + t('mod.prep') + '</h4>' + chipsFor('prep', st) +
+      var price = unitPrice({ pid: pid, mods: ids, combo: st.picks }) * st.qty;
+      // menú del día: primero elegir los platos
+      var courses = isCombo(it) ? it.combo.courses.map(function (c, ci) {
+        return '<h4 class="mod-h">' + esc(P.tr(c, I.lang)) + ((Number(c.pick) || 1) > 1 ? ' (' + c.pick + ')' : '') + '</h4><div class="chips-sel">' +
+          c.options.map(function (o, oi) {
+            return '<button class="' + (st.picks[ci].indexOf(oi) >= 0 ? 'on' : '') + '" data-a="pick" data-c="' + ci + '" data-o="' + oi + '">' +
+              esc(P.comboOptName(menu, o, I.lang)) + (o.extra ? ' +' + fmt(o.extra) : '') + '</button>';
+          }).join('') + '</div>';
+      }).join('') : '';
+      var ready = !isCombo(it) || P.comboComplete(it, st.picks);
+      sheet.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + '</h2>' + courses +
+        (isCombo(it) ? '' : '<h4 class="mod-h sin">' + t('mod.sin') + '</h4>' + chipsFor('sin', st)) +
+        (isCombo(it) ? '' : '<h4 class="mod-h extra">' + t('mod.extra') + '</h4>' + chipsFor('extra', st) +
+        '<h4 class="mod-h">' + t('mod.prep') + '</h4>' + chipsFor('prep', st)) +
         '<h4 class="mod-h">' + t('c.itemNote') + '</h4><input type="text" id="item-note" maxlength="80" value="' + esc(st.note) + '">' +
         '<div class="qty-row"><span class="stepper"><button data-a="cqty" data-d="-1">−</button><b>' + st.qty + '</b><button class="add" data-a="cqty" data-d="1">+</button></span></div>' +
-        '<button class="btn" data-a="cadd">' + t('c.addToOrder', { n: fmt(price) }) + '</button>' +
+        '<button class="btn" data-a="cadd"' + (ready ? '' : ' disabled') + '>' + (ready ? t('c.addToOrder', { n: fmt(price) }) : t('c.pickDishes')) + '</button>' +
         '<button class="btn ghost" data-a="close">' + t('cancel') + '</button>';
       document.getElementById('item-note').oninput = function (e) { st.note = e.target.value; };
       sheetBg.classList.remove('hidden');
@@ -359,6 +371,7 @@
         case 'lang': I.set(b.dataset.l); drawLang(); render(); return refreshSheet();
         case 'plus':
           if (!canOrder(b.dataset.id)) return render();
+          if (isCombo(P.findItem(menu, b.dataset.id))) { sheetMode = null; return openCustom(b.dataset.id); }
           l = lineByKey(b.dataset.id);
           if (l) l.qty = Math.min(20, l.qty + 1);
           else cart.push({ key: b.dataset.id, pid: b.dataset.id, qty: 1, mods: [], note: '' });
@@ -374,11 +387,20 @@
         case 'custom': if (!canOrder(b.dataset.id)) return; sheetMode = null; return openCustom(b.dataset.id);
         case 'mod': sheetMode.sel[b.dataset.id] = !sheetMode.sel[b.dataset.id]; return openCustom(sheetMode.pid);
         case 'cqty': sheetMode.qty = Math.min(20, Math.max(1, sheetMode.qty + Number(b.dataset.d))); return openCustom(sheetMode.pid);
+        case 'pick':
+          var pk = sheetMode.picks[+b.dataset.c], oi = +b.dataset.o;
+          var need = Number(P.findItem(menu, sheetMode.pid).combo.courses[+b.dataset.c].pick) || 1;
+          if (pk.indexOf(oi) >= 0) pk.splice(pk.indexOf(oi), 1); else { if (pk.length >= need) pk.shift(); pk.push(oi); }
+          return openCustom(sheetMode.pid);
         case 'cadd':
           var st = sheetMode;
           var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
           var n = st.note.trim().slice(0, 80);
-          if (!ids.length && !n) {
+          var cit = P.findItem(menu, st.pid);
+          if (isCombo(cit)) {
+            if (!P.comboComplete(cit, st.picks)) return;
+            cart.push({ key: st.pid + '~' + Store.newId(), pid: st.pid, qty: st.qty, mods: [], note: n, combo: st.picks });
+          } else if (!ids.length && !n) {
             l = lineByKey(st.pid);
             if (l) l.qty = Math.min(20, l.qty + st.qty);
             else cart.push({ key: st.pid, pid: st.pid, qty: st.qty, mods: [], note: '' });
@@ -392,7 +414,7 @@
           b.disabled = true;
           b.textContent = t('c.sending');
           send('order', validLines().map(function (x) {
-            return { pid: x.pid, name: P.findItem(menu, x.pid).name, qty: x.qty, mods: x.mods, note: x.note };
+            return { pid: x.pid, name: P.findItem(menu, x.pid).name, qty: x.qty, mods: x.mods, note: x.note, combo: x.combo || null };
           })).then(function (ok) {
             if (!ok) { b.disabled = false; b.textContent = t('c.send'); return; }
             cart = []; note = ''; closeSheet(); render();
