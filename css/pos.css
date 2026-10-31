@@ -409,3 +409,12 @@ table.cash-sum tr.tot td { font-weight: 700; font-size: 17px; border-top: 2px so
 .bad-t { color: var(--alert); font-weight: 700; }
 .warn-t { color: #b45309; font-weight: 700; }
 @media (max-width: 860px) { .arq { grid-template-columns: 1fr; } .denoms { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------- dividir y comensales ---------- */
+.guest-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.guest-grid .btn { height: 56px; font-size: 20px; }
+.parts { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.parts .chip button { border: 0; background: transparent; color: var(--alert); }
+.pay-left { font-size: 18px; font-weight: 700; text-align: center; }
+table.split td { padding: 6px; }
+.tk-head .chip { margin-left: 6px; }

@@ -584,6 +584,27 @@
     'audit.cashOut': ['Salida de dinero', 'Cash out', '支出现金'],
     'audit.float': ['Cambio de fondo', 'Float changed', '修改备用金'],
 
+    // ---- dividir cuenta y comensales
+    'act.split': ['Dividir', 'Split', '分单'],
+    'split.title': ['Dividir cuenta · {t}', 'Split bill · {t}', '分单 · {t}'],
+    'split.help': ['Elige lo que paga esta persona: se cobra como un ticket aparte y el resto sigue en la mesa.', 'Choose what this person pays: it is charged as a separate ticket and the rest stays on the table.', '选这位客人要付的菜：单独结账，其余的留在这张桌上。'],
+    'split.all': ['Todo', 'All', '全部'],
+    'split.selected': ['Esta parte: {n}', 'This part: {n}', '这部分：{n}'],
+    'split.pay': ['Cobrar esta parte', 'Charge this part', '收这部分的钱'],
+    'split.none': ['Elige al menos un producto', 'Choose at least one item', '至少选一个商品'],
+    'split.equalHint': ['¿A partes iguales o con varias formas de pago? Pulsa «Cobrar» y luego «Pagar en partes».', 'Equal parts or several payment methods? Press "Pay" and then "Pay in parts".', '要平均分或用多种方式付款？点「收款」，再点「分几次付」。'],
+    'pay.parts': ['➗ Pagar en partes (a partes iguales / mixto)', '➗ Pay in parts (equal / mixed)', '➗ 分几次付（平均分 / 混合付款）'],
+    'pay.remaining': ['Queda por pagar: {n}', 'Left to pay: {n}', '还需支付：{n}'],
+    'pay.addPart': ['＋ Añadir este pago', '＋ Add this payment', '＋ 添加这笔付款'],
+    'm.mixto': ['🔀 Mixto', '🔀 Mixed', '🔀 混合'],
+    'm.cuenta': ['📒 A cuenta', '📒 On account', '📒 挂账'],
+    'guests.title': ['¿Cuántos comensales?', 'How many diners?', '几位客人？'],
+    'guests.other': ['Otro número', 'Other number', '其他人数'],
+    'guests.skip': ['Saltar', 'Skip', '跳过'],
+    'admin.f.askGuests': ['Preguntar los comensales al abrir una mesa', 'Ask the number of diners when opening a table', '开桌时询问用餐人数'],
+    'adm.rep.guests': ['Comensales', 'Diners', '用餐人数'],
+    'adm.rep.perGuest': ['Gasto por comensal', 'Spend per diner', '人均消费'],
+
     // ---- carta QR del cliente
     'c.scan': ['Escanea el código QR de tu mesa para pedir.', 'Scan the QR code on your table to order.', '请扫描桌上的二维码点餐。'],
     'c.seeMenu': ['Ver la carta', 'See the menu', '查看菜单'],

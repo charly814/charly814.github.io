@@ -788,6 +788,7 @@
       return '<div class="field"><label>' + t('admin.f.' + k) + '</label><input type="text" value="' + esc(st[k]) + '" data-edit="set" data-k="' + k + '"></div>';
     };
     var html = '<div class="card"><h3>' + t('admin.ticketData') + '</h3><div class="form-grid">' + f('name') + f('address') + f('nif') + f('vat') + f('series') + '</div>' +
+      '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="set" data-k="askGuests"' + (st.askGuests !== false ? ' checked' : '') + '> ' + t('admin.f.askGuests') + '</label>' +
       '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
       '<div class="card"><h3>' + t('admin.qr') + '</h3><p>' + t('admin.mode', { m: '<b>' + t(Store.mode === 'local' ? 'admin.local' : 'admin.cloud') + '</b>' }) + '</p>' +
       (Store.mode === 'local' ? '<p class="warn">' + t('admin.localWarn') + '</p>'
@@ -904,13 +905,17 @@
   function report() {
     var b = rangeBounds();
     var sales = allSales().filter(function (s) { return s.closedAt >= b[0] && s.closedAt < b[1]; });
-    var r = { from: b[0], to: b[1], total: 0, count: sales.length, units: 0, discounts: 0, byMethod: {}, byWaiter: {}, products: {}, cats: {}, series: [] };
+    var r = { from: b[0], to: b[1], total: 0, count: sales.length, units: 0, discounts: 0, guests: 0, guestTotal: 0, byMethod: {}, byWaiter: {}, products: {}, cats: {}, series: [] };
     var days = Math.round((b[1] - b[0]) / 86400000);
     var hourly = days <= 1;
-    var buckets = {};
+    var buckets = {}, visits = {};
     sales.forEach(function (s) {
       r.total += s.total;
       r.discounts += s.discount || 0;
+      // una mesa dividida en varios tickets es una sola visita (mismos comensales)
+      var vk = (s.table || '') + '@' + (s.openedAt || s.id);
+      var vis = visits[vk] = visits[vk] || { total: 0, guests: 0 };
+      vis.total += s.total; vis.guests = Math.max(vis.guests, s.guests || 0);
       P.salePayments(s).forEach(function (p) { r.byMethod[p.method] = (r.byMethod[p.method] || 0) + p.amount; });
       var w = r.byWaiter[s.cashier] = r.byWaiter[s.cashier] || { n: 0, total: 0 };
       w.n++; w.total += s.total;
@@ -944,6 +949,7 @@
         r.series.push({ label: dd.getDate() + '/' + (dd.getMonth() + 1), tip: dd.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }), v: buckets[x] || 0 });
       }
     }
+    Object.keys(visits).forEach(function (k) { if (visits[k].guests) { r.guests += visits[k].guests; r.guestTotal += visits[k].total; } });
     r.hourly = hourly;
     r.total = round2(r.total); r.discounts = round2(r.discounts);
     return r;
@@ -995,7 +1001,8 @@
     var html = (A.archiveLoading ? '<p class="muted">' + t('adm.rep.loading') + '</p>' : '') +
       '<div class="kpis big">' + kpi(t('adm.rep.sales'), fmt(r.total)) + kpi(t('adm.rep.tickets'), r.count) +
       kpi(t('adm.rep.avg'), fmt(r.count ? r.total / r.count : 0)) + kpi(t('adm.rep.units'), String(round2(r.units)).replace('.', ',')) +
-      kpi(t('adm.rep.discounts'), fmt(r.discounts)) + '</div>' +
+      kpi(t('adm.rep.discounts'), fmt(r.discounts)) +
+      (r.guests ? kpi(t('adm.rep.guests'), r.guests) + kpi(t('adm.rep.perGuest'), fmt(r.guestTotal / r.guests)) : '') + '</div>' +
       (r.count ? '<div class="card"><h3>' + t(r.hourly ? 'adm.rep.byHour' : 'adm.rep.byDay') + '</h3>' + barChart(r.series) + '</div>' +
         '<div class="card"><h3>' + t('adm.rep.top') + '</h3><div class="scroll-x">' + rankTable(products.slice(0, 15), [t('adm.col.product'), t('adm.rep.units1')]) + '</div></div>' +
         '<div class="two-col"><div class="card"><h3>' + t('adm.rep.byCat') + '</h3>' +

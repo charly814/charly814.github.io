@@ -216,11 +216,12 @@
       return d;
     } catch (e) { return 'x'; }
   })();
-  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur'];
+  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur', 'guests', 'customer', 'tarifa'];
 
   function toTicket(table, raw) {
     if (!raw) return null;
-    var tk = { table: table, discountPct: raw.discountPct || 0, discountEur: raw.discountEur || 0, openedAt: raw.openedAt, user: raw.user };
+    var tk = { table: table, discountPct: raw.discountPct || 0, discountEur: raw.discountEur || 0, openedAt: raw.openedAt, user: raw.user,
+      guests: raw.guests || 0, customer: raw.customer || null, tarifa: raw.tarifa || null };
     var src = raw.lines || {};
     // Una línea sin nombre es un resto de un cambio llegado tarde a una línea ya cobrada o borrada.
     tk.lines = Object.keys(src).map(function (id) { return Object.assign({}, src[id], { id: id }); })
@@ -260,14 +261,17 @@
 
   // Añade a upd (escritura atómica desde la raíz) los cambios de un ticket.
   function ticketPatch(tk, upd) {
-    if (!tk.lines.length && !tk.discountPct && !tk.discountEur) { upd['tickets/' + tk.table] = null; return upd; }
+    if (isEmpty(tk)) { upd['tickets/' + tk.table] = null; return upd; }
     var d = ticketDiff(tk);
     Object.keys(d).forEach(function (k) { upd['tickets/' + tk.table + '/' + k] = d[k]; });
     return upd;
   }
 
+  // sin líneas, pero con comensales, cliente o tarifa elegidos, la mesa se guarda igual
+  function isEmpty(tk) { return !tk.lines.length && !tk.discountPct && !tk.discountEur && !tk.guests && !tk.customer && !tk.tarifa; }
+
   function saveTicket(tk) {
-    if (!tk.lines.length && !tk.discountPct && !tk.discountEur) {
+    if (isEmpty(tk)) {
       delete S.tickets[tk.table];
       return Store.remove('tickets/' + tk.table);
     }
@@ -548,7 +552,8 @@
 
     return '<div class="ticket-view' + (S.showTicket ? ' show' : '') + '">' +
       '<section class="tk-left">' +
-      '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + (S.temp[S.table] ? ' <i class="tag temp">' + t('legend.temp') + '</i>' : '') + '</h2><small>' + esc(tk.user || S.user.name) + '</small></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
+      '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + (S.temp[S.table] ? ' <i class="tag temp">' + t('legend.temp') + '</i>' : '') + '</h2><small>' + esc(tk.user || S.user.name) + '</small> ' +
+        '<button class="chip" data-act="guests">👥 ' + (tk.guests || '–') + '</button></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
       (childrenOf(S.table).length ? '<div class="joined-row">🔗 ' + t('tk.joined') + ': ' + childrenOf(S.table).map(function (c) {
         return '<button class="chip" data-act="unjoin" data-id="' + esc(c) + '" title="' + esc(t('tk.unjoin', { c: c })) + '">' + esc(c) + ' ✕</button>';
       }).join('') + '</div>' : '') +
@@ -597,6 +602,7 @@
       act('qty-minus', '➖', t('act.minus')) +
       act('qty-plus', '➕', t('act.plus')) +
       act('del-line', '🗑️', t('act.del')) +
+      act('split', '✂️', t('act.split')) +
       act('move', '⇄', t('act.move')) +
       act('join', '🔗', t('act.join')) +
       act('temp-near', '➕', t('act.tempNear')) +
@@ -661,7 +667,7 @@
       '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
-          return '<tr><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + t('m.' + x.method) + '</td><td class="num">' + fmt(x.total) + '</td>' +
+          return '<tr><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + P.salePayments(x).map(function (p) { return t('m.' + p.method); }).join(' + ') + '</td><td class="num">' + fmt(x.total) + '</td>' +
             '<td><button class="btn" data-act="reprint" data-id="' + esc(x.id) + '">🖨️</button></td></tr>';
         }).join('') + '</table></div>' : '<p class="muted">' + t('caja.noSales') + '</p>') + '</div>' +
       '<div class="card"><h3>' + t('k.title') + '</h3>' + (function () {
@@ -687,7 +693,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', free: 'free', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    pay: 'pay', split: 'pay', free: 'free', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
@@ -738,6 +744,13 @@
       if (S.joinInto) return joinTable(d.id);
       // una mesa juntada abre la cuenta de su mesa principal
       S.table = mainOf(d.id); S.view = 'ticket'; S.sel = -1; S.buf = ''; S.showTicket = false; render();
+      var tk = ticketOf(S.table), tb = allTables().filter(function (x) { return x.id === S.table; })[0];
+      if (S.settings.askGuests !== false && !tk.lines.length && !tk.guests && tb && tb.shape !== 'stool') openGuests(S.table);
+    },
+    guests: function () { openGuests(S.table); },
+    split: function () {
+      if (!ticketOf(S.table).lines.length) return toast(t('msg.empty'));
+      openSplit();
     },
     'temp-new': function () { openTemp(null); },
     'temp-near': function () { openTemp(S.table); },
@@ -1603,29 +1616,53 @@
     });
   }
 
-  function openPay(tk) {
+  // Cobro. opts.rest: lo que queda en la mesa tras cobrar solo una parte
+  // (dividir por productos); si no, se cobra y se libera la mesa entera.
+  // Se puede pagar en varias partes (a partes iguales o con varias formas de pago).
+  function openPay(tk, opts) {
+    opts = opts || {};
     var tot = P.ticketTotals(tk);
-    var st = { method: 'efectivo', given: '', print: true, busy: false };
+    var st = { method: 'efectivo', given: '', print: true, busy: false, multi: false, parts: [], part: '' };
+    function paid() { return round2(st.parts.reduce(function (a, x) { return a + x.amount; }, 0)); }
+    function left() { return round2(tot.total - paid()); }
     function draw() {
       var given = Number(String(st.given).replace(',', '.')) || 0;
       var change = round2(given - tot.total);
-      modalBox.className = 'modal-box';
-      modalBox.innerHTML = '<h2>' + t('pay.title', { t: esc(tableLabel(tk.table)) }) + '</h2>' +
-        '<div class="pay-total">' + fmt(tot.total) + '</div>' +
-        '<div class="pay-methods">' + METHODS.map(function (m) {
-          return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>';
-        }).join('') + '</div>' +
-        (st.method === 'efectivo'
+      var methods = '<div class="pay-methods">' + METHODS.map(function (m) {
+        return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>';
+      }).join('') + '</div>';
+      var body;
+      if (!st.multi) {
+        body = methods + (st.method === 'efectivo'
           ? '<div class="field"><label>' + t('pay.given') + '</label><input id="pay-given" type="text" inputmode="decimal" value="' + esc(st.given) + '" placeholder="' + fmt(tot.total) + '"></div>' +
           '<div class="quick-cash">' + quickCash(tot.total).map(function (v) {
             return '<button data-k="g:' + v + '">' + fmt(v) + '</button>';
           }).join('') + '</div>' +
           '<div class="change">' + (given ? (change >= 0 ? t('pay.change') + ' <b>' + fmt(change) + '</b>' : '<span class="warn">' + t('pay.missing', { n: fmt(-change) }) + '</span>') : '&nbsp;') + '</div>'
           : '') +
+          '<p><button class="btn" data-k="multi">' + t('pay.parts') + '</button></p>';
+      } else {
+        var rem = left();
+        body = '<div class="parts">' + st.parts.map(function (x, i) {
+          return '<span class="chip">' + t('m.' + x.method) + ' ' + fmt(x.amount) + ' <button data-k="del:' + i + '">✕</button></span>';
+        }).join('') + '</div>' +
+          '<p class="pay-left">' + t('pay.remaining', { n: fmt(rem) }) + '</p>' +
+          (rem > 0 ? '<div class="quick-cash">' + [2, 3, 4, 5, 6].map(function (n) {
+            return '<button data-k="n:' + n + '">÷ ' + n + ' = ' + fmt(round2(tot.total / n)) + '</button>';
+          }).join('') + '</div>' +
+            '<div class="field"><label>' + t('cash.amount') + '</label><input id="pay-part" type="text" inputmode="decimal" value="' + esc(st.part) + '" placeholder="' + fmt(rem) + '"></div>' +
+            methods + '<p><button class="btn primary" data-k="addpart">' + t('pay.addPart') + '</button></p>' : '');
+      }
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + t('pay.title', { t: esc(tableLabel(tk.table)) }) + '</h2>' +
+        '<div class="pay-total">' + fmt(tot.total) + '</div>' + body +
         '<label style="display:block;margin-bottom:14px"><input type="checkbox" data-k="print" ' + (st.print ? 'checked' : '') + '> ' + t('pay.print') + '</label>' +
-        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1"' + (st.busy ? ' disabled' : '') + '>' + t('pay.confirm') + '</button></div>';
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1"' +
+        (st.busy || (st.multi && left() !== 0) ? ' disabled' : '') + '>' + t('pay.confirm') + '</button></div>';
       var inp = document.getElementById('pay-given');
       if (inp) inp.oninput = function () { st.given = inp.value; var p = inp.selectionStart; draw(); var n = document.getElementById('pay-given'); n.focus(); n.setSelectionRange(p, p); };
+      var pp = document.getElementById('pay-part');
+      if (pp) pp.oninput = function () { st.part = pp.value; };
     }
     openModal('pay', draw, function (k) {
       if (st.busy) return;
@@ -1633,33 +1670,55 @@
       if (k === 'print') { st.print = !st.print; return; }
       if (k.indexOf('m:') === 0) { st.method = k.slice(2); return draw(); }
       if (k.indexOf('g:') === 0) { st.given = k.slice(2).replace('.', ','); return draw(); }
+      if (k === 'multi') { st.multi = true; return draw(); }
+      if (k.indexOf('n:') === 0) { st.part = String(Math.min(left(), round2(tot.total / Number(k.slice(2))))).replace('.', ','); return draw(); }
+      if (k.indexOf('del:') === 0) { st.parts.splice(Number(k.slice(4)), 1); return draw(); }
+      if (k === 'addpart') {
+        var amt = String(st.part).trim() ? round2(String(st.part).replace(',', '.')) : left();
+        if (!(amt > 0)) return toast(t('cash.needAmount'));
+        amt = Math.min(amt, left());
+        // la última parte se lleva el redondeo (p. ej. 10 € entre 3)
+        if (round2(left() - amt) > 0 && round2(left() - amt) < 0.03) amt = left();
+        st.parts.push({ method: st.method, amount: amt });
+        st.part = '';
+        return draw();
+      }
       if (k === 'OK') {
-        var given = st.method === 'efectivo' ? (Number(String(st.given).replace(',', '.')) || tot.total) : tot.total;
-        if (given < tot.total) return toast(t('msg.givenLow'));
+        var payments, given;
+        if (st.multi) {
+          if (left() !== 0) return;
+          payments = st.parts.slice();
+          given = tot.total;
+        } else {
+          given = st.method === 'efectivo' ? (Number(String(st.given).replace(',', '.')) || tot.total) : tot.total;
+          if (given < tot.total) return toast(t('msg.givenLow'));
+          payments = [{ method: st.method, amount: tot.total }];
+        }
         st.busy = true; draw();
         nextInvoice().then(function (num) {
-          var invoice = num.invoice;
           var vat = Number(S.settings.vat) || 0;
           var base = round2(tot.total / (1 + vat / 100));
           var id = Store.newId();
           var sale = Object.assign({}, tk, {
-            id: id, invoice: invoice, total: tot.total, subtotal: tot.subtotal, discount: tot.discount,
+            id: id, invoice: num.invoice, total: tot.total, subtotal: tot.subtotal, discount: tot.discount,
             vatRate: vat, base: base, vatAmount: round2(tot.total - base),
-            method: st.method, given: round2(given), change: round2(given - tot.total),
+            method: payments.length > 1 ? 'mixto' : payments[0].method, payments: payments,
+            given: round2(given), change: round2(given - tot.total),
             cashier: S.user.name, closedAt: Date.now()
           });
           var upd = {};
           upd[num.key] = num.n;
           upd['sales/' + id] = sale;
-          upd['tickets/' + tk.table] = null;
-          closeTablePatch(tk.table, upd);
+          if (opts.rest && opts.rest.lines.length) ticketPatch(opts.rest, upd);    // queda algo en la mesa
+          else { upd['tickets/' + tk.table] = null; closeTablePatch(tk.table, upd); }
           return Store.update('', upd).then(function () {
-            delete S.tickets[tk.table];
             closeModal();
-            var drawer = st.method === 'efectivo' && Devices.cfg().drawerOnCash;
+            var drawer = payments.some(function (x) { return x.method === 'efectivo'; }) && Devices.cfg().drawerOnCash;
             if (st.print) printTicket(sale, sale, { drawer: drawer });
             else if (drawer) Devices.openDrawer().catch(function () { /* navegador: lo abre el driver al imprimir */ });
             toast(t('msg.paid', { n: fmt(tot.total) }) + (sale.change ? ' · ' + t('msg.change', { n: fmt(sale.change) }) : ''));
+            if (opts.rest && opts.rest.lines.length) { S.tickets[tk.table] = opts.rest; S.sel = -1; render(); return; }
+            delete S.tickets[tk.table];
             S.view = 'map'; S.table = null; S.showTicket = false; render();
           });
         }).catch(function () {
@@ -1667,6 +1726,71 @@
           toast(t('conn.err'));
         });
       }
+    });
+  }
+
+  // Dividir por productos: se elige qué unidades paga esta persona; se cobran
+  // como un ticket propio y el resto sigue en la mesa.
+  function openSplit() {
+    var tk = ticketOf(S.table);
+    var pick = tk.lines.map(function () { return 0; });
+    function part() {
+      var lines = [], rest = [];
+      tk.lines.forEach(function (l, i) {
+        var q = Math.min(pick[i], l.qty);
+        if (q > 0) lines.push(Object.assign({}, l, { qty: q, id: undefined, ord: undefined }));
+        if (l.qty - q > 0) rest.push(Object.assign({}, l, { qty: round2(l.qty - q) }));
+      });
+      // el descuento del ticket se reparte en proporción
+      var full = P.ticketTotals(tk);
+      var pct = full.subtotal ? full.discount / full.subtotal * 100 : 0;
+      var sub = { table: tk.table, lines: lines, discountPct: round2(pct), discountEur: 0, guests: 0, user: tk.user, openedAt: tk.openedAt, customer: tk.customer };
+      var rem = Object.assign({}, tk, { lines: rest });
+      return { sub: sub, rest: rem };
+    }
+    function draw() {
+      var pr = part();
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>' + t('split.title', { t: esc(tableLabel(tk.table)) }) + '</h2><p class="muted">' + t('split.help') + '</p>' +
+        '<table class="list split">' + tk.lines.map(function (l, i) {
+          return '<tr><td>' + esc(lineName(l)) + '<small class="muted"> ' + fmt(l.price) + '</small></td>' +
+            '<td class="num"><span class="stepper-row"><button class="btn" data-k="m:' + i + '">−</button><b>' + fmtQty(pick[i]) + ' / ' + fmtQty(l.qty) + '</b>' +
+            '<button class="btn" data-k="p:' + i + '">+</button><button class="btn" data-k="a:' + i + '">' + t('split.all') + '</button></span></td></tr>';
+        }).join('') + '</table>' +
+        '<p class="pay-left">' + t('split.selected', { n: fmt(P.ticketTotals(pr.sub).total) }) + '</p>' +
+        '<p class="muted">' + t('split.equalHint') + '</p>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1"' + (pr.sub.lines.length ? '' : ' disabled') + '>' + t('split.pay') + '</button></div>';
+    }
+    openModal('split', draw, function (k) {
+      if (k === 'X') return closeModal();
+      var i = Number(k.slice(2));
+      if (k.indexOf('p:') === 0) { pick[i] = Math.min(tk.lines[i].qty, pick[i] + 1); return draw(); }
+      if (k.indexOf('m:') === 0) { pick[i] = Math.max(0, pick[i] - 1); return draw(); }
+      if (k.indexOf('a:') === 0) { pick[i] = pick[i] === tk.lines[i].qty ? 0 : tk.lines[i].qty; return draw(); }
+      if (k !== 'OK') return;
+      var pr = part();
+      if (!pr.sub.lines.length) return toast(t('split.none'));
+      closeModal();
+      openPay(pr.sub, { rest: pr.rest });
+    });
+  }
+
+  // Comensales (pax) de la mesa
+  function openGuests(table) {
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>👥 ' + t('guests.title') + '</h2><div class="guest-grid">' +
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(function (n) { return '<button class="btn" data-k="' + n + '">' + n + '</button>'; }).join('') +
+        '</div><div class="btn-row" style="margin-top:12px"><button class="btn" data-k="other">' + t('guests.other') + '</button><button class="btn" data-k="X">' + t('guests.skip') + '</button></div>';
+    }
+    openModal('guests', draw, function (k) {
+      if (k === 'X') return closeModal();
+      var n = k === 'other' ? Number(prompt(t('guests.title'), '')) : Number(k);
+      if (!(n > 0)) return;
+      var tk = ticketOf(table);
+      tk.guests = Math.min(200, Math.round(n));
+      closeModal();
+      saveTicket(tk); render();
     });
   }
 
@@ -1692,7 +1816,7 @@
       var vat = x.vatRate != null ? x.vatRate : (Number(S.settings.vat) || 0);
       var base = x.base != null ? x.base : round2(x.total / (1 + vat / 100));
       var num = function (n) { return round2(n).toFixed(2).replace('.', ','); };
-      rows.push([x.invoice || x.id, d.toLocaleDateString('es-ES'), d.toLocaleTimeString('es-ES'), x.table, x.cashier, METHOD_ES[x.method] || x.method,
+      rows.push([x.invoice || x.id, d.toLocaleDateString('es-ES'), d.toLocaleTimeString('es-ES'), x.table, x.cashier, P.salePayments(x).map(function (p) { return (METHOD_ES[p.method] || p.method) + (P.salePayments(x).length > 1 ? ' ' + num(p.amount) : ''); }).join(' + '),
         num(base), vat, num(x.total - base), num(x.discount || 0), num(x.total)]);
     });
     var csv = '﻿' + rows.map(function (r) {

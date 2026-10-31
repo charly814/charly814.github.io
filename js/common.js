@@ -310,7 +310,7 @@
     lines(T.headerExtra).forEach(function (l) { doc.push(['c', l]); });
     doc.push(['hr']);
     doc.push(sale ? ['t', 'Factura simplificada ' + (sale.invoice || String(sale.id).toUpperCase())] : ['b', 'PRE-CUENTA (no válida como factura)']);
-    var who = [T.showTable ? ctx.table : '', T.showWaiter ? (sale ? sale.cashier : ctx.user) : ''].filter(Boolean).join(' · ');
+    var who = [T.showTable ? ctx.table : '', tk.guests ? tk.guests + ' pax' : '', T.showWaiter ? (sale ? sale.cashier : ctx.user) : ''].filter(Boolean).join(' · ');
     if (who) doc.push(['t', who]);
     if (T.showDate) doc.push(['t', new Date(when).toLocaleString('es-ES')]);
     doc.push(['hr']);
@@ -324,8 +324,12 @@
     if (T.showVat) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
     else doc.push(['c', 'IVA incluido']);       // obligatorio en la factura simplificada si no se desglosa
     if (sale && T.showPayment) {
-      doc.push(['lr', METHOD_ES[sale.method] || sale.method, fmt(sale.given)]);
-      if (sale.change) doc.push(['lr', 'Cambio', fmt(sale.change)]);
+      var pays = salePayments(sale);
+      if (pays.length > 1) pays.forEach(function (x) { doc.push(['lr', METHOD_ES[x.method] || x.method, fmt(x.amount)]); });
+      else {
+        doc.push(['lr', METHOD_ES[sale.method] || sale.method, fmt(sale.given != null ? sale.given : sale.total)]);
+        if (sale.change) doc.push(['lr', 'Cambio', fmt(sale.change)]);
+      }
     }
     var foot = lines(st.footer);
     if (foot.length) { doc.push(['hr']); foot.forEach(function (l) { doc.push(['c', l]); }); }
