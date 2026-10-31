@@ -101,6 +101,7 @@
     ['products', 'adm.nav.products', secProducts],
     ['import', 'adm.nav.import', secImport],
     ['cats', 'adm.nav.cats', secCats],
+    ['customers', 'adm.nav.customers', secCustomers],
     ['mods', 'adm.nav.mods', secMods],
     ['tables', 'adm.nav.tables', secTables],
     ['hours', 'adm.nav.hours', secHours],
@@ -398,6 +399,101 @@
       p.then(function () { saveMenu(menu); closeModal(); toast(t('adm.saved')); });
     });
   }
+
+  // ---------------------------------------------------------------- clientes
+
+  function secCustomers() {
+    var q = norm(A.cq || '');
+    var all = Object.keys(A.customers || {}).map(function (k) { return A.customers[k]; });
+    var owed = round2(all.reduce(function (a, c) { return a + (c.balance || 0); }, 0));
+    var rows = all.filter(function (c) { return !q || norm([c.name, c.nif, c.phone, c.email].join(' ')).indexOf(q) >= 0; })
+      .sort(function (a, b) { return (b.balance || 0) - (a.balance || 0) || a.name.localeCompare(b.name); });
+    var head = '<div class="toolbar"><input id="cq" type="search" placeholder="' + t('cust.search') + '" value="' + esc(A.cq || '') + '">' +
+      '<button class="btn primary" data-act="cust-new">' + t('cust.new') + '</button></div>';
+    var html = '<p class="muted">' + t('adm.cust.count', { n: all.length, d: fmt(owed) }) + ' · ' + t('cust.fullHint') + '</p>' +
+      '<div class="card" style="padding:0;overflow:hidden"><div class="scroll-x"><table class="grid"><tr><th>' + t('cust.name').replace(' *', '') + '</th><th>' + t('cust.nif') + '</th>' +
+      '<th class="hide-sm">' + t('cust.phone') + '</th><th>' + t('cust.credit') + '</th><th class="num">' + t('cust.balance') + '</th><th></th></tr>' +
+      rows.map(function (c) {
+        var id = esc(c.id);
+        return '<tr><td><b>' + esc(c.name) + '</b><small>' + esc([c.address, c.city].filter(Boolean).join(', ')) + '</small></td><td>' + esc(c.nif || '—') + '</td>' +
+          '<td class="hide-sm">' + esc(c.phone || '') + '</td>' +
+          '<td><label class="switch"><input type="checkbox" data-edit="cust-credit" data-cid="' + id + '"' + (c.credit ? ' checked' : '') + '><span></span></label></td>' +
+          '<td class="num">' + ((c.balance || 0) > 0 ? '<b class="bad-t">' + fmt(c.balance) + '</b>' : fmt(0)) + '</td>' +
+          '<td><div class="row-actions"><button class="icon-btn" title="' + t('cust.statement') + '" data-act="cust-log" data-cid="' + id + '">📒</button>' +
+          '<button class="icon-btn" title="' + t('adm.edit') + '" data-act="cust-edit" data-cid="' + id + '">✏️</button>' +
+          '<button class="icon-btn danger" title="' + t('adm.delete') + '" data-act="cust-del" data-cid="' + id + '">🗑️</button></div></td></tr>';
+      }).join('') + '</table></div>' + (rows.length ? '' : '<p class="muted" style="padding:16px">' + t('cust.none') + '</p>') + '</div>';
+    return { head: head, html: html };
+  }
+
+  function openCustomer(cid) {
+    var cur = cid ? A.customers[cid] : null;
+    var st = Object.assign({ name: '', nif: '', address: '', cp: '', city: '', phone: '', email: '', notes: '', credit: false }, cur || {});
+    function draw() {
+      var f = function (k, lbl, cls) { return '<div class="field ' + (cls || '') + '"><label>' + t(lbl) + '</label><input type="text" data-f="' + k + '" value="' + esc(st[k] || '') + '"></div>'; };
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>👤 ' + (cur ? esc(cur.name) : t('cust.new').replace(/^\S+\s/, '')) + '</h2><div class="form-grid">' +
+        f('name', 'cust.name') + f('nif', 'cust.nif') + f('address', 'cust.address', 'full') + f('cp', 'cust.cp') + f('city', 'cust.city') +
+        f('phone', 'cust.phone') + f('email', 'cust.email') +
+        '<div class="field full"><label>' + t('cust.notes') + '</label><textarea data-f="notes" rows="2">' + esc(st.notes || '') + '</textarea></div></div>' +
+        '<label style="display:block;margin:8px 0"><input type="checkbox" data-f="credit"' + (st.credit ? ' checked' : '') + '> ' + t('cust.credit') + '</label>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('save') + '</button></div>';
+      modalBox.querySelectorAll('[data-f]').forEach(function (el) {
+        el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', function () { st[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; });
+      });
+    }
+    openModal('customer', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k !== 'OK') return;
+      if (!String(st.name).trim()) return toast(t('cust.needName'));
+      var c = Object.assign({}, cur || { id: Store.newId(), balance: 0, createdAt: Date.now() }, st, {
+        name: String(st.name).trim(), nif: String(st.nif || '').trim().toUpperCase()
+      });
+      Store.set('customers/' + c.id, c);
+      closeModal(); toast(t('adm.saved'));
+    });
+  }
+
+  // Movimientos del cliente (compras a cuenta y pagos) y registrar un pago
+  function openCustLog(cid) {
+    var c = A.customers[cid];
+    if (!c) return;
+    Store.get('custlog/' + cid).then(function (log) {
+      var rows = Object.keys(log || {}).map(function (k) { return log[k]; }).sort(function (a, b) { return a.at - b.at; });
+      var bal = 0;
+      var body = rows.map(function (r) {
+        bal = round2(bal + (r.type === 'sale' ? r.amount : -r.amount));
+        return '<tr><td>' + new Date(r.at).toLocaleString('es-ES') + '</td><td>' + t(r.type === 'sale' ? 'cust.sale' : 'cust.pay') + (r.ref ? ' ' + esc(r.ref) : '') + (r.method ? ' · ' + t('m.' + r.method) : '') + '</td>' +
+          '<td class="num">' + (r.type === 'sale' ? fmt(r.amount) : '') + '</td><td class="num">' + (r.type === 'pay' ? fmt(r.amount) : '') + '</td><td class="num">' + fmt(bal) + '</td></tr>';
+      }).join('');
+      var st = { amount: '', method: 'efectivo' };
+      function draw() {
+        modalBox.className = 'modal-box wide';
+        modalBox.innerHTML = '<h2>📒 ' + esc(c.name) + '</h2><p>' + t('cust.balance') + ': <b class="' + ((c.balance || 0) > 0 ? 'bad-t' : '') + '">' + fmt(c.balance || 0) + '</b></p>' +
+          (rows.length ? '<div class="scroll-x"><table class="grid"><tr><th>' + t('caja.date') + '</th><th></th><th class="num">' + t('cust.sale') + '</th><th class="num">' + t('cust.pay') + '</th><th class="num">' + t('cust.balance') + '</th></tr>' + body + '</table></div>' : '<p class="muted">' + t('cash.none') + '</p>') +
+          ((c.balance || 0) > 0 ? '<h4>' + t('cust.registerPay') + '</h4><div class="toolbar"><input id="cl-amount" type="text" inputmode="decimal" placeholder="' + fmt(c.balance) + '" value="' + esc(st.amount) + '">' +
+            '<span class="seg">' + ['efectivo', 'tarjeta', 'bizum'].map(function (m) { return '<button class="' + (st.method === m ? 'on' : '') + '" data-k="m:' + m + '">' + t('m.' + m) + '</button>'; }).join('') + '</span>' +
+            '<button class="btn ok" data-k="pay">' + t('cust.registerPay') + '</button></div>' : '') +
+          '<div class="btn-row" style="margin-top:12px"><button class="btn" data-k="X">' + t('close') + '</button></div>';
+        var a = document.getElementById('cl-amount');
+        if (a) a.oninput = function () { st.amount = a.value; };
+      }
+      openModal('custlog', draw, function (k) {
+        if (k === 'X') return closeModal();
+        if (k.indexOf('m:') === 0) { st.method = k.slice(2); return draw(); }
+        if (k !== 'pay') return;
+        var amt = String(st.amount).trim() ? round2(String(st.amount).replace(',', '.')) : c.balance;
+        amt = Math.min(amt, c.balance);
+        if (!(amt > 0)) return toast(t('cash.needAmount'));
+        var id = Store.newId(), upd = {};
+        upd['customers/' + cid + '/balance'] = round2(c.balance - amt);
+        upd['custlog/' + cid + '/' + id] = { at: Date.now(), type: 'pay', amount: amt, method: st.method, user: A.user.name, office: true };
+        Store.update('', upd).then(function () { closeModal(); toast(t('cust.paid', { n: fmt(amt), b: fmt(round2(c.balance - amt)) })); });
+      });
+    });
+  }
+
+  app.addEventListener('input', function (e) { if (e.target.id === 'cq') { A.cq = e.target.value; render(); } });
 
   // ---------------------------------------------------------------- modificadores
 
@@ -861,7 +957,7 @@
 
   // ---------------------------------------------------------------- copias de seguridad
 
-  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'layout'];
+  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'layout', 'customers', 'custlog'];
 
   function secBackup() {
     var html = '<div class="card"><h3>' + t('adm.backupTitle') + '</h3><p class="muted">' + t('adm.backupHelp') + '</p>' +
@@ -1131,6 +1227,7 @@
         var cats = (A.qr.kitchenCats || []).filter(function (c) { return c !== d.cid; });
         if (val) cats.push(d.cid);
         return Store.update('public/qr', { kitchenCats: cats });
+      case 'cust-credit': return Store.update('customers/' + d.cid, { credit: !!val });
       case 'mod-name': case 'mod-en': case 'mod-zh':
         mods[d.mi][d.edit.slice(4)] = String(val).trim(); return saveMods(mods);
       case 'mod-price': mods[d.mi].price = round2(String(val).replace(',', '.')); return saveMods(mods);
@@ -1232,6 +1329,16 @@
       toast(t('adm.deleted'));
     },
 
+    'cust-new': function () { openCustomer(null); },
+    'cust-edit': function (d) { openCustomer(d.cid); },
+    'cust-log': function (d) { openCustLog(d.cid); },
+    'cust-del': function (d) {
+      var c = A.customers[d.cid];
+      if (!c) return;
+      if ((c.balance || 0) > 0) return toast(t('cust.hasDebt', { n: fmt(c.balance) }));
+      if (!confirm(t('cust.delConfirm', { n: c.name }))) return;
+      Store.update('', (function () { var u = {}; u['customers/' + c.id] = null; u['custlog/' + c.id] = null; return u; })());
+    },
     'cat-new': function () { openCat(null); },
     'cat-edit': function (d) { openCat(d.cid); },
     'cat-products': function (d) { A.catF = d.cid; A.sec = 'products'; render(); },
@@ -1423,6 +1530,7 @@
     Store.on('audit', function (v) { A.audit = v || {}; render(); });
     Store.on('closures', function (v) { A.closures = v || {}; render(); });
     Store.on('cash', function (v) { A.cash = v || {}; render(); });
+    Store.on('customers', function (v) { A.customers = v || {}; render(); });
     Store.on('users', function (v) {
       A.users = v || P.DEFAULT_USERS;
       if (!A.user) {

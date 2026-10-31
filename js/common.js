@@ -302,6 +302,7 @@
     var moves = (cash && cash.moves) || {};
     Object.keys(moves).forEach(function (k) {
       var m = moves[k];
+      if (m.method && m.method !== 'efectivo') { if (m.method === 'tarjeta') r.card += m.amount; else r.other += m.amount; return; }
       if (m.type === 'in') r.ins += m.amount; else r.outs += m.amount;
     });
     r.ins += extraCash || 0;
@@ -327,7 +328,21 @@
     if (st.nif) doc.push(['c', 'NIF ' + st.nif]);
     lines(T.headerExtra).forEach(function (l) { doc.push(['c', l]); });
     doc.push(['hr']);
-    doc.push(sale ? ['t', 'Factura simplificada ' + (sale.invoice || String(sale.id).toUpperCase())] : ['b', 'PRE-CUENTA (no válida como factura)']);
+    // factura completa (con datos del cliente) o simplificada
+    var full = sale && (ctx.full || sale.invoiceType === 'F');
+    var cust = (ctx.full && ctx.full.customer) || (sale && sale.customer) || tk.customer;
+    if (full) {
+      doc.push(['b', 'FACTURA ' + (ctx.full ? ctx.full.invoice : sale.invoice)]);
+      if (ctx.full && ctx.full.replaces) doc.push(['t', 'Sustituye a la factura simplificada ' + ctx.full.replaces]);
+      if (cust) {
+        doc.push(['t', 'Cliente: ' + cust.name]);
+        if (cust.nif) doc.push(['t', 'NIF: ' + cust.nif]);
+        lines([cust.address, [cust.cp, cust.city].filter(Boolean).join(' ')].filter(Boolean).join('\n')).forEach(function (l) { doc.push(['t', l]); });
+      }
+    } else {
+      doc.push(sale ? ['t', 'Factura simplificada ' + (sale.invoice || String(sale.id).toUpperCase())] : ['b', 'PRE-CUENTA (no válida como factura)']);
+      if (cust) doc.push(['t', 'Cliente: ' + cust.name]);
+    }
     var who = [T.showTable ? ctx.table : '', tk.guests ? tk.guests + ' pax' : '', T.showWaiter ? (sale ? sale.cashier : ctx.user) : ''].filter(Boolean).join(' · ');
     if (who) doc.push(['t', who]);
     if (T.showDate) doc.push(['t', new Date(when).toLocaleString('es-ES')]);
@@ -341,7 +356,7 @@
     doc.push(['hr']);
     if (tot.discount) doc.push(['lr', 'Subtotal', fmt(tot.subtotal)], ['lr', 'Descuento', '-' + fmt(tot.discount)]);
     doc.push(['lrb', 'TOTAL', fmt(tot.total)]);
-    if (T.showVat) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
+    if (T.showVat || full) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
     else doc.push(['c', 'IVA incluido']);       // obligatorio en la factura simplificada si no se desglosa
     if (sale && T.showPayment) {
       var pays = salePayments(sale);

@@ -124,6 +124,7 @@
   Store.on('prints', function (v) { S.prints = v || {}; render(); });
   Store.on('audit', function (v) { S.audit = v || {}; });
   Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; render(); });
+  Store.on('customers', function (v) { S.customers = v || {}; render(); });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
   Store.on('temp', function (v) { S.temp = v || {}; render(); });
   Store.on('joins', function (v) { S.joins = v || {}; render(); });
@@ -553,7 +554,8 @@
     return '<div class="ticket-view' + (S.showTicket ? ' show' : '') + '">' +
       '<section class="tk-left">' +
       '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + (S.temp[S.table] ? ' <i class="tag temp">' + t('legend.temp') + '</i>' : '') + '</h2><small>' + esc(tk.user || S.user.name) + '</small> ' +
-        '<button class="chip" data-act="guests">👥 ' + (tk.guests || '–') + '</button></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
+        '<button class="chip" data-act="guests">👥 ' + (tk.guests || '–') + '</button> ' +
+        '<button class="chip' + (tk.customer ? ' on' : '') + '" data-act="customer">👤 ' + esc(tk.customer ? tk.customer.name : t('cust.btn')) + '</button></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
       (childrenOf(S.table).length ? '<div class="joined-row">🔗 ' + t('tk.joined') + ': ' + childrenOf(S.table).map(function (c) {
         return '<button class="chip" data-act="unjoin" data-id="' + esc(c) + '" title="' + esc(t('tk.unjoin', { c: c })) + '">' + esc(c) + ' ✕</button>';
       }).join('') + '</div>' : '') +
@@ -664,11 +666,14 @@
       '<div class="btn-row"><button class="btn" data-act="print-x">' + t('caja.printX') + '</button>' +
       '<button class="btn" data-act="csv">' + t('caja.csv') + '</button>' +
       '<button class="btn" data-act="drawer">💶 ' + t('act.drawer') + '</button>' +
+      '<button class="btn" data-act="debt-pay">' + t('cust.debtPay') + '</button>' +
       '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
           return '<tr><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + P.salePayments(x).map(function (p) { return t('m.' + p.method); }).join(' + ') + '</td><td class="num">' + fmt(x.total) + '</td>' +
-            '<td><button class="btn" data-act="reprint" data-id="' + esc(x.id) + '">🖨️</button></td></tr>';
+            '<td><button class="btn" data-act="reprint" data-id="' + esc(x.id) + '">🖨️</button>' +
+            (x.invoiceType === 'F' || x.fullInvoice ? ' <span class="chip">' + esc(x.invoiceType === 'F' ? x.invoice : x.fullInvoice.invoice) + '</span>'
+              : ' <button class="btn" data-act="canje" data-id="' + esc(x.id) + '" title="' + t('cust.canje') + '">📄</button>') + '</td></tr>';
         }).join('') + '</table></div>' : '<p class="muted">' + t('caja.noSales') + '</p>') + '</div>' +
       '<div class="card"><h3>' + t('k.title') + '</h3>' + (function () {
         var list = Object.keys(S.prints).map(function (k) { return S.prints[k]; }).sort(function (a, b) { return b.at - a.at; }).slice(0, 15);
@@ -693,7 +698,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', split: 'pay', free: 'free', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    pay: 'pay', split: 'pay', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
@@ -748,6 +753,35 @@
       if (S.settings.askGuests !== false && !tk.lines.length && !tk.guests && tb && tb.shape !== 'stool') openGuests(S.table);
     },
     guests: function () { openGuests(S.table); },
+    customer: function () {
+      var tk = ticketOf(S.table);
+      pickCustomer(tk.customer, function (c) {
+        tk.customer = c ? custSnap(c) : null;
+        saveTicket(tk); render();
+      });
+    },
+    'debt-pay': function () {
+      pickCustomer(null, function (c) { if (c) openDebtPay(c); }, true);
+    },
+    canje: function (d) {
+      var sale = S.sales[d.id];
+      if (!sale) return;
+      pickCustomer(sale.customer, function (c) {
+        if (!c) return;
+        if (!c.nif) return toast(t('cust.needNif'));
+        nextInvoice(true).then(function (num) {
+          var full = { invoice: num.invoice, customer: custSnap(c), at: Date.now(), replaces: sale.invoice, by: S.user.name };
+          var upd = {};
+          upd[num.key] = num.n;
+          upd['sales/' + sale.id + '/fullInvoice'] = full;
+          return Store.update('', upd).then(function () {
+            audit('invoice', num.invoice + ' ← ' + sale.invoice + ' · ' + c.name);
+            toast(t('cust.canjeDone', { n: num.invoice }));
+            printDoc(P.receiptDoc(sale, sale, S.settings, { table: tableLabelEs(sale.table), user: sale.cashier, logo: S.logo, full: full }), 'receipt');
+          });
+        });
+      });
+    },
     split: function () {
       if (!ticketOf(S.table).lines.length) return toast(t('msg.empty'));
       openSplit();
@@ -913,6 +947,7 @@
       var s = S.sales[d.id];
       if (!s) return;
       audit('reprint', (s.invoice || s.id) + ' · ' + fmt(s.total));
+      if (s.fullInvoice) return printDoc(P.receiptDoc(s, s, S.settings, { table: tableLabelEs(s.table), user: s.cashier, logo: S.logo, full: s.fullInvoice }), 'receipt');
       printTicket(s, s);
     },
     drawer: function () {
@@ -1610,8 +1645,9 @@
   // Numeración correlativa por serie (requisito de las facturas simplificadas).
   // El contador se guarda en la MISMA escritura que la venta y la mesa libre,
   // así un corte de luz no deja huecos en la numeración ni mesas a medias.
-  function nextInvoice() {
-    var series = S.settings.series || P.DEFAULT_SETTINGS.series;
+  function nextInvoice(full) {
+    // factura completa (con NIF del cliente): serie propia F<año>
+    var series = full ? 'F' + new Date().getFullYear() : (S.settings.series || P.DEFAULT_SETTINGS.series);
     return Store.get('counters/' + series).then(function (n) {
       n = (Number(n) || 0) + 1;
       return { key: 'counters/' + series, n: n, invoice: series + '-' + String(n).padStart(6, '0') };
@@ -1630,7 +1666,7 @@
     function draw() {
       var given = Number(String(st.given).replace(',', '.')) || 0;
       var change = round2(given - tot.total);
-      var methods = '<div class="pay-methods">' + METHODS.map(function (m) {
+      var methods = '<div class="pay-methods">' + payMethods(tk).map(function (m) {
         return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>';
       }).join('') + '</div>';
       var body;
@@ -1696,8 +1732,12 @@
           if (given < tot.total) return toast(t('msg.givenLow'));
           payments = [{ method: st.method, amount: tot.total }];
         }
+        var onAccount = round2(payments.filter(function (x) { return x.method === 'cuenta'; }).reduce(function (a, x) { return a + x.amount; }, 0));
+        var cust = tk.customer && S.customers[tk.customer.id];
+        if (onAccount && !(cust && cust.credit)) return toast(t('cust.noCredit'));
         st.busy = true; draw();
-        nextInvoice().then(function (num) {
+        var full = !!(tk.customer && tk.customer.nif);
+        nextInvoice(full).then(function (num) {
           var vat = Number(S.settings.vat) || 0;
           var base = round2(tot.total / (1 + vat / 100));
           var id = Store.newId();
@@ -1705,12 +1745,18 @@
             id: id, invoice: num.invoice, total: tot.total, subtotal: tot.subtotal, discount: tot.discount,
             vatRate: vat, base: base, vatAmount: round2(tot.total - base),
             method: payments.length > 1 ? 'mixto' : payments[0].method, payments: payments,
+            invoiceType: full ? 'F' : 'S', customer: tk.customer || null,
             given: round2(given), change: round2(given - tot.total),
             cashier: S.user.name, closedAt: Date.now()
           });
           var upd = {};
           upd[num.key] = num.n;
           upd['sales/' + id] = sale;
+          if (onAccount) {
+            // la deuda del cliente sube en la misma escritura
+            upd['customers/' + cust.id + '/balance'] = round2((cust.balance || 0) + onAccount);
+            upd['custlog/' + cust.id + '/' + id] = { at: sale.closedAt, type: 'sale', amount: onAccount, ref: num.invoice, user: S.user.name };
+          }
           if (opts.rest && opts.rest.lines.length) ticketPatch(opts.rest, upd);    // queda algo en la mesa
           else { upd['tickets/' + tk.table] = null; closeTablePatch(tk.table, upd); }
           return Store.update('', upd).then(function () {
@@ -1822,6 +1868,102 @@
       if (k !== 'OK' || !P.comboComplete(it, picks)) return;
       closeModal();
       addLines(S.table, [{ pid: it.id, name: it.name, base: it.price, qty: qty, combo: P.comboChoices(S.menu, it, picks) }]);
+    });
+  }
+
+  // ---------------------------------------------------------------- clientes
+  function custSnap(c) {
+    return { id: c.id, name: c.name, nif: c.nif || '', address: c.address || '', cp: c.cp || '', city: c.city || '' };
+  }
+  function payMethods(tk) {
+    var c = tk.customer && S.customers[tk.customer.id];
+    return METHODS.concat(c && c.credit ? ['cuenta'] : []);
+  }
+
+  // Buscar o crear un cliente. cb(cliente | null). debtOnly: solo los que deben.
+  function pickCustomer(current, cb, debtOnly) {
+    var st = { q: '', creating: false, f: { name: '', nif: '', address: '', cp: '', city: '', phone: '', email: '', credit: false } };
+    function list() {
+      var q = st.q.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      var all = Object.keys(S.customers).map(function (k) { return S.customers[k]; })
+        .filter(function (c) { return !debtOnly || (c.balance || 0) > 0; })
+        .filter(function (c) { return !q || [c.name, c.nif, c.phone].join(' ').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').indexOf(q) >= 0; })
+        .sort(function (a, b) { return a.name.localeCompare(b.name); }).slice(0, 30);
+      return all.length ? all.map(function (c) {
+        return '<button class="cust-row" data-k="pick:' + esc(c.id) + '"><b>' + esc(c.name) + '</b><small>' + esc([c.nif, c.phone].filter(Boolean).join(' · ')) + '</small>' +
+          ((c.balance || 0) > 0 ? '<span class="bad-t">' + t('cust.balance') + ' ' + fmt(c.balance) + '</span>' : '') + '</button>';
+      }).join('') : '<p class="muted">' + t('cust.none') + '</p>';
+    }
+    function draw() {
+      modalBox.className = 'modal-box';
+      if (st.creating) {
+        var f = function (k, lbl, type) { return '<div class="field"><label>' + t(lbl) + '</label><input type="' + (type || 'text') + '" data-cf="' + k + '" value="' + esc(st.f[k]) + '"></div>'; };
+        modalBox.innerHTML = '<h2>' + t('cust.new') + '</h2>' + f('name', 'cust.name') + f('nif', 'cust.nif') + f('address', 'cust.address') +
+          '<div class="form-2">' + f('cp', 'cust.cp') + f('city', 'cust.city') + '</div><div class="form-2">' + f('phone', 'cust.phone', 'tel') + f('email', 'cust.email', 'email') + '</div>' +
+          (isAdmin() ? '<label><input type="checkbox" data-cf="credit"' + (st.f.credit ? ' checked' : '') + '> ' + t('cust.credit') + '</label>' : '') +
+          '<p class="muted">' + t('cust.fullHint') + '</p>' +
+          '<div class="btn-row"><button class="btn" data-k="back">' + t('cancel') + '</button><button class="btn ok" data-k="save" style="flex:1">' + t('save') + '</button></div>';
+        modalBox.querySelectorAll('[data-cf]').forEach(function (el) {
+          el.addEventListener(el.type === 'checkbox' ? 'change' : 'input', function () { st.f[el.dataset.cf] = el.type === 'checkbox' ? el.checked : el.value; });
+        });
+        return;
+      }
+      modalBox.innerHTML = '<h2>👤 ' + t('cust.title') + '</h2><div class="field"><input id="cust-q" type="search" placeholder="' + t('cust.search') + '" value="' + esc(st.q) + '"></div>' +
+        '<div id="cust-list" class="cust-list">' + list() + '</div>' +
+        '<div class="btn-row" style="margin-top:12px">' + (debtOnly ? '' : '<button class="btn primary" data-k="new">' + t('cust.new') + '</button>') +
+        (current ? '<button class="btn" data-k="none">' + t('cust.remove') + '</button>' : '') + '<button class="btn" data-k="X">' + t('close') + '</button></div>';
+      var q = document.getElementById('cust-q');
+      q.oninput = function () { st.q = q.value; document.getElementById('cust-list').innerHTML = list(); };
+      q.focus();
+    }
+    openModal('cust', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === 'none') { closeModal(); return cb(null); }
+      if (k === 'new') { st.creating = true; st.f.name = st.q; return draw(); }
+      if (k === 'back') { st.creating = false; return draw(); }
+      if (k === 'save') {
+        if (!st.f.name.trim()) return toast(t('cust.needName'));
+        var c = Object.assign({}, st.f, { id: Store.newId(), name: st.f.name.trim(), nif: st.f.nif.trim().toUpperCase(), balance: 0, createdAt: Date.now() });
+        S.customers[c.id] = c;
+        Store.set('customers/' + c.id, c);
+        closeModal();
+        return cb(c);
+      }
+      if (k.indexOf('pick:') === 0) { var c2 = S.customers[k.slice(5)]; closeModal(); cb(c2 || null); }
+    });
+  }
+
+  // Cobrar lo que debe un cliente (todo o parte)
+  function openDebtPay(c) {
+    if (!((c.balance || 0) > 0)) return toast(t('cust.noDebt'));
+    var st = { amount: String(c.balance).replace('.', ','), method: 'efectivo' };
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + t('cust.debtTitle', { n: esc(c.name) }) + '</h2><p>' + t('cust.balance') + ': <b class="bad-t">' + fmt(c.balance) + '</b></p>' +
+        '<div class="field"><label>' + t('cash.amount') + '</label><input id="dp-amount" type="text" inputmode="decimal" value="' + esc(st.amount) + '"></div>' +
+        '<div class="pay-methods">' + METHODS.map(function (m) { return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>'; }).join('') + '</div>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('pay.confirm') + '</button></div>';
+      document.getElementById('dp-amount').oninput = function (e) { st.amount = e.target.value; };
+    }
+    openModal('debt', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('m:') === 0) { st.method = k.slice(2); return draw(); }
+      if (k !== 'OK') return;
+      var amt = Math.min(round2(String(st.amount).replace(',', '.')), c.balance);
+      if (!(amt > 0)) return toast(t('cash.needAmount'));
+      var id = Store.newId(), now = Date.now(), upd = {};
+      var left = round2(c.balance - amt);
+      upd['customers/' + c.id + '/balance'] = left;
+      upd['custlog/' + c.id + '/' + id] = { at: now, type: 'pay', amount: amt, method: st.method, user: S.user.name };
+      // entra en la caja de hoy (el efectivo cuenta en el arqueo; la tarjeta, como tarjeta)
+      upd['cash/moves/' + id] = { id: id, at: now, user: S.user.name, type: 'in', amount: amt, method: st.method, reason: t('cust.debtPay').replace(/^\S+\s/, '') + ': ' + c.name };
+      Store.update('', upd);
+      audit('debtPay', c.name + ' · ' + fmt(amt) + ' · ' + st.method);
+      if (st.method === 'efectivo') Devices.openDrawer().catch(function () { /* navegador */ });
+      printDoc(header().concat([['cb', 'COBRO DE DEUDA'], ['c', new Date(now).toLocaleString('es-ES')], ['hr'], ['t', 'Cliente: ' + c.name],
+        ['lr', METHOD_ES[st.method], fmt(amt)], ['lrb', 'PENDIENTE', fmt(left)]]), 'receipt');
+      closeModal();
+      toast(t('cust.paid', { n: fmt(amt), b: fmt(left) }));
     });
   }
 
