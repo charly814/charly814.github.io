@@ -125,6 +125,7 @@
   Store.on('audit', function (v) { S.audit = v || {}; });
   Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; render(); });
   Store.on('customers', function (v) { S.customers = v || {}; render(); });
+  Store.on('public/tarifas', function (v) { S.tarifas = v || []; render(); });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
   Store.on('temp', function (v) { S.temp = v || {}; render(); });
   Store.on('joins', function (v) { S.joins = v || {}; render(); });
@@ -555,6 +556,7 @@
       '<section class="tk-left">' +
       '<div class="tk-head"><div><h2>' + esc(tableLabel(S.table)) + (S.temp[S.table] ? ' <i class="tag temp">' + t('legend.temp') + '</i>' : '') + '</h2><small>' + esc(tk.user || S.user.name) + '</small> ' +
         '<button class="chip" data-act="guests">👥 ' + (tk.guests || '–') + '</button> ' +
+        (function () { var tf = tarifaOf(S.table); return tf || tk.tarifa ? '<button class="chip on" data-act="tarifa">🏷️ ' + esc(tf ? tf.name : t('tar.none')) + '</button> ' : (S.tarifas && S.tarifas.length ? '<button class="chip" data-act="tarifa">🏷️</button> ' : ''); })() +
         '<button class="chip' + (tk.customer ? ' on' : '') + '" data-act="customer">👤 ' + esc(tk.customer ? tk.customer.name : t('cust.btn')) + '</button></div><small>' + new Date().toLocaleDateString('es-ES') + '</small></div>' +
       (childrenOf(S.table).length ? '<div class="joined-row">🔗 ' + t('tk.joined') + ': ' + childrenOf(S.table).map(function (c) {
         return '<button class="chip" data-act="unjoin" data-id="' + esc(c) + '" title="' + esc(t('tk.unjoin', { c: c })) + '">' + esc(c) + ' ✕</button>';
@@ -590,7 +592,7 @@
         // foto del producto (subida en el back-office), como en los TPV de toda la vida
         var pu = it.img ? Store.imageURL('p-' + it.id, it.img, later) : '';
         return '<button class="prod' + (it.available === false ? ' off' : '') + (pu ? ' has-img' : '') + '" data-act="add" data-id="' + esc(it.id) + '">' +
-          (pu ? '<img src="' + pu + '" alt="">' : '') + '<span>' + esc(P.tr(it, I.lang)) + '</span><b>' + fmt(it.price) + '</b></button>';
+          (pu ? '<img src="' + pu + '" alt="">' : '') + '<span>' + esc(P.tr(it, I.lang)) + '</span><b>' + fmt(itemPrice(it, S.table)) + '</b></button>';
       }).join('') + '</div>' +
       '<nav class="actions">' +
       act('go', '🪑', t('tb.tables'), 'data-v="map"') +
@@ -698,7 +700,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', split: 'pay', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    pay: 'pay', split: 'pay', tarifa: 'price', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
@@ -753,6 +755,7 @@
       if (S.settings.askGuests !== false && !tk.lines.length && !tk.guests && tb && tb.shape !== 'stool') openGuests(S.table);
     },
     guests: function () { openGuests(S.table); },
+    tarifa: function () { openTarifa(); },
     customer: function () {
       var tk = ticketOf(S.table);
       pickCustomer(tk.customer, function (c) {
@@ -979,8 +982,19 @@
     return tk;
   }
 
+  // Tarifa de una mesa ahora (la elegida a mano en el ticket o la automática)
+  function tarifaOf(table) {
+    var tk = S.tickets[table];
+    return P.tarifaFor(S.tarifas, table, new Date(), tk && tk.tarifa);
+  }
+  function itemPrice(it, table) { return P.priceWith(S.menu, it, tarifaOf(table)); }
+
   function mergeLines(tk, add) {
+    var tf = P.tarifaFor(S.tarifas, tk.table, new Date(), tk.tarifa);
     add.forEach(function (a) {
+      // precio según la tarifa de la mesa en este momento (happy hour, terraza…)
+      var it = a.pid && !a.free && P.findItem(S.menu, a.pid);
+      if (it) a.base = P.priceWith(S.menu, it, tf);
       var mods = a.mods || [];
       var price = round2(a.base + extrasOf(mods) + comboExtra(a.combo));
       var same = tk.lines.filter(function (l) {
@@ -1039,7 +1053,7 @@
       if (k === 'PREC') {
         return allow('price', function () {
           audit('price', l.name + ' · ' + fmt(l.price) + ' → ' + fmt(n));
-          l.price = round2(n); l.base = round2(n - extrasOf(l.mods));
+          l.price = round2(n); l.base = round2(n - extrasOf(l.mods)); l.manual = true;
           saveTicket(tk); render();
         });
       }
@@ -1868,6 +1882,32 @@
       if (k !== 'OK' || !P.comboComplete(it, picks)) return;
       closeModal();
       addLines(S.table, [{ pid: it.id, name: it.name, base: it.price, qty: qty, combo: P.comboChoices(S.menu, it, picks) }]);
+    });
+  }
+
+  // Elegir la tarifa del ticket a mano y recalcular lo ya pedido
+  function openTarifa() {
+    var tk = ticketOf(S.table);
+    function draw() {
+      var opts = [['', t('tar.auto')], ['none', t('tar.none')]].concat((S.tarifas || []).map(function (x) { return [x.id, x.name + (x.active ? '' : ' (off)')]; }));
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>🏷️ ' + t('tar.title') + '</h2><div class="cust-list">' + opts.map(function (o) {
+        return '<button class="cust-row' + ((tk.tarifa || '') === o[0] ? ' on' : '') + '" data-k="t:' + esc(o[0]) + '"><b>' + esc(o[1]) + '</b></button>';
+      }).join('') + '</div><p class="muted">' + t('tar.reprice') + '</p><div class="btn-row"><button class="btn" data-k="X">' + t('close') + '</button></div>';
+    }
+    openModal('tarifa', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('t:') !== 0) return;
+      tk.tarifa = k.slice(2) || null;
+      var tf = P.tarifaFor(S.tarifas, tk.table, new Date(), tk.tarifa);
+      tk.lines.forEach(function (l) {
+        var it = l.pid && !l.free && !l.manual && P.findItem(S.menu, l.pid);
+        if (!it) return;
+        l.base = P.priceWith(S.menu, it, tf);
+        l.price = round2(l.base + extrasOf(l.mods) + comboExtra(l.combo));
+      });
+      audit('price', tableLabel(tk.table) + ' · ' + t('tar.badge') + ': ' + (tf ? tf.name : t('tar.none')));
+      closeModal(); saveTicket(tk); render();
     });
   }
 

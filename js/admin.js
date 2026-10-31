@@ -102,6 +102,7 @@
     ['import', 'adm.nav.import', secImport],
     ['cats', 'adm.nav.cats', secCats],
     ['customers', 'adm.nav.customers', secCustomers],
+    ['tarifas', 'adm.nav.tarifas', secTarifas],
     ['mods', 'adm.nav.mods', secMods],
     ['tables', 'adm.nav.tables', secTables],
     ['hours', 'adm.nav.hours', secHours],
@@ -398,6 +399,51 @@
       if (!cur) menu.push(c);
       p.then(function () { saveMenu(menu); closeModal(); toast(t('adm.saved')); });
     });
+  }
+
+  // ---------------------------------------------------------------- tarifas y happy hour
+
+  function saveTarifas(list) { A.tarifas = list; return Store.set('public/tarifas', list); }
+
+  function secTarifas() {
+    var list = A.tarifas || [], days = t('sch.days');
+    var sample = A.menu.reduce(function (a, c) { return a || (c.items || [])[0]; }, null);
+    var head = '<div class="toolbar"><button class="btn primary" data-act="tar-new" data-tpl="">' + t('adm.tar.new') + '</button>' +
+      '<button class="btn" data-act="tar-new" data-tpl="terraza">' + t('adm.tar.tplTerraza') + '</button>' +
+      '<button class="btn" data-act="tar-new" data-tpl="happy">' + t('adm.tar.tplHappy') + '</button></div>';
+    var html = '<p class="muted">' + t('adm.tar.help') + '</p>' + (list.length ? '' : '<div class="card"><p class="muted">' + t('adm.tar.none') + '</p></div>') +
+      list.map(function (x, i) {
+        var d = 'data-ti="' + i + '"';
+        var ex = (x.cats && x.cats.length ? (A.menu.filter(function (c) { return c.id === x.cats[0]; })[0] || {}).items || [] : [])[0] || sample;
+        return '<div class="card tarifa' + (x.active ? '' : ' off') + '"><div class="tar-head">' +
+          '<input type="text" class="tar-name" data-edit="tar" data-k="name" ' + d + ' value="' + esc(x.name) + '">' +
+          '<label class="switch" title="' + t('adm.tar.active') + '"><input type="checkbox" data-edit="tar" data-k="active" ' + d + (x.active ? ' checked' : '') + '><span></span></label>' +
+          '<button class="icon-btn" data-act="tar-move" data-d="-1" ' + d + (i === 0 ? ' disabled' : '') + '>↑</button>' +
+          '<button class="icon-btn" data-act="tar-move" data-d="1" ' + d + (i === list.length - 1 ? ' disabled' : '') + '>↓</button>' +
+          '<button class="icon-btn danger" data-act="tar-del" ' + d + '>🗑️</button></div>' +
+          '<div class="field"><label>' + t('adm.tar.pct') + '</label><input type="text" inputmode="decimal" style="max-width:120px" data-edit="tar" data-k="pct" ' + d + ' value="' + (x.pct || 0) + '"> <small class="muted">' + t('adm.tar.pctHelp') +
+          (ex ? ' · ' + t('adm.tar.example', { a: esc(ex.name) + ' ' + fmt(ex.price), b: fmt(P.priceWith(A.menu, ex, x)) }) : '') + '</small></div>' +
+          '<h4>' + t('adm.tar.cats') + '</h4><div class="chips-sel">' + A.menu.map(function (c) {
+            return '<label class="chk"><input type="checkbox" data-edit="tar-set" data-k="cats" data-v="' + esc(c.id) + '" ' + d + ((x.cats || []).indexOf(c.id) >= 0 ? ' checked' : '') + '> ' + esc(c.icon || '') + ' ' + esc(P.tr(c, I.lang)) + '</label>';
+          }).join('') + '</div>' +
+          '<h4>' + t('adm.tar.tables') + '</h4><div class="chips-sel">' + A.layout.map(function (tb) {
+            return '<label class="chk"><input type="checkbox" data-edit="tar-set" data-k="tables" data-v="' + esc(tb.id) + '" ' + d + ((x.tables || []).indexOf(tb.id) >= 0 ? ' checked' : '') + '> ' + esc(tb.id) + '</label>';
+          }).join('') + '</div>' +
+          '<h4><label><input type="checkbox" data-edit="tar" data-k="useHours" ' + d + (x.useHours ? ' checked' : '') + '> ' + t('adm.tar.hours') + '</label></h4>' +
+          (x.useHours ? '<div class="scroll-x"><table class="grid sch">' + [0, 1, 2, 3, 4, 5, 6].map(function (di) {
+            return '<tr><td>' + days[di] + '</td><td><input type="text" data-edit="tar-day" data-di="' + di + '" ' + d + ' value="' + esc(((x.days || [])[di] || {}).h || '') + '" placeholder="18:00-20:00"></td>' +
+              (di === 0 ? '<td><button class="btn mini" data-act="tar-alldays" ' + d + '>' + t('adm.tar.allDays') + '</button></td>' : '<td></td>') + '</tr>';
+          }).join('') + '</table></div><p class="muted">' + t('sch.help').split('·')[0] + '</p>' : '') +
+          '<h4>' + t('adm.tar.prices') + '</h4><div class="combo-opts">' + Object.keys(x.prices || {}).map(function (pid) {
+            var it = P.findItem(A.menu, pid);
+            return it ? '<span class="chip">' + esc(it.name) + ' <s class="muted">' + fmt(it.price) + '</s> <input type="text" inputmode="decimal" data-edit="tar-price" data-pid="' + esc(pid) + '" ' + d + ' value="' + String(x.prices[pid]).replace('.', ',') + '"> <button data-act="tar-unprice" data-pid="' + esc(pid) + '" ' + d + '>✕</button></span>' : '';
+          }).join('') + '</div>' +
+          '<div class="combo-add"><select id="tp-' + i + '"><option value="">' + t('adm.tar.pickProduct') + '</option>' + A.menu.map(function (c) {
+            return '<optgroup label="' + esc(c.name) + '">' + (c.items || []).map(function (it) { return '<option value="' + esc(it.id) + '">' + esc(it.name) + ' (' + fmt(it.price) + ')</option>'; }).join('') + '</optgroup>';
+          }).join('') + '</select><input type="text" id="tpp-' + i + '" inputmode="decimal" placeholder="0,00" style="max-width:100px"><button class="btn" data-act="tar-price" ' + d + '>' + t('adm.tar.addPrice') + '</button></div>' +
+          '</div>';
+      }).join('');
+    return { head: head, html: html };
   }
 
   // ---------------------------------------------------------------- clientes
@@ -957,7 +1003,7 @@
 
   // ---------------------------------------------------------------- copias de seguridad
 
-  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'layout', 'customers', 'custlog'];
+  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'layout', 'customers', 'custlog'];
 
   function secBackup() {
     var html = '<div class="card"><h3>' + t('adm.backupTitle') + '</h3><p class="muted">' + t('adm.backupHelp') + '</p>' +
@@ -1228,6 +1274,22 @@
         if (val) cats.push(d.cid);
         return Store.update('public/qr', { kitchenCats: cats });
       case 'cust-credit': return Store.update('customers/' + d.cid, { credit: !!val });
+      case 'tar': case 'tar-set': case 'tar-day': case 'tar-price':
+        var tl = clone(A.tarifas || []), tx = tl[d.ti];
+        if (!tx) return;
+        if (d.edit === 'tar') tx[d.k] = d.k === 'pct' ? (Number(String(val).replace(',', '.')) || 0) : (el.type === 'checkbox' ? !!val : String(val));
+        else if (d.edit === 'tar-set') {
+          tx[d.k] = (tx[d.k] || []).filter(function (v) { return v !== d.v; });
+          if (val) tx[d.k].push(d.v);
+        } else if (d.edit === 'tar-day') {
+          if (!P.validRanges(val)) { toast(t('sch.bad', { v: val })); el.value = ((tx.days || [])[d.di] || {}).h || ''; return; }
+          tx.days = tx.days || [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: '' }; });
+          tx.days[d.di] = { h: String(val).trim() };
+        } else {
+          tx.prices = tx.prices || {};
+          tx.prices[d.pid] = round2(String(val).replace(',', '.'));
+        }
+        return saveTarifas(tl);
       case 'mod-name': case 'mod-en': case 'mod-zh':
         mods[d.mi][d.edit.slice(4)] = String(val).trim(); return saveMods(mods);
       case 'mod-price': mods[d.mi].price = round2(String(val).replace(',', '.')); return saveMods(mods);
@@ -1329,6 +1391,50 @@
       toast(t('adm.deleted'));
     },
 
+    'tar-new': function (d) {
+      var tl = clone(A.tarifas || []);
+      var empty = [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: '' }; });
+      var x = { id: 't' + Store.newId(), name: t('tar.badge') + ' ' + (tl.length + 1), active: true, pct: 0, cats: [], tables: [], useHours: false, days: empty, prices: {} };
+      if (d.tpl === 'terraza') {
+        Object.assign(x, { name: 'Terraza', pct: 10, tables: A.layout.filter(function (tb) { return /^S\d/.test(tb.id); }).map(function (tb) { return tb.id; }) });
+      } else if (d.tpl === 'happy') {
+        Object.assign(x, { name: 'Happy hour', pct: -20, cats: A.menu.filter(function (c) { return ['cerveza', 'refresco', 'licor', 'granizado'].indexOf(c.id) >= 0; }).map(function (c) { return c.id; }),
+          useHours: true, days: [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: '18:00-20:00' }; }) });
+        tl.unshift(x);           // la happy hour va primero para que gane
+        return saveTarifas(tl);
+      }
+      tl.push(x);
+      saveTarifas(tl);
+    },
+    'tar-move': function (d) {
+      var tl = clone(A.tarifas || []), i = +d.ti, j = i + Number(d.d);
+      if (j < 0 || j >= tl.length) return;
+      tl.splice(j, 0, tl.splice(i, 1)[0]);
+      saveTarifas(tl);
+    },
+    'tar-del': function (d) {
+      var tl = clone(A.tarifas || []);
+      if (!confirm(t('adm.tar.delConfirm', { n: tl[d.ti].name }))) return;
+      tl.splice(+d.ti, 1); saveTarifas(tl);
+    },
+    'tar-alldays': function (d) {
+      var tl = clone(A.tarifas || []), tx = tl[d.ti], h = ((tx.days || [])[0] || {}).h || '';
+      tx.days = [0, 1, 2, 3, 4, 5, 6].map(function () { return { h: h }; });
+      saveTarifas(tl);
+    },
+    'tar-price': function (d) {
+      var i = +d.ti, pid = document.getElementById('tp-' + i).value, pr = round2(String(document.getElementById('tpp-' + i).value).replace(',', '.'));
+      if (!pid || isNaN(pr)) return toast(t('adm.required'));
+      var tl = clone(A.tarifas || []);
+      tl[i].prices = tl[i].prices || {};
+      tl[i].prices[pid] = pr;
+      saveTarifas(tl);
+    },
+    'tar-unprice': function (d) {
+      var tl = clone(A.tarifas || []);
+      delete tl[d.ti].prices[d.pid];
+      saveTarifas(tl);
+    },
     'cust-new': function () { openCustomer(null); },
     'cust-edit': function (d) { openCustomer(d.cid); },
     'cust-log': function (d) { openCustLog(d.cid); },
@@ -1531,6 +1637,7 @@
     Store.on('closures', function (v) { A.closures = v || {}; render(); });
     Store.on('cash', function (v) { A.cash = v || {}; render(); });
     Store.on('customers', function (v) { A.customers = v || {}; render(); });
+    Store.on('public/tarifas', function (v) { A.tarifas = v || []; render(); });
     Store.on('users', function (v) {
       A.users = v || P.DEFAULT_USERS;
       if (!A.user) {

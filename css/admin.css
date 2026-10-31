@@ -102,3 +102,10 @@ table.perms td:first-child { white-space: nowrap; }
 @media (max-width: 900px) { .combo-head { grid-template-columns: 1fr 1fr; } }
 .combo-ed .chk-line { display: flex; align-items: center; gap: 8px; }
 .combo-ed .chk-line input { width: auto; }
+
+/* tarifas */
+.tarifa.off { opacity: .6; }
+.tar-head { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+.tar-head .tar-name { flex: 1; font-size: 18px; font-weight: 600; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.tarifa h4 { margin: 12px 0 6px; font-size: 14px; }
+.combo-opts .chip s { font-size: 12px; }

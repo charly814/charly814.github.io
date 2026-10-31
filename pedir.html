@@ -140,12 +140,16 @@
     }
 
     Store.on('menu', function (v) { menu = v || P.DEFAULT_MENU; render(); });
+    // tarifas (terraza, happy hour): la carta enseña el precio que se cobrará en esta mesa
+    var tarifas = [];
+    Store.on('public/tarifas', function (v) { tarifas = v || []; render(); });
+    function priceOf(it) { return P.priceWith(menu, it, P.tarifaFor(tarifas, table, new Date())); }
     Store.on('public/qr', function (v) { qrCfg = Object.assign({}, P.DEFAULT_QR, v || {}); render(); });
     // el horario cambia con la hora: se comprueba cada minuto
     var lastKey = '';
     setInterval(function () {
       var st = P.qrStatus(qrCfg);
-      var k = st.open + '|' + st.kitchen;
+      var k = st.open + '|' + st.kitchen + '|' + ((P.tarifaFor(tarifas, table, new Date()) || {}).id || '');
       if (k !== lastKey) render();
     }, 60000);
     Store.on('mods', function (v) {
@@ -187,7 +191,7 @@
     function render() {
       document.getElementById('table-pill').textContent = t('table', { t: table });
       var st = P.qrStatus(qrCfg);
-      lastKey = st.open + '|' + st.kitchen;
+      lastKey = st.open + '|' + st.kitchen + '|' + ((P.tarifaFor(tarifas, table, new Date()) || {}).id || '');
       // quitar del carrito lo que ya no se puede pedir (p. ej. la cocina acaba de cerrar)
       var before = cart.length;
       cart = cart.filter(function (l) { return canOrder(l.pid, st); });
@@ -217,7 +221,7 @@
                 '<span class="name"' + (off ? '' : ' data-a="custom" data-id="' + esc(it.id) + '"') + '>' + esc(P.tr(it, I.lang)) + (off ? '' : ' <u>✏️</u>') + es +
                 (desc ? '<small class="desc">' + esc(desc) + '</small>' : '') +
                 (al ? '<small class="alg" aria-label="' + esc(t('c.allergens2')) + '">' + al + '</small>' : '') + '</span>' +
-                '<span class="price">' + fmt(it.price) + '</span>' +
+                '<span class="price">' + fmt(priceOf(it)) + '</span>' +
                 (off ? '' : '<span class="stepper">' + (q ? '<button data-a="minus" data-key="' + esc(it.id) + '" aria-label="−">−</button><b>' + q + '</b>' : '') +
                 '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="+">+</button></span>') + '</div>';
             }).join('') + '</section>';
@@ -239,7 +243,7 @@
     function unitPrice(l) {
       var it = P.findItem(menu, l.pid);
       if (!it) return 0;
-      return it.price + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0) +
+      return priceOf(it) + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0) +
         P.comboChoices(menu, it, l.combo || []).reduce(function (s, c) { return s + c.extra; }, 0);
     }
     function isCombo(it) { return !!(it && it.combo && (it.combo.courses || []).length); }

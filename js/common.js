@@ -211,6 +211,31 @@
     };
   }
 
+  // ---------------------------------------------------------------- tarifas
+  // public/tarifas: [{ id, name, active, pct, cats: [], prices: {pid: precio},
+  //   tables: [] (vacío = todas), useHours, days: [{h: '18:00-20:00'} x7] }]
+  // La primera que encaja (activa, mesa y hora) es la que se aplica.
+  function tarifaFor(tarifas, table, d, forced) {
+    var list = tarifas || [];
+    if (forced === 'none') return null;
+    if (forced) return list.filter(function (x) { return x.id === forced; })[0] || null;
+    d = d || new Date();
+    return list.filter(function (x) {
+      if (!x.active) return false;
+      if (x.tables && x.tables.length && x.tables.indexOf(table) < 0) return false;
+      if (x.useHours && !inRanges(x.days || [], 'h', d).open) return false;
+      return true;
+    })[0] || null;
+  }
+  // Precio de un producto con una tarifa (o el de la carta)
+  function priceWith(menu, item, tarifa) {
+    if (!item) return 0;
+    if (!tarifa) return item.price;
+    if (tarifa.prices && tarifa.prices[item.id] != null && tarifa.prices[item.id] !== '') return round2(tarifa.prices[item.id]);
+    if (tarifa.cats && tarifa.cats.length && tarifa.cats.indexOf(catOfItem(menu, item.id)) < 0) return item.price;
+    return round2(item.price * (1 + (Number(tarifa.pct) || 0) / 100));
+  }
+
   // Siguiente 06:00 (fin de la "jornada" para "cerrar cocina hoy")
   function endOfService(d) {
     d = new Date(d || Date.now());
@@ -465,6 +490,8 @@
     ticketTotals: ticketTotals,
     DEFAULT_QR: DEFAULT_QR,
     validRanges: validRanges,
+    tarifaFor: tarifaFor,
+    priceWith: priceWith,
     qrStatus: qrStatus,
     endOfService: endOfService,
     catOfItem: catOfItem,
