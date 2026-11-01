@@ -94,6 +94,8 @@
     render();
   });
   Store.on('settings', function (v) {
+    // Modo buffet (Gestión → 🍣 Buffet): este TPV de bar no se usa, se abre la pantalla del buffet.
+    if (v && v.mode === 'buffet') { location.replace('buffet.html'); return; }
     S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {});
     // logo del ticket: se carga una vez para tenerlo listo al imprimir
     if (S.settings.logoImg) Store.getImage('logo', S.settings.logoImg).then(function (d) { S.logo = d; });

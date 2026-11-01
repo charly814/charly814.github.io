@@ -104,6 +104,7 @@
     ['customers', 'adm.nav.customers', secCustomers],
     ['tarifas', 'adm.nav.tarifas', secTarifas],
     ['promos', 'adm.nav.promos', secPromos],
+    ['buffet', 'adm.nav.buffet', secBuffet],
     ['loyalty', 'adm.nav.loyalty', secLoyalty],
     ['mods', 'adm.nav.mods', secMods],
     ['tables', 'adm.nav.tables', secTables],
@@ -517,6 +518,47 @@
           '</div>';
       }).join('');
     return { head: head, html: html };
+  }
+
+  // ---------------------------------------------------------------- buffet
+  // Todo lo del buffet se guarda en buffet/public/config; el modo elegido
+  // también en settings.mode (lo mira el TPV para saber qué pantalla abrir).
+
+  function saveBuffet(patch) {
+    var c = Object.assign(Buffet.cfg(A.buffet), patch);
+    A.buffet = c;
+    return Store.set('buffet/public/config', c);
+  }
+  function secBuffet() {
+    var c = Buffet.cfg(A.buffet), mode = A.settings.mode === 'buffet' ? 'buffet' : 'bar';
+    var num = function (k, label) {
+      return '<div class="field"><label>' + t(label) + '</label><input type="text" inputmode="numeric" style="max-width:120px" data-edit="bf" data-k="' + k + '" value="' + esc(String(c[k])) + '"></div>';
+    };
+    var sw = function (k, label) {
+      return '<label class="chk-line" style="display:flex;margin:8px 0"><label class="switch"><input type="checkbox" data-edit="bf" data-k="' + k + '"' + (c[k] ? ' checked' : '') + '><span></span></label> ' + t(label) + '</label>';
+    };
+    var base = location.href.replace(/[^/]*$/, '');
+    var html = '<div class="card"><h3>' + t('bf.mode') + '</h3><p class="muted">' + t('bf.modeHelp') + '</p><div class="join-opts">' + ['bar', 'buffet'].map(function (m) {
+      var on = mode === m, k = m === 'bar' ? 'bf.modeBar' : 'bf.modeBuffet';
+      return '<label class="join-opt' + (on ? ' on' : '') + '"><input type="radio" name="bfmode" data-edit="bf-mode" value="' + m + '"' + (on ? ' checked' : '') + '><b>' + t(k) + '</b><small>' + t(k + 'Help') + '</small></label>';
+    }).join('') + '</div></div>' +
+      '<div class="card"><h3>' + t('bf.rules') + '</h3><div class="form-grid">' + num('roundMin', 'bf.roundMin') + num('perAdult', 'bf.perAdult') + num('perKid', 'bf.perKid') +
+      '<div class="field"><label>' + t('bf.tabletPin') + '</label><input type="text" inputmode="numeric" maxlength="6" style="max-width:120px" data-edit="bf" data-k="tabletPin" value="' + esc(c.tabletPin) + '"></div></div>' +
+      '<p class="promo-sum">' + t('bf.example', { n: 2 * c.perAdult + c.perKid, m: c.roundMin }) + '</p></div>' +
+      '<div class="card"><h3>' + t('bf.kitchen') + '</h3>' + sw('kitchenScreen', 'bf.kitchenScreen') + sw('kitchenPrint', 'bf.kitchenPrint') + '<p class="muted">' + t('bf.printHelp') + '</p></div>' +
+      '<div class="card"><h3>' + t('bf.dishes') + '</h3><p class="muted">' + t('bf.dishesHelp') + '</p>' + A.menu.map(function (cat) {
+        var whole = c.cats.indexOf(cat.id) >= 0;
+        return '<h4 style="margin:14px 0 6px"><label><input type="checkbox" data-edit="bf-cat" data-v="' + esc(cat.id) + '"' + (whole ? ' checked' : '') + '> ' + esc(cat.icon || '') + ' ' + esc(P.tr(cat, I.lang)) + ' <small class="muted">(' + t('bf.wholeCat') + ')</small></label></h4>' +
+          '<div class="chips-sel">' + (cat.items || []).filter(function (it) { return !(it.combo && it.combo.courses); }).map(function (it) {
+            var on = whole || c.items.indexOf(it.id) >= 0;
+            return '<label class="chk"><input type="checkbox" data-edit="bf-item" data-v="' + esc(it.id) + '"' + (on ? ' checked' : '') + (whole ? ' disabled' : '') + '> ' + esc(P.tr(it, I.lang)) + '</label>';
+          }).join('') + '</div>';
+      }).join('') + '</div>' +
+      '<div class="card"><h3>' + t('bf.links') + '</h3><table class="grid">' +
+      '<tr><td>' + t('bf.linkStaff') + '</td><td><a href="buffet.html" target="_blank">' + esc(base) + 'buffet.html</a></td></tr>' +
+      '<tr><td>' + t('bf.linkKitchen') + '</td><td><a href="cocina.html" target="_blank">' + esc(base) + 'cocina.html</a></td></tr>' +
+      '<tr><td>' + t('bf.linkTablet') + '</td><td><a href="buffet-mesa.html?mesa=T1" target="_blank">' + esc(base) + 'buffet-mesa.html?mesa=T1</a></td></tr></table></div>';
+    return { html: html };
   }
 
   // ---------------------------------------------------------------- puntos y tarjetas regalo
@@ -1555,6 +1597,24 @@
         lc[d.k] = d.k === 'on' ? !!val : Math.max(0, Number(String(val).replace(',', '.')) || 0);
         if (d.k === 'min') lc.min = Math.floor(lc.min);
         return Store.update('settings', { loyalty: lc });
+      case 'bf-mode':
+        // el modo va en los ajustes del TPV y en la config pública (para la tablet), a la vez
+        var bc = Object.assign(Buffet.cfg(A.buffet), { on: val === 'buffet' });
+        A.buffet = bc;
+        return Store.update('', { 'settings/mode': val === 'buffet' ? 'buffet' : 'bar', 'buffet/public/config': bc });
+      case 'bf':
+        if (el.type === 'checkbox') return saveBuffet((function () { var o = {}; o[d.k] = !!val; return o; })());
+        if (d.k === 'tabletPin') {
+          if (!/^\d{4,6}$/.test(val)) { toast(t('msg.pinFormat')); el.value = Buffet.cfg(A.buffet).tabletPin; return; }
+          return saveBuffet({ tabletPin: String(val) });
+        }
+        var nv = Math.max(d.k === 'roundMin' ? 1 : 0, Math.floor(Number(String(val).replace(',', '.')) || 0));
+        return saveBuffet((function () { var o = {}; o[d.k] = nv; return o; })());
+      case 'bf-cat': case 'bf-item':
+        var bk = d.edit === 'bf-cat' ? 'cats' : 'items';
+        var arr = Buffet.cfg(A.buffet)[bk].filter(function (x) { return x !== d.v; });
+        if (val) arr.push(d.v);
+        return saveBuffet((function () { var o = {}; o[bk] = arr; return o; })());
       case 'gift-active': return Store.update('giftcards/' + d.c, { active: !!val });
       case 'tar': case 'tar-set': case 'tar-day': case 'tar-price':
         var tl = clone(A.tarifas || []), tx = tl[d.ti];
@@ -1973,6 +2033,7 @@
     Store.on('closures', function (v) { A.closures = v || {}; render(); });
     Store.on('cash', function (v) { A.cash = v || {}; render(); });
     Store.on('customers', function (v) { A.customers = v || {}; render(); });
+    Store.on('buffet/public/config', function (v) { A.buffet = v; if (A.sec === 'buffet') render(); });
     Store.on('walkouts', function (v) { A.walkouts = v || {}; if (A.sec === 'panel') render(); });
     Store.on('promos', function (v) { A.promos = P.promoList(v); render(); });
     Store.on('giftcards', function (v) { A.giftcards = v || {}; if (A.sec === 'loyalty') render(); });
