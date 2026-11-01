@@ -433,3 +433,11 @@ tr.voided td:last-child, tr.voided td:nth-child(2) { text-decoration: none; }
 /* tarjetas regalo y puntos */
 .seg-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
 .modal-box .btn.on { background: var(--dark); color: #fff; border-color: var(--dark); }
+/* mesas juntadas: etiqueta del grupo (🔗A) y aro de color */
+.tbl .jtag, .tl .jtag { position: absolute; top: -11px; left: -10px; font-style: normal; font-size: 11px; font-weight: 800; color: #fff;
+  background: var(--jc, var(--joined)); border-radius: 6px; padding: 1px 5px; border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); white-space: nowrap; }
+.tl { position: relative; }
+.tbl.jcolor { box-shadow: 0 0 0 4px var(--floor), 0 0 0 9px var(--jc); }
+.tbl.stool.jcolor { box-shadow: 0 0 0 3px var(--floor), 0 0 0 6px var(--jc); }
+.tl.jcolor { border: 3px solid var(--jc); }
+.legend .l-joined.j-badge::before, .legend .l-joined.j-color::before { content: '🔗A'; width: auto; height: auto; background: var(--joined); color: #fff; font-size: 10px; font-weight: 800; border-radius: 4px; padding: 0 4px; border: 0; }

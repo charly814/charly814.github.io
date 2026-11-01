@@ -129,3 +129,17 @@ ul.plain-list { margin: 0; padding-left: 18px; columns: 2; font-size: 14px; }
 
 /* promociones */
 .promo-sum { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; }
+
+/* opciones de mesas juntadas */
+.join-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.join-opt { border: 2px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 6px; cursor: pointer; background: #fff; }
+.join-opt.on { border-color: var(--accent); background: #f0f7ff; }
+.join-opt input { display: none; }
+.join-opt small { color: var(--muted); }
+.join-demo { display: flex; gap: 22px; padding: 14px 10px 6px; }
+.join-demo > i { position: relative; width: 52px; height: 52px; border-radius: 8px; background: #f0932b; color: #fff; font-style: normal; font-weight: 700; display: grid; place-items: center; font-size: 13px; line-height: 1.1; text-align: center; }
+.join-demo > i small { display: block; font-size: 10px; color: inherit; }
+.join-demo .jt { position: absolute; top: -10px; left: -10px; font-style: normal; font-size: 10px; font-weight: 800; background: #0d9488; color: #fff; border-radius: 5px; padding: 1px 4px; border: 2px solid #fff; }
+.join-demo.j-color > i { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #0d9488; }
+.join-demo.j-grey .jt { display: none; }
+.join-demo.j-grey .d2 { background: #94a3b8; box-shadow: 0 0 0 3px #fff, 0 0 0 6px #64748b; }

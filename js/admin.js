@@ -1085,6 +1085,12 @@
     var html = '<div class="card"><h3>' + t('admin.ticketData') + '</h3><div class="form-grid">' + f('name') + f('address') + f('nif') + f('vat') + f('series') + '</div>' +
       '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="set" data-k="askGuests"' + (st.askGuests !== false ? ' checked' : '') + '> ' + t('admin.f.askGuests') + '</label>' +
       '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
+      '<div class="card"><h3>🔗 ' + t('join.title') + '</h3><p class="muted">' + t('join.help') + '</p><div class="join-opts">' + ['badge', 'color', 'grey'].map(function (k) {
+        var on = (st.joinStyle || 'badge') === k;
+        return '<label class="join-opt' + (on ? ' on' : '') + '"><input type="radio" name="joinStyle" data-edit="set" data-k="joinStyle" value="' + k + '"' + (on ? ' checked' : '') + '>' +
+          '<span class="join-demo j-' + k + '"><i class="d1">T5<i class="jt">🔗A</i></i><i class="d2">T6<small>→T5</small><i class="jt">🔗A</i></i></span>' +
+          '<b>' + t('join.' + k) + '</b><small>' + t('join.' + k + 'Help') + '</small></label>';
+      }).join('') + '</div></div>' +
       '<div class="card"><h3>' + t('admin.qr') + '</h3><p>' + t('admin.mode', { m: '<b>' + t(Store.mode === 'local' ? 'admin.local' : 'admin.cloud') + '</b>' }) + '</p>' +
       (Store.mode === 'local' ? '<p class="warn">' + t('admin.localWarn') + '</p>'
         : '<p class="muted">' + t('admin.cloudOk') + '</p><p><button class="btn" data-act="reset-auth">' + t('admin.changeKey') + '</button></p>') + '</div>';

@@ -687,6 +687,16 @@
     'caja.rect': ['rectifica {n}', 'rectifies {n}', '冲销 {n}'],
     'audit.reopen': ['Ticket reabierto (rectificativa)', 'Ticket reopened (rectifying invoice)', '重新打开已结账的单（红字发票）'],
 
+    // ---- cómo se ven las mesas juntadas
+    'join.title': ['Mesas juntadas en el plano', 'Joined tables on the floor plan', '拼桌在地图上的显示方式'],
+    'join.help': ['Cómo se marcan las mesas que se han juntado. Cada grupo lleva una letra (A, B, C…) para saber qué mesas van juntas.', 'How joined tables are marked. Each group has a letter (A, B, C…) so you can see which tables go together.', '拼在一起的桌子怎么标记。每一组有一个字母（A、B、C…），一眼看出哪几张是一起的。'],
+    'join.badge': ['Etiqueta 🔗A (recomendado)', 'Tag 🔗A (recommended)', '标签 🔗A（推荐）'],
+    'join.badgeHelp': ['Las mesas mantienen sus colores normales y llevan una etiqueta con la letra del grupo. No se confunde con libre / ocupada.', 'Tables keep their normal colours and carry a tag with the group letter. Not confused with free / busy.', '桌子保持原来的颜色，加一个带组字母的标签，不会和空桌 / 有客的颜色混淆。'],
+    'join.color': ['Mismo color por grupo', 'Same colour per group', '同组同色'],
+    'join.colorHelp': ['Un aro de color distinto para cada grupo, además de la etiqueta.', 'A different coloured ring for each group, plus the tag.', '每组一个不同颜色的外圈，同时也有标签。'],
+    'join.grey': ['Gris (como antes)', 'Grey (as before)', '灰色（原来的样子）'],
+    'join.greyHelp': ['Las mesas añadidas se ven en gris con «→» a la principal.', 'Added tables are grey with «→» to the main one.', '拼过去的桌子显示灰色，并显示「→」主桌。'],
+
     // ---- se fue sin pagar
     'wo.act': ['Se fue sin pagar', 'Walked out', '逃单'],
     'wo.title': ['Se fue sin pagar · {t}', 'Walked out without paying · {t}', '逃单 · {t}'],

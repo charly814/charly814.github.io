@@ -350,6 +350,8 @@
     while (S.joins[m] && guard++ < 10) m = S.joins[m];
     return m;
   }
+  // colores de grupo distintos de los de estado (libre, ocupada, QR, temporal)
+  var JOIN_COLORS = ['#0d9488', '#db2777', '#2563eb', '#65a30d', '#0891b2', '#a16207', '#be123c', '#4f46e5'];
   function childrenOf(id) { return Object.keys(S.joins).filter(function (c) { return S.joins[c] === id; }); }
 
   // Al cerrar la cuenta de una mesa: se deshacen sus uniones y desaparecen sus mesas temporales.
@@ -480,35 +482,48 @@
   function viewMap() {
     var orderTables = {};
     pendingOrders().forEach(function (o) { orderTables[o.table] = (orderTables[o.table] || 0) + 1; });
+    // Mesas juntadas: cada grupo lleva una letra (A, B, C…) y un color propio.
+    // Cómo se marcan lo elige el administrador (Negocio): etiqueta, color o gris.
+    var jstyle = S.settings.joinStyle || 'badge';
+    var groups = {};
+    Object.keys(S.joins).map(function (c) { return S.joins[c]; }).filter(function (m, i, a) { return a.indexOf(m) === i; }).sort()
+      .forEach(function (m, i) { groups[m] = { letter: String.fromCharCode(65 + (i % 26)), color: JOIN_COLORS[i % JOIN_COLORS.length] }; });
     function state(id) {
       var main = mainOf(id);
       var tk = S.tickets[main];
       return {
         busy: tk && (tk.lines || []).length, total: tk ? P.ticketTotals(tk).total : 0, qr: orderTables[id] || 0,
-        joinedTo: main !== id ? main : null, hasChildren: childrenOf(id).length > 0
+        joinedTo: main !== id ? main : null, hasChildren: childrenOf(id).length > 0, group: groups[main] || null
       };
     }
     function classes(base, tb, st) {
-      return base + (st.busy ? ' busy' : '') + (st.qr ? ' qr' : '') + (tb.temp ? ' temp' : '') + (st.joinedTo ? ' joined' : '');
+      return base + (st.busy ? ' busy' : '') + (st.qr ? ' qr' : '') + (tb.temp ? ' temp' : '') +
+        (st.joinedTo && jstyle === 'grey' ? ' joined' : '') + (st.group && jstyle === 'color' ? ' jcolor' : '');
+    }
+    function gstyle(st) { return st.group && jstyle !== 'grey' ? '--jc:' + st.group.color + ';' : ''; }
+    function gmark(st) {
+      if (!st.group) return '';
+      if (jstyle === 'grey') return st.hasChildren ? '<i class="link">🔗</i>' : '';
+      return '<i class="jtag">🔗' + st.group.letter + '</i>';
     }
     var editing = S.editLayout;
     var tables = editing ? S.layout : allTables();
     var floor = tables.map(function (tb) {
       var st = state(tb.id);
       var attrs = editing ? 'data-drag="' + esc(tb.id) + '"' : 'data-act="open-table" data-id="' + esc(tb.id) + '"';
-      return '<button class="' + classes('tbl ' + tb.shape, tb, st) + '" style="left:' + tb.x + '%;top:' + tb.y + '%" ' + attrs + '>' +
+      return '<button class="' + classes('tbl ' + tb.shape, tb, st) + '" style="left:' + tb.x + '%;top:' + tb.y + '%;' + gstyle(st) + '" ' + attrs + '>' +
         '<span>' + esc(tb.id) + '</span>' +
         (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy && tb.shape !== 'stool' ? '<small>' + fmt(st.total) + '</small>' : '') +
-        (st.hasChildren ? '<i class="link">🔗</i>' : '') +
+        gmark(st) +
         (st.qr ? '<i class="alert">QR ' + st.qr + '</i>' : '') + '</button>';
     }).join('');
     // En el móvil, una cuadrícula de botones es más rápida que el plano.
     var list = tablesForList().map(function (tb) {
       var st = state(tb.id);
-      return '<button class="' + classes('tl', tb, st) + '" data-act="open-table" data-id="' + esc(tb.id) + '">' +
+      return '<button class="' + classes('tl', tb, st) + '" style="' + gstyle(st) + '" data-act="open-table" data-id="' + esc(tb.id) + '">' +
         '<b>' + esc(tb.id) + '</b>' +
         (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy ? '<small>' + fmt(st.total) + '</small>' : '') +
-        (st.hasChildren ? '<i class="link">🔗</i>' : '') +
+        gmark(st) +
         (st.qr ? '<i class="alert">QR</i>' : '') + '</button>';
     }).join('');
     var quick = S.tickets[QUICK] && (S.tickets[QUICK].lines || []).length;
@@ -536,7 +551,7 @@
       floor + '</div></div>' +
       '<div class="tbl-list">' + list + '</div></div>' +
       '<div class="legend"><span class="l-free">' + t('legend.free') + '</span><span class="l-busy">' + t('legend.busy') + '</span><span class="l-qr">' + t('legend.qr') + '</span>' +
-      '<span class="l-temp">' + t('legend.temp') + '</span><span class="l-joined">' + t('legend.joined') + '</span></div>';
+      '<span class="l-temp">' + t('legend.temp') + '</span><span class="l-joined j-' + (S.settings.joinStyle || 'badge') + '">' + t('legend.joined') + '</span></div>';
   }
 
   function viewTicket() {
