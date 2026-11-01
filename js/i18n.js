@@ -687,6 +687,28 @@
     'caja.rect': ['rectifica {n}', 'rectifies {n}', '冲销 {n}'],
     'audit.reopen': ['Ticket reabierto (rectificativa)', 'Ticket reopened (rectifying invoice)', '重新打开已结账的单（红字发票）'],
 
+    // ---- se fue sin pagar
+    'wo.act': ['Se fue sin pagar', 'Walked out', '逃单'],
+    'wo.title': ['Se fue sin pagar · {t}', 'Walked out without paying · {t}', '逃单 · {t}'],
+    'wo.help': ['No se hace factura ni cuenta como venta: queda registrado como impagado, con lo que se sirvió. Si vuelve, se cobra desde Caja → Impagados. Si sabes quién es, cárgalo a su cuenta.', 'No invoice and it does not count as a sale: it is logged as unpaid with what was served. If they come back, charge it from Till → Unpaid. If you know who it is, put it on their account.', '不开发票，也不算营业额：按「未付款」登记，保留点过的菜。客人回来付钱的话，在「收银 → 逃单」里补收。认识这个客人就挂到他的账上。'],
+    'wo.note': ['Descripción / nota', 'Description / note', '描述 / 备注'],
+    'wo.notePh': ['Ej.: dos hombres, terraza, se fueron a las 22:30', 'E.g. two men, terrace, left at 22:30', '例如：两个男的，坐露台，22:30 走的'],
+    'wo.toCustomer': ['Es un cliente conocido: cargar a su cuenta', 'Known customer: charge to their account', '认识的客人：挂到他的账上'],
+    'wo.register': ['Registrar impagado', 'Log as unpaid', '登记逃单'],
+    'wo.done': ['Impagado registrado: {n}', 'Unpaid logged: {n}', '已登记逃单：{n}'],
+    'wo.list': ['Impagados (se fueron sin pagar)', 'Unpaid (walked out)', '逃单记录'],
+    'wo.recover': ['Ha vuelto: cobrar', 'Came back: charge', '回来了：补收'],
+    'wo.recoverConfirm': ['Los productos vuelven a {t} ({n}) para cobrarlos. ¿Seguir?', 'The items go back to {t} ({n}) to be charged. Continue?', '菜品会放回 {t}（{n}）来收款。继续吗？'],
+    'wo.recovered': ['Cóbralo ahora como un ticket normal', 'Charge it now like a normal ticket', '现在像普通账单一样收款'],
+    'wo.paid': ['Cobrado después', 'Paid later', '已补收'],
+    'wo.unpaid': ['Sin cobrar', 'Unpaid', '未收'],
+    'wo.kpi': ['Impagados ({n})', 'Unpaid ({n})', '逃单（{n}）'],
+    'wo.admSum': ['{n} sin cobrar por {a} · {r} cobrados después.', '{n} unpaid for {a} · {r} paid later.', '{n} 单未收，共 {a} · {r} 单已补收。'],
+    'perm.walkout': ['Registrar «se fue sin pagar»', 'Log a walk-out', '登记逃单'],
+    'audit.walkout': ['Se fue sin pagar', 'Walked out without paying', '逃单'],
+    'audit.walkoutBack': ['Impagado cobrado después', 'Walk-out paid later', '逃单补收'],
+    'rs.walkout': ['Impagados', 'Walk-outs', '逃单'],
+
     // ---- apertura de caja
     'open.title': ['Abrir caja', 'Open the till', '开班（开钱箱）'],
     'open.help': ['Cuenta el dinero que hay en el cajón antes de empezar. Es el fondo inicial: al cerrar caja se compara con lo que debería haber.', 'Count the money in the drawer before you start. This is the opening float: at closing it is compared with what there should be.', '开始营业前先数一下钱箱里的钱。这就是备用金，日结对账时会用它来计算应有的现金。'],

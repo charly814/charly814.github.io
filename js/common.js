@@ -276,7 +276,7 @@
   var PERMS = [
     ['pay', true], ['caja', true], ['reprint', true], ['drawer', true], ['free', true],
     ['qrOrders', true], ['qrControl', true], ['tables', true], ['cashMoves', false], ['reopen', false],
-    ['discount', false], ['price', false], ['delSent', false], ['cancel', false], ['closeZ', false]
+    ['discount', false], ['price', false], ['delSent', false], ['cancel', false], ['walkout', false], ['closeZ', false]
   ];
   function can(user, perm) {
     if (!user) return false;

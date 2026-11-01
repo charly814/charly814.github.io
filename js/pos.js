@@ -110,6 +110,7 @@
     render();
   });
   Store.on('sales', function (v) { S.sales = v || {}; render(); });
+  Store.on('walkouts', function (v) { S.walkouts = v || {}; render(); });
   Store.on('closures', function (v) {
     S.closures = v || {};
     // Cierres antiguos que aún llevan todas las ventas dentro: se pasan al archivo.
@@ -622,6 +623,7 @@
       act('temp-near', '➕', t('act.tempNear')) +
       act('table-qr', '🔳', t('act.qr')) +
       (S.temp[S.table] && !tk.lines.length ? act('temp-del', '🗑️', t('act.tempDel'), '', 'danger') : '') +
+      act('walkout', '🏃', t('wo.act'), '', 'danger') +
       act('cancel-ticket', '✖', t('act.cancel'), '', 'danger') +
       '<button class="act pay" data-act="pay"><b>💶</b>' + t('act.pay') + ' ' + fmt(tot.total) + '</button>' +
       '</nav></section></div>';
@@ -669,6 +671,13 @@
       (moves.length ? '<h4>' + t('cash.moves') + '</h4><table class="list">' + moves.map(function (m) {
         return '<tr><td>' + time(m.at) + '</td><td>' + esc(m.user) + '</td><td>' + (m.type === 'in' ? '➕' : '➖') + ' ' + esc(m.reason || '') + '</td><td class="num">' + (m.type === 'in' ? '' : '−') + fmt(m.amount) + '</td></tr>';
       }).join('') + '</table>' : '') + '</div>';
+    var wos = Object.keys(S.walkouts || {}).map(function (k) { return S.walkouts[k]; })
+      .filter(function (w) { return w.status !== 'paid' || w.at > Date.now() - 7 * 86400000; }).sort(function (a, b) { return b.at - a.at; }).slice(0, 30);
+    var woCard = wos.length ? '<div class="card"><h3>🏃 ' + t('wo.list') + '</h3><div class="scroll-x"><table class="list">' + wos.map(function (w) {
+      return '<tr class="' + (w.status === 'paid' ? 'voided' : '') + '"><td>' + new Date(w.at).toLocaleString('es-ES', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</td><td>' + esc(w.table) + '</td><td>' + esc(w.waiter || w.user) +
+        '</td><td>' + esc(w.note || '') + '</td><td class="num">' + fmt(w.total) + '</td><td>' +
+        (w.status === 'paid' ? '<small class="ok-t">' + t('wo.paid') + '</small>' : '<button class="btn" data-act="wo-recover" data-id="' + esc(w.id) + '">' + t('wo.recover') + '</button>') + '</td></tr>';
+    }).join('') + '</table></div></div>' : '';
     return topbar(t('caja.title')) + '<div class="page">' + cashCard +
       '<div class="card"><h3>' + t('caja.shift') + '</h3><div class="kpis">' +
       kpi(t('caja.sold'), fmt(s.total)) + kpi(t('caja.tickets'), s.count) +
@@ -681,6 +690,7 @@
       '<button class="btn" data-act="debt-pay">' + t('cust.debtPay') + '</button>' +
       '<button class="btn" data-act="gift">' + t('gift.btn') + '</button>' +
       '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
+      woCard +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
           var tag = x.voided ? ' <small class="bad-t">' + t('caja.voided', { n: esc(x.voided.by) }) + '</small>' : x.invoiceType === 'R' ? ' <small class="muted">' + t('caja.rect', { n: esc(x.rectifies) }) + '</small>' : '';
@@ -716,7 +726,7 @@
     pay: 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
-    'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
+    'close-z': 'closeZ', 'cancel-ticket': 'cancel', walkout: 'walkout', 'wo-recover': 'pay', orders: 'qrOrders',
     'cash-in': 'cashMoves', 'cash-out': 'cashMoves', 'cash-float': 'cashMoves', 'cash-open': 'caja'
   };
   app.addEventListener('click', function (e) {
@@ -940,6 +950,31 @@
       if (!ticketOf(S.table).lines.length) return toast(t('msg.empty'));
       S.moveFrom = S.table; S.view = 'map'; render();
     },
+    walkout: function () {
+      if (!ticketOf(S.table).lines.length) return toast(t('msg.empty'));
+      openWalkout(S.authBy);
+    },
+    'wo-recover': function (d) {
+      var w = (S.walkouts || {})[d.id];
+      if (!w || w.status === 'paid') return;
+      if (!confirm(t('wo.recoverConfirm', { t: tableLabel(w.table), n: fmt(w.total) }))) return;
+      // los productos vuelven a la mesa y se cobran con normalidad (factura del día de hoy)
+      var tk = ticketOf(w.table);
+      if (!tk.lines.length) {
+        tk.discountPct = w.discountPct || 0; tk.discountEur = w.discountEur || 0; tk.guests = w.guests || 0;
+        tk.customer = w.customer || null; tk.tarifa = w.tarifa || null; tk.openedAt = w.openedAt || Date.now(); tk.user = w.waiter || S.user.name;
+      }
+      (w.lines || []).forEach(function (l) { var c = Object.assign({}, l); delete c.id; delete c.ord; tk.lines.push(c); });
+      var upd = {};
+      upd['walkouts/' + w.id + '/status'] = 'paid';
+      upd['walkouts/' + w.id + '/paid'] = { at: Date.now(), by: S.user.name };
+      ticketPatch(tk, upd);
+      S.tickets[w.table] = tk;
+      Store.update('', upd);
+      audit('walkoutBack', tableLabel(w.table) + ' · ' + fmt(w.total));
+      S.table = w.table; S.view = 'ticket'; S.sel = -1; render();
+      toast(t('wo.recovered'));
+    },
     'cancel-ticket': function () {
       var tk = ticketOf(S.table);
       if (!tk.lines.length) return;
@@ -983,7 +1018,11 @@
       openPay(tk);
     },
 
-    'print-x': function () { printReport('INFORME X (sin cierre)', summarize(salesList()), Date.now()); },
+    'print-x': function () {
+      var sx = summarize(salesList()), wo = shiftWalkouts();
+      if (wo.length) sx.walkouts = { n: wo.length, total: round2(wo.reduce(function (a, w) { return a + w.total; }, 0)) };
+      printReport('INFORME X (sin cierre)', sx, Date.now());
+    },
     csv: function () { exportCsv(); },
     'cash-in': function () { openCashMove('in'); },
     'cash-out': function () { openCashMove('out'); },
@@ -1001,6 +1040,8 @@
   function closeZ(sales, cash) {
     var id = Store.newId();
     var c = { id: id, closedAt: Date.now(), user: S.user.name, summary: summarize(sales), cash: cash };
+    var wo = shiftWalkouts();
+    if (wo.length) c.summary.walkouts = { n: wo.length, total: round2(wo.reduce(function (a, w) { return a + w.total; }, 0)) };
     // 1) ventas al archivo (IndexedDB + nube)  2) cierre + vaciar turno, de una vez
     Store.archive(id, { id: id, closedAt: c.closedAt, sales: S.sales }).then(function () {
       var upd = { sales: null };
@@ -1810,7 +1851,7 @@
   // Se puede pagar en varias partes (a partes iguales o con varias formas de pago).
   function openPay(tk, opts) {
     opts = opts || {};
-    var st = { method: 'efectivo', given: '', print: true, busy: false, multi: false, parts: [], part: '', gift: '', usePts: false };
+    var st = { method: opts.account ? 'cuenta' : 'efectivo', given: '', print: true, busy: false, multi: false, parts: [], part: '', gift: '', usePts: false };
     var LC = P.loyaltyCfg(S.settings);
     var lcust = LC.on && tk.customer && S.customers[tk.customer.id];
     var redeem = lcust ? P.loyaltyRedeem(LC, lcust.points, P.ticketTotals(Object.assign({}, tk, { loyalty: null })).total) : null;
@@ -1830,7 +1871,7 @@
     function draw() {
       var given = Number(String(st.given).replace(',', '.')) || 0;
       var change = round2(given - tot.total);
-      var methods = '<div class="pay-methods">' + payMethods(tk).map(function (m) {
+      var methods = '<div class="pay-methods">' + payMethods(tk, opts.account).map(function (m) {
         return '<button data-k="m:' + m + '" class="' + (st.method === m ? 'on' : '') + '">' + t('m.' + m) + '</button>';
       }).join('') + '</div>';
       var body;
@@ -1928,7 +1969,7 @@
         payments.forEach(function (x) { if (x.method === 'regalo') x.left = round2(S.giftcards[x.ref].balance - giftUse[x.ref]); });
         var onAccount = round2(payments.filter(function (x) { return x.method === 'cuenta'; }).reduce(function (a, x) { return a + x.amount; }, 0));
         var cust = tk.customer && S.customers[tk.customer.id];
-        if (onAccount && !(cust && cust.credit)) return toast(t('cust.noCredit'));
+        if (onAccount && !(cust && (cust.credit || opts.account))) return toast(t('cust.noCredit'));
         st.busy = true; draw();
         var full = !!(tk.customer && tk.customer.nif);
         nextInvoice(full).then(function (num) {
@@ -2108,7 +2149,8 @@
   function custSnap(c) {
     return { id: c.id, name: c.name, nif: c.nif || '', address: c.address || '', cp: c.cp || '', city: c.city || '' };
   }
-  function payMethods(tk) {
+  function payMethods(tk, account) {
+    if (account) return ['cuenta'];
     var c = tk.customer && S.customers[tk.customer.id];
     var gifts = Object.keys(S.giftcards || {}).some(function (k) { return S.giftcards[k].active !== false && S.giftcards[k].balance > 0; });
     return METHODS.concat(gifts ? ['regalo'] : [], c && c.credit ? ['cuenta'] : []);
@@ -2222,6 +2264,67 @@
   function printGift(code, amt, at) {
     printDoc(header().concat([['cb', 'TARJETA REGALO'], ['hr'], ['h1', code], ['lrb', 'IMPORTE', fmt(amt)], ['c', new Date(at).toLocaleDateString('es-ES')], ['hr'],
       ['c', 'Presente este código al pagar.'], ['c', 'Se puede usar en varias veces.']]), 'receipt');
+  }
+
+  // Se fue sin pagar: se registra como impagado (no es una venta: no hay
+  // factura) o, si se sabe quién es, se carga a la cuenta del cliente.
+  function openWalkout(authBy) {
+    var tk = ticketOf(S.table), tot = P.ticketTotals(tk);
+    var st = { note: '' };
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>🏃 ' + t('wo.title', { t: esc(tableLabel(S.table)) }) + '</h2>' +
+        '<div class="pay-total">' + fmt(tot.total) + '</div>' +
+        '<p class="muted">' + t('wo.help') + '</p>' +
+        '<div class="field"><label>' + t('wo.note') + '</label><textarea id="wo-note" rows="3" maxlength="300" placeholder="' + esc(t('wo.notePh')) + '">' + esc(st.note) + '</textarea></div>' +
+        '<div class="btn-row" style="flex-wrap:wrap"><button class="btn" data-k="X">' + t('cancel') + '</button>' +
+        '<button class="btn" data-k="cust">👤 ' + t('wo.toCustomer') + '</button>' +
+        '<button class="btn danger" data-k="OK" style="flex:1">' + t('wo.register') + '</button></div>';
+      var n = document.getElementById('wo-note');
+      n.oninput = function () { st.note = n.value; };
+      n.focus();
+    }
+    openModal('walkout', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === 'cust') {
+        // cliente conocido: se le carga en su cuenta (factura con pago pendiente)
+        return pickCustomer(tk.customer, function (c) {
+          if (!c) return;
+          tk.customer = custSnap(c); saveTicket(tk);
+          S.authBy = authBy;
+          audit('walkout', tableLabel(S.table) + ' · ' + fmt(tot.total) + ' → ' + c.name + (st.note ? ' · ' + st.note : ''));
+          S.authBy = null;
+          openPay(tk, { account: true });
+        });
+      }
+      if (k !== 'OK') return;
+      var id = Store.newId(), now = Date.now(), upd = {};
+      upd['walkouts/' + id] = {
+        id: id, at: now, table: tk.table, user: S.user.name, by: authBy || null, waiter: tk.user || S.user.name, note: st.note.trim().slice(0, 300),
+        total: tot.total, subtotal: tot.subtotal, lines: tk.lines.map(function (l) { var c = Object.assign({}, l); delete c.id; return c; }),
+        guests: tk.guests || 0, openedAt: tk.openedAt || null, customer: tk.customer || null, tarifa: tk.tarifa || null,
+        discountPct: tk.discountPct || 0, discountEur: tk.discountEur || 0, status: 'open'
+      };
+      upd['tickets/' + tk.table] = null;
+      closeTablePatch(tk.table, upd);
+      Store.update('', upd);
+      S.authBy = authBy;
+      audit('walkout', tableLabel(tk.table) + ' · ' + fmt(tot.total) + (st.note ? ' · ' + st.note : ''));
+      S.authBy = null;
+      delete S.tickets[tk.table];
+      closeModal();
+      toast(t('wo.done', { n: fmt(tot.total) }));
+      S.view = 'map'; S.table = null; S.showTicket = false; render();
+    });
+  }
+  function lastCloseAt() {
+    return Object.keys(S.closures || {}).reduce(function (a, k) { return Math.max(a, S.closures[k].closedAt || 0); }, 0);
+  }
+  // impagados de este turno (desde el último cierre) que siguen sin cobrar
+  function shiftWalkouts() {
+    var from = lastCloseAt();
+    return Object.keys(S.walkouts || {}).map(function (k) { return S.walkouts[k]; })
+      .filter(function (w) { return w.at > from && w.status !== 'paid'; });
   }
 
   function openDebtPay(c) {
@@ -2475,7 +2578,9 @@
   function printReport(title, s, when, cash) {
     var doc = header().concat([['cb', title], ['c', new Date(when).toLocaleString('es-ES')], ['hr'], ['lr', 'Tickets', String(s.count)]]);
     Object.keys(s.byMethod).forEach(function (m) { doc.push(['lr', METHOD_ES[m] || m, fmt(s.byMethod[m] || 0)]); });
-    doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)], ['hr']);
+    doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)]);
+    if (s.walkouts) doc.push(['lr', 'Impagados (' + s.walkouts.n + ') sin cobrar', fmt(s.walkouts.total)]);
+    doc.push(['hr']);
     Object.keys(s.byUser).forEach(function (u) { doc.push(['lr', u, fmt(s.byUser[u])]); });
     if (cash) {
       doc.push(['hr'], ['b', 'ARQUEO DE CAJA']);

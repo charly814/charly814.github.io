@@ -1305,7 +1305,11 @@
       '<div class="kpis big">' + kpi(t('adm.rep.sales'), fmt(r.total)) + kpi(t('adm.rep.tickets'), r.count) +
       kpi(t('adm.rep.avg'), fmt(r.count ? r.total / r.count : 0)) + kpi(t('adm.rep.units'), String(round2(r.units)).replace('.', ',')) +
       kpi(t('adm.rep.discounts'), fmt(r.discounts)) +
-      (r.guests ? kpi(t('adm.rep.guests'), r.guests) + kpi(t('adm.rep.perGuest'), fmt(r.guestTotal / r.guests)) : '') + '</div>' +
+      (r.guests ? kpi(t('adm.rep.guests'), r.guests) + kpi(t('adm.rep.perGuest'), fmt(r.guestTotal / r.guests)) : '') +
+      (function () {
+        var lost = walkoutsIn(r).filter(function (w) { return w.status !== 'paid'; });
+        return lost.length ? kpi('🏃 ' + t('wo.kpi', { n: lost.length }), '<span class="bad-t">' + fmt(lost.reduce(function (a, w) { return a + w.total; }, 0)) + '</span>') : '';
+      })() + '</div>' +
       (r.count ? '<div class="card"><h3>' + t(r.hourly ? 'adm.rep.byHour' : 'adm.rep.byDay') + '</h3>' + barChart(r.series) + '</div>' +
         '<div class="card"><h3>' + t('adm.rep.top') + '</h3><div class="scroll-x">' + rankTable(products.slice(0, 15), [t('adm.col.product'), t('adm.rep.units1')]) + '</div></div>' +
         '<div class="two-col"><div class="card"><h3>' + t('adm.rep.byCat') + '</h3>' +
@@ -1323,7 +1327,7 @@
     else if (tab === 'heat') html = loading + repHeat(r);
     else if (tab === 'prod') html = loading + repProducts(r, products);
     else if (tab === 'staff') html = loading + repStaff(r);
-    else if (tab === 'void') html = repVoids(r);
+    else if (tab === 'void') html = walkoutCard(r) + repVoids(r);
     return { head: head, html: html };
   }
 
@@ -1417,7 +1421,23 @@
       .filter(function (x) { return x && x.at >= r.from && x.at < r.to; }).sort(function (a, b) { return b.at - a.at; });
   }
 
-  var STAFF_ACTS = ['cancel', 'delSent', 'drawer', 'discount', 'price', 'reopen'];
+  var STAFF_ACTS = ['walkout', 'cancel', 'delSent', 'drawer', 'discount', 'price', 'reopen'];
+  function walkoutsIn(r) {
+    return Object.keys(A.walkouts || {}).map(function (k) { return A.walkouts[k]; })
+      .filter(function (w) { return w.at >= r.from && w.at < r.to; }).sort(function (a, b) { return b.at - a.at; });
+  }
+  function walkoutCard(r) {
+    var list = walkoutsIn(r);
+    if (!list.length) return '';
+    var lost = list.filter(function (w) { return w.status !== 'paid'; });
+    return '<div class="card"><h3>🏃 ' + t('wo.list') + '</h3><p class="muted">' + t('wo.admSum', { n: lost.length, a: fmt(lost.reduce(function (a, w) { return a + w.total; }, 0)), r: list.length - lost.length }) + '</p>' +
+      '<div class="scroll-x"><table class="grid"><tr><th>' + t('adm.log.when') + '</th><th>' + t('tb.tables') + '</th><th>' + t('adm.rep.byWaiter') + '</th><th>' + t('adm.log.auth') + '</th><th>' + t('wo.note') + '</th><th>' + t('adm.col.product') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
+      list.map(function (w) {
+        return '<tr><td>' + new Date(w.at).toLocaleString('es-ES') + '</td><td>' + esc(w.table) + '</td><td>' + esc(w.waiter || w.user) + '</td><td>' + esc(w.by || '—') + '</td><td>' + esc(w.note || '') + '</td>' +
+          '<td><small>' + esc((w.lines || []).map(function (l) { return String(l.qty).replace('.', ',') + '× ' + l.name; }).join(', ')) + '</small></td><td class="num">' + fmt(w.total) + '</td>' +
+          '<td>' + (w.status === 'paid' ? '<span class="ok-t">' + t('wo.paid') + '</span>' : '<span class="bad-t">' + t('wo.unpaid') + '</span>') + '</td></tr>';
+      }).join('') + '</table></div></div>';
+  }
   function repStaff(r) {
     var log = auditIn(r), acts = {};
     log.forEach(function (x) {
@@ -1425,7 +1445,7 @@
       u[x.action] = (u[x.action] || 0) + 1;
     });
     var names = Object.keys(Object.assign({}, r.byWaiter, acts)).filter(Boolean).sort(function (a, b) { return ((r.byWaiter[b] || {}).total || 0) - ((r.byWaiter[a] || {}).total || 0); });
-    var cols = [['cancel', 'rs.cancels'], ['delSent', 'rs.delSent'], ['drawer', 'rs.drawer'], ['discount', 'rs.discN'], ['price', 'rs.price'], ['reopen', 'rs.reopen']];
+    var cols = [['walkout', 'rs.walkout'], ['cancel', 'rs.cancels'], ['delSent', 'rs.delSent'], ['drawer', 'rs.drawer'], ['discount', 'rs.discN'], ['price', 'rs.price'], ['reopen', 'rs.reopen']];
     return '<div class="card"><h3>' + t('rs.title') + '</h3><p class="muted">' + t('rs.help') + '</p>' + (names.length ? '<div class="scroll-x"><table class="grid"><tr><th></th><th class="num">' + t('adm.rep.tickets') + '</th><th class="num">' + t('adm.rep.sales') + '</th><th class="num">' + t('adm.rep.avg') + '</th><th class="num">' + t('adm.rep.perGuest') + '</th><th class="num">' + t('adm.rep.discounts') + ' €</th>' +
       cols.map(function (c) { return '<th class="num">' + t(c[1]) + '</th>'; }).join('') + '</tr>' +
       names.map(function (n) {
@@ -1947,6 +1967,7 @@
     Store.on('closures', function (v) { A.closures = v || {}; render(); });
     Store.on('cash', function (v) { A.cash = v || {}; render(); });
     Store.on('customers', function (v) { A.customers = v || {}; render(); });
+    Store.on('walkouts', function (v) { A.walkouts = v || {}; if (A.sec === 'panel') render(); });
     Store.on('promos', function (v) { A.promos = P.promoList(v); render(); });
     Store.on('giftcards', function (v) { A.giftcards = v || {}; if (A.sec === 'loyalty') render(); });
     Store.on('public/tarifas', function (v) { A.tarifas = v || []; render(); });
