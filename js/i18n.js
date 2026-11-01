@@ -687,6 +687,19 @@
     'caja.rect': ['rectifica {n}', 'rectifies {n}', '冲销 {n}'],
     'audit.reopen': ['Ticket reabierto (rectificativa)', 'Ticket reopened (rectifying invoice)', '重新打开已结账的单（红字发票）'],
 
+    // ---- apertura de caja
+    'open.title': ['Abrir caja', 'Open the till', '开班（开钱箱）'],
+    'open.help': ['Cuenta el dinero que hay en el cajón antes de empezar. Es el fondo inicial: al cerrar caja se compara con lo que debería haber.', 'Count the money in the drawer before you start. This is the opening float: at closing it is compared with what there should be.', '开始营业前先数一下钱箱里的钱。这就是备用金，日结对账时会用它来计算应有的现金。'],
+    'open.left': ['Dejado en el último cierre', 'Left at the last close', '上次日结留下'],
+    'open.same': ['Está todo: {n}', 'It is all there: {n}', '数目正确：{n}'],
+    'open.btn': ['Abrir caja', 'Open till', '开班'],
+    'open.later': ['Más tarde', 'Later', '稍后'],
+    'open.need': ['Cuenta el dinero o escribe el total (0 si está vacío)', 'Count the money or type the total (0 if empty)', '请点钞或者输入总额（空的就填 0）'],
+    'open.done': ['Caja abierta con {n}', 'Till opened with {n}', '已开班，备用金 {n}'],
+    'open.banner': ['La caja no está abierta: cuenta el fondo inicial para que el cierre cuadre.', 'The till is not open: count the opening float so the closing adds up.', '还没有开班：请先数备用金，否则日结对不上账。'],
+    'open.noPerm': ['Pide a un encargado que abra la caja', 'Ask a manager to open the till', '请让负责人开班'],
+    'audit.cashOpen': ['Apertura de caja', 'Till opened', '开班'],
+
     // ---- puntos y tarjetas regalo
     'm.regalo': ['🎁 Tarjeta regalo', '🎁 Gift card', '🎁 礼品卡'],
     'adm.nav.loyalty': ['⭐ Puntos y tarjetas regalo', '⭐ Points & gift cards', '⭐ 积分和礼品卡'],

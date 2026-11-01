@@ -83,6 +83,7 @@
       var u = name && S.users.filter(function (x) { return x.name === name; })[0];
       if (u) {
         S.user = u; S.view = 'map';
+        setTimeout(askOpening, 0);
         // "Abrir el editor de plano" desde el back-office
         try {
           if (sessionStorage.getItem('platet-open-layout') && u.admin) S.editLayout = true;
@@ -123,7 +124,7 @@
   var archiving = {};
   Store.on('prints', function (v) { S.prints = v || {}; render(); });
   Store.on('audit', function (v) { S.audit = v || {}; });
-  Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; render(); });
+  Store.on('cash', function (v) { S.cash = v || { float: 0, moves: {} }; S.cashLoaded = true; render(); setTimeout(askOpening, 0); });
   Store.on('customers', function (v) { S.customers = v || {}; render(); });
   Store.on('giftcards', function (v) { S.giftcards = v || {}; });
   Store.on('public/tarifas', function (v) { S.tarifas = v || []; render(); });
@@ -521,6 +522,7 @@
         qrControls() +
         (isAdmin() ? '<button class="btn" data-act="layout-edit">' + t('map.edit') + '</button>' : '') + '</div>';
     return topbar(t('map.title')) +
+      (S.cashLoaded && !cashIsOpen() ? '<div class="banner warn-banner"><span>💶 ' + t('open.banner') + '</span><button class="btn ok" data-act="cash-open">' + t('open.btn') + '</button></div>' : '') +
       (S.recovery ? '<div style="padding:12px 12px 0">' + recoveryCard() + '</div>' : '') +
       tools +
       (S.moveFrom ? '<div class="banner"><span>' + t('map.move', { t: '<b>' + esc(tableLabel(S.moveFrom)) + '</b>' }) + '</span><button class="btn" data-act="move-cancel">' + t('cancel') + '</button></div>' : '') +
@@ -715,7 +717,7 @@
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', orders: 'qrOrders',
-    'cash-in': 'cashMoves', 'cash-out': 'cashMoves', 'cash-float': 'cashMoves'
+    'cash-in': 'cashMoves', 'cash-out': 'cashMoves', 'cash-float': 'cashMoves', 'cash-open': 'caja'
   };
   app.addEventListener('click', function (e) {
     var b = e.target.closest('[data-act]');
@@ -986,6 +988,7 @@
     'cash-in': function () { openCashMove('in'); },
     'cash-out': function () { openCashMove('out'); },
     'cash-float': function () { openCashMove('float'); },
+    'cash-open': function () { openOpening(); },
     'close-z': function () {
       var sales = salesList();
       if (!sales.length && !Object.keys((S.cash && S.cash.moves) || {}).length) return toast(t('caja.nothing'));
@@ -1614,6 +1617,66 @@
     });
   }
 
+  // Apertura de caja: al empezar la jornada se cuenta el dinero que hay en el
+  // cajón (el fondo). Es la base del arqueo del cierre Z. Se compara con lo que
+  // se dejó en el último cierre.
+  function cashIsOpen() { return !!(S.cash && S.cash.opening); }
+  function askOpening() {
+    if (!S.user || !S.cashLoaded || cashIsOpen() || S.openAsked || S.view === 'login') return;
+    if (!modal.classList.contains('hidden')) return;
+    S.openAsked = true;
+    openOpening();
+  }
+  function openOpening() {
+    if (!P.can(S.user, 'caja')) {
+      // quien no puede tocar la caja solo ve el aviso
+      return toast(t('open.noPerm'));
+    }
+    var left = round2((S.cash && S.cash.float) || 0);
+    var st = { counts: {}, total: '' };
+    function counted() {
+      if (String(st.total).trim()) return round2(String(st.total).replace(',', '.'));
+      var any = false, sum = P.DENOMS.reduce(function (a, d) { var n = Number(st.counts[d]) || 0; if (n) any = true; return a + n * d; }, 0);
+      return any ? round2(sum) : null;
+    }
+    function info() {
+      var c = counted();
+      var hasPrev = Object.keys(S.closures || {}).length > 0;
+      var diff = c == null ? null : round2(c - left);
+      return '<table class="list cash-sum">' + (hasPrev ? '<tr><td>' + t('open.left') + '</td><td class="num">' + fmt(left) + '</td></tr>' : '') +
+        '<tr class="tot"><td>' + t('arq.counted') + '</td><td class="num">' + (c == null ? '—' : fmt(c)) + '</td></tr>' +
+        (hasPrev && diff ? '<tr><td>' + t('arq.diff') + '</td><td class="num ' + (diff < 0 ? 'bad-t' : 'warn-t') + '">' + (diff < 0 ? t('arq.short', { n: fmt(-diff) }) : t('arq.over', { n: fmt(diff) })) + '</td></tr>' : '') + '</table>';
+    }
+    function draw() {
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>💶 ' + t('open.title') + '</h2><p class="muted">' + t('open.help') + '</p>' +
+        '<div class="arq"><div><h4>' + t('arq.count') + '</h4><div class="denoms">' + P.DENOMS.map(function (d) {
+          return '<label><span>' + (d >= 1 ? d + ' €' : Math.round(d * 100) + ' c') + '</span><input type="number" min="0" step="1" inputmode="numeric" data-den="' + d + '" value="' + (st.counts[d] || '') + '"></label>';
+        }).join('') + '</div></div>' +
+        '<div><div class="field"><label>' + t('arq.or') + '</label><input id="op-total" type="text" inputmode="decimal" value="' + esc(st.total) + '" placeholder="' + fmt(left) + '"></div>' +
+        '<div id="op-sum">' + info() + '</div>' +
+        (left ? '<p><button class="btn" data-k="same">' + t('open.same', { n: fmt(left) }) + '</button></p>' : '') + '</div></div>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('open.later') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('open.btn') + '</button></div>';
+      var upd = function () { document.getElementById('op-sum').innerHTML = info(); };
+      modalBox.querySelectorAll('[data-den]').forEach(function (el) { el.oninput = function () { st.counts[el.dataset.den] = el.value; upd(); }; });
+      document.getElementById('op-total').oninput = function (e) { st.total = e.target.value; upd(); };
+    }
+    openModal('opening', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === 'same') { st.total = String(left).replace('.', ','); st.counts = {}; return draw(); }
+      if (k !== 'OK') return;
+      var c = counted();
+      if (c == null || isNaN(c) || c < 0) return toast(t('open.need'));
+      var now = Date.now();
+      var prev = Object.keys(S.closures || {}).length > 0;      // primer día: no hay con qué comparar
+      var opening = { at: now, by: S.user.name, counted: c, left: prev ? left : null, diff: prev ? round2(c - left) : 0, counts: st.counts };
+      Store.update('cash', { float: c, opening: opening, openedAt: now, openedBy: S.user.name });
+      audit('cashOpen', fmt(c) + (opening.diff ? ' · ' + (opening.diff > 0 ? '+' : '') + fmt(opening.diff) : ''));
+      closeModal();
+      toast(t('open.done', { n: fmt(c) }));
+    });
+  }
+
   // Arqueo: contar billetes y monedas (o el total), comparar con lo esperado y cerrar Z
   function openArqueo(sales) {
     var cx = P.cashExpected(S.cash, sales);
@@ -1661,7 +1724,7 @@
       var cash = Object.assign({}, cx, {
         counted: c, diff: c == null ? null : round2(c - cx.expected), counts: st.counts,
         cardCounted: String(st.card).trim() ? round2(String(st.card).replace(',', '.')) : null,
-        nextFloat: round2(String(st.next).replace(',', '.')) || 0, moves: moves
+        nextFloat: round2(String(st.next).replace(',', '.')) || 0, moves: moves, opening: (S.cash && S.cash.opening) || null
       });
       closeModal();
       closeZ(sales, cash);
@@ -1712,6 +1775,7 @@
     function tryLogin() {
       if (pin === String(user.pin)) {
         S.user = user; S.view = 'map'; closeModal(); render();
+        S.openAsked = false; askOpening();
         // la sesión sigue al volver del back-office (misma pestaña)
         try { sessionStorage.setItem('platet-session', user.name); } catch (e) { /* ignorar */ }
       } else { pin = ''; draw(); toast(t('pin.wrong')); }
@@ -2414,7 +2478,10 @@
     doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)], ['hr']);
     Object.keys(s.byUser).forEach(function (u) { doc.push(['lr', u, fmt(s.byUser[u])]); });
     if (cash) {
-      doc.push(['hr'], ['b', 'ARQUEO DE CAJA'], ['lr', 'Fondo inicial', fmt(cash.float)], ['lr', '+ Ventas efectivo', fmt(cash.cashSales)],
+      doc.push(['hr'], ['b', 'ARQUEO DE CAJA']);
+      if (cash.opening) doc.push(['t', 'Apertura: ' + cash.opening.by + ' ' + new Date(cash.opening.at).toLocaleString('es-ES') + (cash.opening.diff ? ' (dejado ' + fmt(cash.opening.left) + ', dif. ' + (cash.opening.diff > 0 ? '+' : '') + fmt(cash.opening.diff) + ')' : '')]);
+      else doc.push(['t', 'Apertura: fondo sin contar']);
+      doc.push(['lr', 'Fondo inicial', fmt(cash.float)], ['lr', '+ Ventas efectivo', fmt(cash.cashSales)],
         ['lr', '+ Entradas', fmt(cash.ins)], ['lr', '- Salidas', fmt(cash.outs)], ['lr', '= Esperado', fmt(cash.expected)]);
       if (cash.counted != null) {
         doc.push(['lrb', 'Contado', fmt(cash.counted)], ['lr', 'Diferencia', (cash.diff > 0 ? '+' : '') + fmt(cash.diff)]);
