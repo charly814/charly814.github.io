@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1f5f8b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>收租管家</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+:root{
+  --bg:#f3f5f8; --card:#fff; --ink:#1d2733; --muted:#6b7785; --line:#e1e6ec;
+  --pri:#1f5f8b; --pri-ink:#fff; --pri-soft:#e6f0f7;
+  --ok:#1e8a4c; --ok-soft:#e3f4ea; --warn:#b26a00; --warn-soft:#fdf1dc;
+  --bad:#c0392b; --bad-soft:#fbe5e2; --radius:10px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei","Noto Sans SC","Segoe UI",sans-serif;font-size:15px;line-height:1.45}
+header.top{background:var(--pri);color:#fff;position:sticky;top:0;z-index:20;box-shadow:0 1px 4px rgba(0,0,0,.15)}
+header.top .bar{max-width:1100px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px}
+header.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.5px}
+header.top .who{margin-left:auto;font-size:13px;opacity:.85}
+nav.tabs{max-width:1100px;margin:0 auto;display:flex;gap:2px;overflow-x:auto;padding:0 10px;scrollbar-width:none}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs a{color:#dbe8f2;text-decoration:none;padding:9px 12px;white-space:nowrap;border-bottom:3px solid transparent;font-size:14px}
+nav.tabs a.on{color:#fff;border-bottom-color:#fff;font-weight:600}
+main{max-width:1100px;margin:0 auto;padding:16px}
+h2{font-size:18px;margin:4px 0 12px}
+h3{font-size:15px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;margin-bottom:14px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row.between{justify-content:space-between}
+.grow{flex:1}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+.right{text-align:right}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
+.stat.ok .v{color:var(--ok)} .stat.bad .v{color:var(--bad)} .stat.warn .v{color:var(--warn)}
+button,.btn{font:inherit;border:1px solid var(--line);background:#fff;color:var(--ink);padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap;text-decoration:none;display:inline-block}
+button:hover,.btn:hover{border-color:#b9c4cf}
+button.pri,.btn.pri{background:var(--pri);border-color:var(--pri);color:var(--pri-ink)}
+button.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+button.danger{color:var(--bad);border-color:#ecc3bd}
+button.sm{padding:4px 9px;font-size:13px}
+button.link{border:none;background:none;color:var(--pri);padding:2px 4px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--muted);font-weight:600}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tbl-wrap{overflow-x:auto}
+.tag{display:inline-block;font-size:12px;padding:1px 8px;border-radius:20px;background:#eef1f4;color:var(--muted);white-space:nowrap}
+.tag.ok{background:var(--ok-soft);color:var(--ok)} .tag.bad{background:var(--bad-soft);color:var(--bad)}
+.tag.warn{background:var(--warn-soft);color:var(--warn)} .tag.pri{background:var(--pri-soft);color:var(--pri)}
+.empty{text-align:center;color:var(--muted);padding:26px 10px}
+input,select,textarea{font:inherit;padding:7px 9px;border:1px solid #cbd3dc;border-radius:7px;background:#fff;color:var(--ink);width:100%}
+textarea{min-height:60px;resize:vertical}
+label.f{display:block;font-size:13px;color:var(--muted);margin-bottom:10px}
+label.f > input,label.f > select,label.f > textarea{margin-top:3px}
+label.chk{display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:10px}
+label.chk input{width:auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 12px}
+@media (max-width:600px){.grid2,.grid3{grid-template-columns:1fr}}
+.prop{border-left:4px solid var(--pri)}
+.prop.garage{border-left-color:#8a5a1e}
+.files{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.file{border:1px solid var(--line);border-radius:7px;padding:4px;width:92px;font-size:11px;text-align:center;background:#fafbfc;cursor:pointer;position:relative}
+.file img{width:82px;height:62px;object-fit:cover;border-radius:4px;display:block;margin:0 auto 3px}
+.file .ic{height:62px;display:flex;align-items:center;justify-content:center;font-size:26px}
+.file .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.file .x{position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:1px solid #ecc3bd;background:#fff;color:var(--bad);font-size:12px;line-height:17px;padding:0;text-align:center}
+/* modal */
+.modal-bg{position:fixed;inset:0;background:rgba(15,25,35,.45);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow-y:auto}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:640px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
+.modal.wide{max-width:900px}
+.modal .mh{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.modal .mh b{font-size:16px}
+.modal .mh button{margin-left:auto}
+.modal .mb{padding:16px}
+.modal .mf{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d2733;color:#fff;padding:9px 16px;border-radius:8px;z-index:90;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.viewer{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:80;display:flex;flex-direction:column}
+.viewer .vt{color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center}
+.viewer .vt span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewer .vb{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;padding:10px}
+.viewer img{max-width:100%;max-height:100%}
+.viewer iframe{width:100%;height:100%;border:0;background:#fff}
+.items td input{padding:5px 7px}
+.sum-line{display:flex;justify-content:space-between;padding:4px 0}
+.sum-line.total{font-weight:700;font-size:17px;border-top:1px solid var(--line);margin-top:4px;padding-top:8px}
+
+/* ---------- receipt ---------- */
+#print{display:none}
+.rc-preview{background:#e9edf1;padding:14px;border-radius:8px;overflow-x:auto}
+.rc-page{background:#fff;width:190mm;margin:0 auto;padding:0;color:#000}
+.rc{border:1.5px solid #000;padding:5mm 7mm;font-family:"Songti SC","SimSun","Noto Serif SC","Times New Roman",serif;font-size:10.5pt;line-height:1.3;position:relative;min-height:112mm;display:flex;flex-direction:column;page-break-inside:avoid;break-inside:avoid}
+.rc .copy{position:absolute;top:4mm;right:6mm;font-size:9.5pt;border:1px solid #000;padding:0 2mm}
+.rc .ttl{text-align:center;font-size:15pt;font-weight:700;letter-spacing:6px;margin:0 0 1mm}
+.rc .ttl small{display:block;font-size:10pt;letter-spacing:1px;font-weight:400}
+.rc .meta{display:flex;justify-content:space-between;font-size:10pt;margin:1mm 0 2mm}
+.rc .no{color:#b00;font-weight:700}
+.rc p.l{margin:0 0 1.5mm}
+.rc .u{border-bottom:1px solid #000;padding:0 2mm;display:inline-block;min-width:30mm}
+.rc table{width:100%;border-collapse:collapse;font-size:10pt;margin:1mm 0 1.5mm}
+.rc th,.rc td{border:1px solid #000;padding:.8mm 2mm;color:#000;line-height:1.25}
+.rc th{font-size:10pt;font-weight:600;background:#f2f2f2}
+.rc td.num{text-align:right}
+.rc .words{margin:1mm 0 2mm}
+.rc .foot{margin-top:auto;padding-top:2mm;display:flex;gap:6mm;justify-content:space-between;align-items:flex-end;font-size:10.5pt}
+.rc .sig{min-width:60mm;text-align:center}
+.rc .sig .line{border-bottom:1px solid #000;height:11mm;display:flex;align-items:flex-end;justify-content:center}
+.rc .sig img{max-height:14mm;max-width:55mm}
+.rc .lr{font-size:9.5pt;line-height:1.35}
+.cut{height:7mm;display:flex;align-items:center;font-size:9pt;color:#555;gap:3mm}
+.cut::before,.cut::after{content:"";flex:1;border-top:1px dashed #777}
+.rc .stamp{position:absolute;right:14mm;bottom:21mm;border:2.5px solid #c00;color:#c00;font-weight:700;font-size:15pt;padding:1mm 4mm;transform:rotate(-12deg);opacity:.75;letter-spacing:2px}
+@media print{
+  @page{size:A4;margin:8mm 10mm}
+  body{background:#fff}
+  body > *:not(#print){display:none !important}
+  #print{display:block}
+  .rc-page{width:auto;page-break-after:always}
+  .rc-page:last-child{page-break-after:auto}
+  .rc th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="bar"><h1>🏠 收租管家</h1><span class="who" id="who"></span></div>
+  <nav class="tabs" id="tabs">
+    <a href="#home" data-v="home">概览</a>
+    <a href="#rent" data-v="rent">收租</a>
+    <a href="#bills" data-v="bills">水电费 / 账单</a>
+    <a href="#props" data-v="props">房产与租客</a>
+    <a href="#receipts" data-v="receipts">收据</a>
+    <a href="#report" data-v="report">报表</a>
+    <a href="#settings" data-v="settings">设置 / 备份</a>
+  </nav>
+</header>
+<main id="app"></main>
+<div id="print"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   收租管家 — 单页应用，数据保存在本浏览器（localStorage + IndexedDB）
+   ===================================================================== */
+const KEY = 'zuqi-data-v1';
+const BILL_TYPES = {
+  electric:{zh:'电费',es:'Electricidad',unit:'kWh',ic:'⚡'},
+  water:{zh:'水费',es:'Agua',unit:'m³',ic:'💧'},
+  gas:{zh:'燃气费',es:'Gas',unit:'m³',ic:'🔥'},
+  internet:{zh:'网费',es:'Internet',unit:'',ic:'🌐'},
+  community:{zh:'物业/社区费',es:'Comunidad',unit:'',ic:'🏢'},
+  ibi:{zh:'房产税 IBI',es:'IBI',unit:'',ic:'🏛️'},
+  basura:{zh:'垃圾费',es:'Basuras',unit:'',ic:'🗑️'},
+  insurance:{zh:'保险',es:'Seguro',unit:'',ic:'🛡️'},
+  repair:{zh:'维修',es:'Reparación',unit:'',ic:'🔧'},
+  other:{zh:'其他',es:'Otros',unit:'',ic:'📄'}
+};
+const METHODS = {cash:{zh:'现金',es:'Efectivo'},transfer:{zh:'银行转账',es:'Transferencia'},bizum:{zh:'Bizum',es:'Bizum'},card:{zh:'刷卡',es:'Tarjeta'},other:{zh:'其他',es:'Otro'}};
+const KINDS = {rent:{zh:'租金',es:'Alquiler'},deposit:{zh:'押金',es:'Fianza'},other:{zh:'其他收款',es:'Otro cobro'}};
+const PTYPES = {house:{zh:'住房',es:'Vivienda',ic:'🏠'},garage:{zh:'车库/车位',es:'Plaza de garaje',ic:'🚗'},shop:{zh:'商铺',es:'Local',ic:'🏪'},other:{zh:'其他',es:'Otro',ic:'📦'}};
+
+let D = load();
+function blank(){
+  return {properties:[],contracts:[],bills:[],payments:[],seq:{receipt:0},
+    settings:{name:'',idno:'',address:'',phone:'',email:'',iban:'',currency:'€',currencyWord:'欧元',
+      prefix:'R',lang:'zh-es',copies:2,signFile:null,stamp:true}};
+}
+function load(){
+  try{ const s=localStorage.getItem(KEY); if(s){ const d=JSON.parse(s); const b=blank(); d.settings=Object.assign(b.settings,d.settings||{}); return Object.assign(b,d);} }catch(e){}
+  return blank();
+}
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(D)); }catch(e){ alert('保存失败：'+e.message); } }
+
+/* ---------- IndexedDB for files ---------- */
+let _db;
+function idb(){
+  if(_db) return Promise.resolve(_db);
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('zuqi-files',1);
+    r.onupgradeneeded=()=>r.result.createObjectStore('files',{keyPath:'id'});
+    r.onsuccess=()=>{_db=r.result;res(_db)}; r.onerror=()=>rej(r.error);
+  });
+}
+function tx(mode,fn){ return idb().then(db=>new Promise((res,rej)=>{ const t=db.transaction('files',mode); const st=t.objectStore('files'); const out=fn(st); t.oncomplete=()=>res(out&&out.result!==undefined?out.result:out); t.onerror=()=>rej(t.error); })); }
+const putFile=f=>tx('readwrite',st=>st.put(f));
+const getFile=id=>tx('readonly',st=>st.get(id));
+const delFile=id=>tx('readwrite',st=>st.delete(id));
+const allFiles=()=>tx('readonly',st=>st.getAll());
+const clearFiles=()=>tx('readwrite',st=>st.clear());
+if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
+
+/* ---------- helpers ---------- */
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>{ const n=parseFloat(String(v==null?'':v).replace(',','.')); return isNaN(n)?0:n; };
+const r2=n=>Math.round(n*100)/100;
+const money=n=>{ const c=D.settings.currency||'€'; const s=Math.abs(n).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2}); return (n<0?'-':'')+s+' '+c; };
+const pad=n=>String(n).padStart(2,'0');
+const today=()=>{ const d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); };
+const thisMonth=()=>today().slice(0,7);
+const fmtDate=s=>s?s.split('-').reverse().join('/'):'';
+const fmtMonthZh=m=>m?(m.slice(0,4)+'年'+(+m.slice(5,7))+'月'):'';
+const MES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const fmtMonthEs=m=>m?(MES[+m.slice(5,7)-1]+' de '+m.slice(0,4)):'';
+const addMonth=(m,k)=>{ let y=+m.slice(0,4), mo=+m.slice(5,7)-1+k; y+=Math.floor(mo/12); mo=((mo%12)+12)%12; return y+'-'+pad(mo+1); };
+const monthEnd=m=>{ const d=new Date(+m.slice(0,4),+m.slice(5,7),0); return m+'-'+pad(d.getDate()); };
+const prop=id=>D.properties.find(p=>p.id===id);
+const contract=id=>D.contracts.find(c=>c.id===id);
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on'),2200); }
+function propLabel(p){ return p?(PTYPES[p.type]?.ic||'')+' '+p.name:'(已删除)'; }
+function contractActiveIn(c,m){ if(!c.start) return false; if(c.start.slice(0,7)>m) return false; if(c.end && c.end.slice(0,7)<m) return false; return !c.closed || (c.end && c.end.slice(0,7)>=m); }
+function activeContract(propId,date){ const m=(date||today()).slice(0,7); return D.contracts.find(c=>c.propertyId===propId && contractActiveIn(c,m)); }
+function rentPayment(cid,m){ return D.payments.find(p=>p.contractId===cid && p.kind==='rent' && p.period===m); }
+function dueDate(c,m){ const d=Math.min(c.payDay||1,+monthEnd(m).slice(8)); return m+'-'+pad(d); }
+function paymentStatus(p){ if(!p) return 'none'; const paid=num(p.amountPaid), tot=num(p.total); if(paid>=tot-0.004) return 'paid'; if(paid>0) return 'partial'; return 'none'; }
+
+/* overdue: every month since contract start up to now where payment due date passed and not fully paid */
+function overdueList(){
+  const out=[]; const t=today(); const cur=thisMonth();
+  D.contracts.forEach(c=>{
+    if(!c.start) return;
+    let m=c.start.slice(0,7); let guard=0;
+    while(m<=cur && guard++<240){
+      if(contractActiveIn(c,m)){
+        const p=rentPayment(c.id,m); const st=paymentStatus(p);
+        if(st!=='paid' && dueDate(c,m)<t){
+          const owed=p? r2(num(p.total)-num(p.amountPaid)) : num(c.rent);
+          out.push({c,m,p,owed,st});
+        }
+      }
+      m=addMonth(m,1);
+    }
+  });
+  return out;
+}
+
+/* ---------- money in words ---------- */
+function cnUpper(n){
+  const d='零壹贰叁肆伍陆柒捌玖', u=['','拾','佰','仟'], big=['','万','亿'];
+  const cents=Math.round(Math.abs(n)*100); let int=Math.floor(cents/100); const jiao=Math.floor(cents/10)%10, fen=cents%10;
+  let s='';
+  if(int===0) s='零';
+  else{
+    const groups=[]; while(int>0){groups.push(int%10000); int=Math.floor(int/10000);}
+    let res='', zeroPending=false;
+    for(let gi=groups.length-1;gi>=0;gi--){
+      const g=groups[gi];
+      if(g===0){ if(res) zeroPending=true; continue; }
+      if(res && (zeroPending || g<1000)) res+='零';
+      zeroPending=false;
+      let gs='', z=false;
+      for(let i=3;i>=0;i--){ const dg=Math.floor(g/Math.pow(10,i))%10;
+        if(dg===0){ if(gs) z=true; } else { if(z){gs+='零';z=false;} gs+=d[dg]+u[i]; } }
+      res+=gs+big[gi];
+    }
+    s=res;
+  }
+  const unit=D.settings.currencyWord||'元';
+  s+=unit;
+  if(!jiao && !fen) return s+'整';
+  if(jiao) s+=d[jiao]+'角'; else s+='零';
+  if(fen) s+=d[fen]+'分';
+  return s;
+}
+function esWords(n){
+  const U=['cero','uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve','diez','once','doce','trece','catorce','quince','dieciséis','diecisiete','dieciocho','diecinueve','veinte','veintiuno','veintidós','veintitrés','veinticuatro','veinticinco','veintiséis','veintisiete','veintiocho','veintinueve'];
+  const T=['','','','treinta','cuarenta','cincuenta','sesenta','setenta','ochenta','noventa'];
+  const C=['','ciento','doscientos','trescientos','cuatrocientos','quinientos','seiscientos','setecientos','ochocientos','novecientos'];
+  const lt100=x=>x<30?U[x]:T[Math.floor(x/10)]+(x%10?' y '+U[x%10]:'');
+  const lt1000=x=>{ if(x===100) return 'cien'; const c=Math.floor(x/100), r=x%100; return [c?C[c]:'', r?lt100(r):''].filter(Boolean).join(' '); };
+  const apoc=s=>s.replace(/veintiuno$/,'veintiún').replace(/uno$/,'un');
+  const int=x=>{
+    if(x===0) return 'cero';
+    const mi=Math.floor(x/1e6), th=Math.floor(x/1000)%1000, r=x%1000, parts=[];
+    if(mi) parts.push(mi===1?'un millón':apoc(lt1000(mi))+' millones');
+    if(th) parts.push(th===1?'mil':apoc(lt1000(th))+' mil');
+    if(r) parts.push(lt1000(r));
+    return parts.join(' ');
+  };
+  const cents=Math.round(Math.abs(n)*100), e=Math.floor(cents/100), c=cents%100;
+  let s=apoc(int(e))+(e===1?' euro':' euros');
+  if(c) s+=' con '+apoc(lt100(c))+(c===1?' céntimo':' céntimos');
+  return s.charAt(0).toUpperCase()+s.slice(1);
+}
+
+/* ---------- files UI ---------- */
+const urlCache={};
+async function fileUrl(id){ if(urlCache[id]) return urlCache[id]; const f=await getFile(id); if(!f) return null; urlCache[id]=URL.createObjectURL(f.blob); return urlCache[id]; }
+function readAsFiles(input){ return Array.from(input.files||[]); }
+async function storeUploads(fileList){
+  const ids=[];
+  for(const f of fileList){
+    let blob=f;
+    if(f.type.startsWith('image/') && f.size>900*1024) blob=await shrinkImage(f).catch(()=>f);
+    const id=uid(); await putFile({id,name:f.name,type:blob.type||f.type,size:blob.size,blob,added:today()}); ids.push(id);
+  }
+  return ids;
+}
+function shrinkImage(file){
+  return new Promise((res,rej)=>{
+    const img=new Image(); const u=URL.createObjectURL(file);
+    img.onload=()=>{ const max=2000; let w=img.width,h=img.height; const k=Math.min(1,max/Math.max(w,h)); w=Math.round(w*k); h=Math.round(h*k);
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; cv.getContext('2d').drawImage(img,0,0,w,h);
+      cv.toBlob(b=>{URL.revokeObjectURL(u); b?res(new File([b],file.name.replace(/\.\w+$/,'')+'.jpg',{type:'image/jpeg'})):rej()},'image/jpeg',0.85); };
+    img.onerror=rej; img.src=u;
+  });
+}
+async function renderFiles(el,ids,removable){
+  if(!el) return;
+  if(!ids||!ids.length){ el.innerHTML=removable?'':'<span class="muted small">无附件</span>'; return; }
+  const parts=[];
+  for(const id of ids){
+    const f=await getFile(id); if(!f) continue;
+    const isImg=(f.type||'').startsWith('image/');
+    const u=await fileUrl(id);
+    parts.push(`<div class="file" data-open="${id}">${isImg?`<img src="${u}" alt="">`:`<div class="ic">${(f.type||'').includes('pdf')?'📕':'📄'}</div>`}<div class="nm">${esc(f.name)}</div>${removable?`<button type="button" class="x" data-rm="${id}" title="移除">×</button>`:''}</div>`);
+  }
+  el.innerHTML=parts.join('');
+}
+async function openViewer(id){
+  const f=await getFile(id); if(!f) return; const u=await fileUrl(id);
+  const isImg=(f.type||'').startsWith('image/'), isPdf=(f.type||'').includes('pdf');
+  const v=document.createElement('div'); v.className='viewer';
+  v.innerHTML=`<div class="vt"><span>${esc(f.name)}</span><a class="btn sm" href="${u}" download="${esc(f.name)}">下载</a><button class="sm" data-close>关闭</button></div>
+  <div class="vb">${isImg?`<img src="${u}">`:isPdf?`<iframe src="${u}"></iframe>`:`<a class="btn pri" href="${u}" download="${esc(f.name)}">下载文件</a>`}</div>`;
+  v.addEventListener('click',e=>{ if(e.target.closest('[data-close]')||e.target===v||e.target.classList.contains('vb')) v.remove(); });
+  document.body.appendChild(v);
+}
+document.addEventListener('click',e=>{ const o=e.target.closest('[data-open]'); if(o && !e.target.closest('[data-rm]')) openViewer(o.dataset.open); });
+
+/* ---------- modal ---------- */
+function modal({title,body,wide,buttons,onMount}){
+  const bg=document.createElement('div'); bg.className='modal-bg';
+  bg.innerHTML=`<div class="modal${wide?' wide':''}"><div class="mh"><b>${title}</b><button class="sm" data-x>✕</button></div><form class="mb" novalidate>${body}</form><div class="mf"></div></div>`;
+  const close=()=>bg.remove();
+  const mf=bg.querySelector('.mf');
+  (buttons||[{t:'关闭'}]).forEach(b=>{ const btn=document.createElement('button'); btn.type='button'; btn.textContent=b.t; if(b.cls) btn.className=b.cls;
+    btn.onclick=async()=>{ if(b.fn){ const r=await b.fn(bg.querySelector('form'),close); if(r===false) return; } close(); }; mf.appendChild(btn); });
+  bg.querySelector('[data-x]').onclick=close;
+  bg.addEventListener('mousedown',e=>{ if(e.target===bg) bg._down=true; });
+  bg.addEventListener('click',e=>{ if(e.target===bg && bg._down) close(); bg._down=false; });
+  bg.querySelector('form').addEventListener('submit',e=>e.preventDefault());
+  document.body.appendChild(bg);
+  if(onMount) onMount(bg.querySelector('form'),close);
+  const first=bg.querySelector('input:not([type=checkbox]):not([type=file]),select,textarea'); if(first) setTimeout(()=>first.focus(),30);
+  return {el:bg,close};
+}
+const fv=(form,name)=>{ const el=form.elements[name]; if(!el) return ''; if(el.type==='checkbox') return el.checked; return el.value.trim(); };
+const opt=(obj,sel,lang='zh')=>Object.entries(obj).map(([k,v])=>`<option value="${k}"${k===sel?' selected':''}>${esc(v[lang]||v)}</option>`).join('');
+const propOptions=(sel,filter)=>D.properties.filter(filter||(()=>true)).map(p=>`<option value="${p.id}"${p.id===sel?' selected':''}>${esc(propLabel(p))}</option>`).join('');
+
+/* attachment field inside forms */
+function attachField(name,ids){ return `<label class="f">附件（照片 / PDF，可多选；手机可直接拍照）<input type="file" name="${name}" multiple accept="image/*,application/pdf"></label><div class="files" data-files="${name}"></div><input type="hidden" name="${name}_keep" value="${esc((ids||[]).join(','))}">`; }
+function mountAttach(form,name){
+  const box=form.querySelector(`[data-files="${name}"]`), keep=form.elements[name+'_keep'];
+  const draw=()=>renderFiles(box,keep.value?keep.value.split(','):[],true);
+  box.addEventListener('click',e=>{ const rm=e.target.closest('[data-rm]'); if(rm){ e.stopPropagation(); keep.value=keep.value.split(',').filter(x=>x&&x!==rm.dataset.rm).join(','); form._removed=(form._removed||[]).concat(rm.dataset.rm); draw(); } });
+  draw();
+}
+async function collectAttach(form,name){
+  const kept=fv(form,name+'_keep')?fv(form,name+'_keep').split(','):[];
+  const added=await storeUploads(readAsFiles(form.elements[name]));
+  for(const id of (form._removed||[])) await delFile(id).catch(()=>{});
+  return kept.concat(added);
+}
+
+/* =====================================================================
+   VIEWS
+   ===================================================================== */
+const views={};
+let state={rentMonth:thisMonth(),billFilter:{prop:'',type:'',year:''},reportYear:String(new Date().getFullYear())};
+function route(){
+  const v=(location.hash||'#home').slice(1); const fn=views[v]||views.home;
+  document.querySelectorAll('#tabs a').forEach(a=>a.classList.toggle('on',a.dataset.v===(views[v]?v:'home')));
+  $('#who').textContent=D.settings.name?('房东：'+D.settings.name):'';
+  document.querySelectorAll('.modal-bg,.viewer').forEach(x=>x.remove());
+  $('#app').innerHTML=''; fn($('#app')); window.scrollTo(0,0);
+}
+window.addEventListener('hashchange',route);
+function rerender(){ const y=window.scrollY; const v=(location.hash||'#home').slice(1); (views[v]||views.home)($('#app')); window.scrollTo(0,y); }
+
+/* ---------------- HOME ---------------- */
+views.home=function(el){
+  const m=thisMonth();
+  const act=D.contracts.filter(c=>contractActiveIn(c,m));
+  const expected=act.reduce((s,c)=>s+num(c.rent),0);
+  const received=D.payments.filter(p=>p.paidDate&&p.paidDate.slice(0,7)===m).reduce((s,p)=>s+num(p.amountPaid),0);
+  const od=overdueList(); const odSum=od.reduce((s,o)=>s+o.owed,0);
+  const pendingBills=D.bills.filter(b=>b.chargeTenant && !b.paymentId);
+  const pbSum=pendingBills.reduce((s,b)=>s+num(b.tenantAmount),0);
+  const soon=D.contracts.filter(c=>c.end && !c.closed && c.end>=today() && c.end<=addDays(today(),60));
+  const noSetup=!D.properties.length;
+  el.innerHTML=`
+  ${noSetup?`<div class="card" style="border-color:#9cc3df;background:#f2f8fc"><h3>👋 欢迎使用收租管家</h3>
+    <p class="small">第 1 步：在 <b>设置</b> 填写房东姓名、证件号（收据上会显示）。<br>第 2 步：在 <b>房产与租客</b> 添加你的房子和车库，并为每个添加租客合同（租金、每月交租日）。<br>第 3 步：每月在 <b>收租</b> 页点 “收租” 记账，自动生成收据可打印。<br>水电费单据在 <b>水电费 / 账单</b> 页上传（可拍照），可选择转给租客、合并进下一张收据。</p>
+    <div class="row"><a class="btn" href="#settings">去设置</a><a class="btn pri" href="#props">添加房产</a></div></div>`:''}
+  <div class="stats">
+    <div class="stat"><div class="k">${fmtMonthZh(m)} 应收租金</div><div class="v">${money(expected)}</div></div>
+    <div class="stat ok"><div class="k">本月已收款</div><div class="v">${money(received)}</div></div>
+    <div class="stat ${od.length?'bad':''}"><div class="k">逾期未收（${od.length} 笔）</div><div class="v">${money(odSum)}</div></div>
+    <div class="stat ${pendingBills.length?'warn':''}"><div class="k">待向租客收的账单（${pendingBills.length}）</div><div class="v">${money(pbSum)}</div></div>
+  </div>
+  <div class="card"><div class="row between"><h3>本月收租情况</h3><a class="btn sm" href="#rent">去收租 →</a></div>
+    ${act.length?`<div class="tbl-wrap"><table><tr><th>房产</th><th>租客</th><th>交租日</th><th class="num">租金</th><th>状态</th></tr>
+    ${act.map(c=>{ const p=rentPayment(c.id,m); const st=paymentStatus(p); const due=dueDate(c,m);
+      return `<tr><td>${esc(propLabel(prop(c.propertyId)))}</td><td>${esc(c.tenant)}</td><td>${fmtDate(due)}</td><td class="num">${money(num(c.rent))}</td><td>${statusTag(st,due)}</td></tr>`; }).join('')}</table></div>`
+    :'<div class="empty">本月没有生效中的租约</div>'}
+  </div>
+  ${od.length?`<div class="card"><h3>⚠️ 逾期未收</h3><div class="tbl-wrap"><table><tr><th>月份</th><th>房产</th><th>租客</th><th class="num">欠款</th><th></th></tr>
+    ${od.map(o=>`<tr><td>${fmtMonthZh(o.m)}</td><td>${esc(propLabel(prop(o.c.propertyId)))}</td><td>${esc(o.c.tenant)}</td><td class="num">${money(o.owed)}</td><td class="right"><button class="sm pri" data-collect="${o.c.id}|${o.m}">收租</button></td></tr>`).join('')}</table></div></div>`:''}
+  ${soon.length?`<div class="card"><h3>📅 60 天内到期的合同</h3>${soon.map(c=>`<div class="sum-line"><span>${esc(propLabel(prop(c.propertyId)))} · ${esc(c.tenant)}</span><b>${fmtDate(c.end)}</b></div>`).join('')}</div>`:''}
+  ${pendingBills.length?`<div class="card"><div class="row between"><h3>待向租客收取的费用</h3><a class="btn sm" href="#bills">查看账单 →</a></div>
+    ${pendingBills.map(b=>`<div class="sum-line"><span>${BILL_TYPES[b.type]?.ic||''} ${esc(BILL_TYPES[b.type]?.zh||b.type)} · ${esc(propLabel(prop(b.propertyId)))} <span class="muted small">${rangeTxt(b)}</span></span><b>${money(num(b.tenantAmount))}</b></div>`).join('')}
+    <p class="muted small">下次在 “收租” 时可以勾选这些费用，一起写进收据。</p></div>`:''}
+  `;
+  el.querySelectorAll('[data-collect]').forEach(b=>b.onclick=()=>{ const [cid,mm]=b.dataset.collect.split('|'); collectRent(cid,mm); });
+};
+function rangeTxt(b){ return [fmtDate(b.from),fmtDate(b.to)].filter(Boolean).join('–'); }
+function addDays(s,n){ const d=new Date(s+'T12:00:00'); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+function statusTag(st,due){ if(st==='paid') return '<span class="tag ok">已收</span>'; if(st==='partial') return '<span class="tag warn">部分收</span>'; if(due && due<today()) return '<span class="tag bad">逾期</span>'; return '<span class="tag">未收</span>'; }
+
+/* ---------------- RENT ---------------- */
+views.rent=function(el){
+  const m=state.rentMonth;
+  const act=D.contracts.filter(c=>contractActiveIn(c,m));
+  const others=D.payments.filter(p=>p.kind!=='rent' && (p.paidDate||'').slice(0,7)===m);
+  el.innerHTML=`
+  <div class="row between" style="margin-bottom:12px"><h2 style="margin:0">收租 · ${fmtMonthZh(m)}</h2>
+    <div class="row"><button class="sm" id="pm">◀ 上月</button><input type="month" id="mm" value="${m}" style="width:auto"><button class="sm" id="nm">下月 ▶</button></div></div>
+  <div class="card">
+    ${act.length?`<div class="tbl-wrap"><table><tr><th>房产</th><th>租客</th><th>交租日</th><th class="num">应收</th><th class="num">已收</th><th>状态</th><th></th></tr>
+    ${act.map(c=>{ const p=rentPayment(c.id,m); const st=paymentStatus(p); const due=dueDate(c,m);
+      return `<tr><td>${esc(propLabel(prop(c.propertyId)))}</td><td>${esc(c.tenant)}</td><td>${fmtDate(due)}</td>
+      <td class="num">${money(p?num(p.total):num(c.rent))}</td><td class="num">${p?money(num(p.amountPaid)):'—'}</td><td>${statusTag(st,due)}</td>
+      <td class="right">${p?`<button class="sm" data-edit="${p.id}">修改</button> <button class="sm pri" data-rc="${p.id}">🧾 收据</button>`:`<button class="sm pri" data-collect="${c.id}">收租</button>`}</td></tr>`; }).join('')}</table></div>`
+    :'<div class="empty">这个月没有生效中的租约。<br><a href="#props">去添加房产和租客 →</a></div>'}
+  </div>
+  <div class="card"><div class="row between"><h3>其他收款（押金等）</h3><button class="sm" id="other">＋ 其他收款</button></div>
+    ${others.length?others.map(p=>`<div class="sum-line"><span>${esc(KINDS[p.kind].zh)} · ${esc(p.tenant)} · ${fmtDate(p.paidDate)}</span><span>${money(num(p.amountPaid))} <button class="sm" data-edit="${p.id}">修改</button> <button class="sm pri" data-rc="${p.id}">🧾</button></span></div>`).join(''):'<p class="muted small">本月无</p>'}
+  </div>`;
+  const go=mm=>{ state.rentMonth=mm; rerender(); };
+  $('#pm').onclick=()=>go(addMonth(m,-1)); $('#nm').onclick=()=>go(addMonth(m,1));
+  $('#mm').onchange=e=>e.target.value&&go(e.target.value);
+  el.querySelectorAll('[data-collect]').forEach(b=>b.onclick=()=>collectRent(b.dataset.collect,m));
+  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>paymentForm(D.payments.find(p=>p.id===b.dataset.edit)));
+  el.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>showReceipt(b.dataset.rc));
+  $('#other').onclick=()=>{ if(!D.contracts.length) return alert('请先添加租客合同'); paymentForm(null,{kind:'deposit'}); };
+};
+function collectRent(cid,m){
+  const c=contract(cid); if(!c) return;
+  const existing=rentPayment(cid,m); if(existing) return paymentForm(existing);
+  paymentForm(null,{kind:'rent',contractId:cid,period:m});
+}
+
+/* payment form: create or edit */
+function paymentForm(p,preset){
+  const isNew=!p;
+  preset=preset||{};
+  const kind=p?p.kind:(preset.kind||'rent');
+  const cid=p?p.contractId:(preset.contractId||(D.contracts.find(c=>contractActiveIn(c,thisMonth()))||D.contracts[0]||{}).id);
+  const c=contract(cid);
+  let items=p?JSON.parse(JSON.stringify(p.items)):[];
+  if(isNew){
+    if(kind==='rent' && c) items.push({desc:'租金 '+fmtMonthZh(preset.period), descEs:'Renta '+fmtMonthEs(preset.period), amount:num(c.rent)});
+    if(kind==='deposit' && c) items.push({desc:'押金', descEs:'Fianza', amount:num(c.deposit)});
+  }
+  const billIdsLinked=p?D.bills.filter(b=>b.paymentId===p.id).map(b=>b.id):[];
+  const pendingBills=()=>{ const ccid=formRef&&fv(formRef,'contractId')||cid; const cc=contract(ccid); if(!cc) return [];
+    return D.bills.filter(b=>b.chargeTenant && b.propertyId===cc.propertyId && (!b.paymentId || (p && b.paymentId===p.id))); };
+  let formRef=null;
+  const body=`
+    <div class="grid2">
+      <label class="f">类型<select name="kind">${opt(KINDS,kind)}</select></label>
+      <label class="f">租客合同<select name="contractId">${D.contracts.map(x=>`<option value="${x.id}"${x.id===cid?' selected':''}>${esc(x.tenant)} — ${esc(propLabel(prop(x.propertyId)))}${x.closed?'（已结束）':''}</option>`).join('')}</select></label>
+      <label class="f" data-per>所属月份<input type="month" name="period" value="${esc(p?p.period:(preset.period||thisMonth()))}"></label>
+      <label class="f">收款日期<input type="date" name="paidDate" value="${esc(p?p.paidDate:today())}"></label>
+      <label class="f">付款方式<select name="method">${opt(METHODS,p?p.method:(c&&c.method)||'transfer')}</select></label>
+      <label class="f">收据编号<input name="receiptNo" value="${esc(p?p.receiptNo:nextReceiptNo(true))}"></label>
+    </div>
+    <h3 style="margin-top:6px">收款明细</h3>
+    <div class="tbl-wrap"><table class="items"><tr><th>项目（中文）</th><th>项目（西语，可空）</th><th class="num" style="width:110px">金额</th><th></th></tr><tbody id="itb"></tbody></table></div>
+    <button type="button" class="sm" id="addit" style="margin-top:6px">＋ 添加一项</button>
+    <div id="pb" style="margin-top:12px"></div>
+    <div style="margin-top:12px">
+      <div class="sum-line total"><span>合计应收</span><span id="tot">0</span></div>
+      <label class="f" style="margin-top:8px">实收金额（部分付款时修改）<input name="amountPaid" inputmode="decimal" value="${p?num(p.amountPaid):''}" placeholder="默认 = 合计"></label>
+      <label class="f">备注（会印在收据上）<input name="note" value="${esc(p?p.note:'')}"></label>
+    </div>`;
+  const md=modal({title:isNew?'记一笔收款':'修改收款',wide:true,body,
+    buttons:[
+      ...(isNew?[]:[{t:'删除',cls:'danger',fn:()=>{ if(!confirm('确定删除这笔收款和收据？')) return false; D.bills.forEach(b=>{ if(b.paymentId===p.id) b.paymentId=null; }); D.payments=D.payments.filter(x=>x!==p); save(); rerender(); toast('已删除'); }}]),
+      {t:'取消'},
+      {t:'保存',cls:'',fn:f=>savePay(f,false)},
+      {t:'保存并打印收据',cls:'pri',fn:f=>savePay(f,true)}
+    ],
+    onMount(form){
+      formRef=form;
+      const itb=form.querySelector('#itb');
+      const drawItems=()=>{ itb.innerHTML=items.map((it,i)=>`<tr data-i="${i}"><td><input data-k="desc" value="${esc(it.desc)}"${it.billId?' readonly':''}></td><td><input data-k="descEs" value="${esc(it.descEs||'')}"${it.billId?' readonly':''}></td><td><input data-k="amount" inputmode="decimal" style="text-align:right" value="${it.amount}"></td><td><button type="button" class="sm danger" data-del="${i}">✕</button></td></tr>`).join(''); calc(); };
+      const calc=()=>{ form.querySelector('#tot').textContent=money(items.reduce((s,it)=>s+num(it.amount),0)); };
+      itb.addEventListener('input',e=>{ const tr=e.target.closest('tr'); if(!tr) return; items[+tr.dataset.i][e.target.dataset.k]=e.target.value; calc(); });
+      itb.addEventListener('click',e=>{ const d=e.target.closest('[data-del]'); if(!d) return; const it=items[+d.dataset.del]; items.splice(+d.dataset.del,1); drawItems(); drawBills(); });
+      form.querySelector('#addit').onclick=()=>{ items.push({desc:'',descEs:'',amount:''}); drawItems(); itb.lastElementChild.querySelector('input').focus(); };
+      const drawBills=()=>{
+        const pb=pendingBills(); const box=form.querySelector('#pb');
+        if(!pb.length){ box.innerHTML=''; return; }
+        box.innerHTML=`<div class="card" style="background:#fffaf0;border-color:#f0d9a8;margin:0"><b class="small">该房产有待向租客收取的费用，勾选即加入本收据：</b>
+          ${pb.map(b=>{ const on=items.some(it=>it.billId===b.id); const t=BILL_TYPES[b.type]||BILL_TYPES.other;
+            return `<label class="chk" style="margin:6px 0 0"><input type="checkbox" data-bill="${b.id}"${on?' checked':''}> ${t.ic} ${esc(t.zh)} ${rangeTxt(b)} ${b.usage?'（'+esc(b.usage)+' '+t.unit+'）':''} — <b>${money(num(b.tenantAmount))}</b></label>`; }).join('')}</div>`;
+        box.querySelectorAll('[data-bill]').forEach(cb=>cb.onchange=()=>{
+          const b=D.bills.find(x=>x.id===cb.dataset.bill);
+          if(cb.checked) items.push(billItem(b)); else items=items.filter(it=>it.billId!==b.id);
+          drawItems();
+        });
+      };
+      const syncKind=()=>{ form.querySelector('[data-per]').style.display=fv(form,'kind')==='rent'?'':'none'; };
+      form.elements.kind.onchange=syncKind;
+      form.elements.contractId.onchange=()=>{ items=items.filter(it=>!it.billId); drawItems(); drawBills(); };
+      form.elements.period.onchange=()=>{ const per=fv(form,'period'); items.forEach(it=>{ if(/^租金 /.test(it.desc)){ it.desc='租金 '+fmtMonthZh(per); it.descEs='Renta '+fmtMonthEs(per);} }); drawItems(); };
+      syncKind(); drawItems(); drawBills();
+    }});
+  function savePay(f,print){
+    const kindV=fv(f,'kind'), cidV=fv(f,'contractId'), per=fv(f,'period');
+    const cc=contract(cidV); if(!cc){ alert('请选择租客合同'); return false; }
+    const clean=items.filter(it=>String(it.desc).trim()||num(it.amount)).map(it=>({...it,amount:r2(num(it.amount))}));
+    if(!clean.length){ alert('请至少填写一项金额'); return false; }
+    if(kindV==='rent'){ const dup=D.payments.find(x=>x.kind==='rent'&&x.contractId===cidV&&x.period===per&&x!==p); if(dup){ alert('这个月份已经有一笔租金记录了，请直接修改那一笔。'); return false; } }
+    const total=r2(clean.reduce((s,it)=>s+it.amount,0));
+    const rno=fv(f,'receiptNo')||nextReceiptNo();
+    if(D.payments.some(x=>x!==p && x.receiptNo===rno)){ alert('收据编号 '+rno+' 已存在'); return false; }
+    const rec=p||{id:uid(),created:today()};
+    Object.assign(rec,{kind:kindV,contractId:cidV,propertyId:cc.propertyId,tenant:cc.tenant,period:kindV==='rent'?per:'',paidDate:fv(f,'paidDate')||today(),method:fv(f,'method'),
+      items:clean,total,amountPaid:fv(f,'amountPaid')===''?total:r2(num(fv(f,'amountPaid'))),note:fv(f,'note'),receiptNo:rno});
+    if(isNew){ D.payments.push(rec); bumpReceiptNo(rno); }
+    D.bills.forEach(b=>{ if(b.paymentId===rec.id) b.paymentId=null; });
+    clean.forEach(it=>{ if(it.billId){ const b=D.bills.find(x=>x.id===it.billId); if(b) b.paymentId=rec.id; } });
+    save(); rerender(); toast('已保存');
+    if(print) setTimeout(()=>showReceipt(rec.id),50);
+  }
+}
+function billItem(b){ const t=BILL_TYPES[b.type]||BILL_TYPES.other; const per=b.from||b.to?' '+rangeTxt(b):''; const use=b.usage?` (${b.usage} ${t.unit})`:'';
+  return {desc:t.zh+per+use, descEs:t.es+per+use, amount:num(b.tenantAmount), billId:b.id}; }
+function nextReceiptNo(peek){ const y=new Date().getFullYear(); const n=(D.seq.receipt||0)+1; return (D.settings.prefix||'')+y+'-'+String(n).padStart(4,'0'); }
+function bumpReceiptNo(rno){ const m=String(rno).match(/(\d+)$/); const n=m?+m[1]:0; D.seq.receipt=Math.max(D.seq.receipt||0,n); }
+
+/* ---------------- BILLS ---------------- */
+views.bills=function(el){
+  const F=state.billFilter;
+  let list=D.bills.slice().sort((a,b)=>(b.date||b.to||'').localeCompare(a.date||a.to||''));
+  if(F.prop) list=list.filter(b=>b.propertyId===F.prop);
+  if(F.type) list=list.filter(b=>b.type===F.type);
+  if(F.year) list=list.filter(b=>(b.date||b.to||'').startsWith(F.year));
+  const years=[...new Set(D.bills.map(b=>(b.date||b.to||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const sum=list.reduce((s,b)=>s+num(b.amount),0);
+  el.innerHTML=`
+  <div class="row between" style="margin-bottom:12px"><h2 style="margin:0">水电费 / 账单记录</h2><button class="pri" id="add">＋ 上传账单</button></div>
+  <div class="card row">
+    <select id="fp" style="width:auto"><option value="">全部房产</option>${propOptions(F.prop)}</select>
+    <select id="ft" style="width:auto"><option value="">全部类型</option>${opt(BILL_TYPES,F.type)}</select>
+    <select id="fy" style="width:auto"><option value="">全部年份</option>${years.map(y=>`<option${y===F.year?' selected':''}>${y}</option>`).join('')}</select>
+    <span class="grow"></span><span class="muted small">${list.length} 条 · 合计 <b>${money(sum)}</b></span>
+  </div>
+  ${list.length?list.map(b=>{ const t=BILL_TYPES[b.type]||BILL_TYPES.other;
+    const st=b.chargeTenant?(b.paymentId?'<span class="tag ok">已向租客收取</span>':'<span class="tag warn">待向租客收取</span>'):(b.payer==='tenant'?'<span class="tag">租客自付</span>':'<span class="tag pri">房东承担</span>');
+    return `<div class="card"><div class="row between"><div><b>${t.ic} ${esc(t.zh)}</b> · ${esc(propLabel(prop(b.propertyId)))} ${st}
+      <div class="muted small">${b.from||b.to?'周期 '+rangeTxt(b)+' · ':''}${b.date?'账单日 '+fmtDate(b.date):''}${b.prev||b.curr?` · 读数 ${esc(b.prev)} → ${esc(b.curr)}`:''}${b.usage?` · 用量 ${esc(b.usage)} ${t.unit}`:''}${b.supplier?' · '+esc(b.supplier):''}</div>
+      ${b.note?`<div class="small">${esc(b.note)}</div>`:''}</div>
+      <div class="right"><div style="font-size:18px;font-weight:700">${money(num(b.amount))}</div>${b.chargeTenant&&num(b.tenantAmount)!==num(b.amount)?`<div class="small muted">租客承担 ${money(num(b.tenantAmount))}</div>`:''}
+      <button class="sm" data-edit="${b.id}" style="margin-top:4px">编辑</button></div></div>
+      <div class="files" data-bf="${b.id}"></div></div>`; }).join('')
+  :`<div class="card empty">还没有账单记录。点击 “上传账单” 拍照或选择文件，记录水费、电费、燃气、网费等。</div>`}`;
+  const set=(k,v)=>{ F[k]=v; rerender(); };
+  $('#fp').onchange=e=>set('prop',e.target.value); $('#ft').onchange=e=>set('type',e.target.value); $('#fy').onchange=e=>set('year',e.target.value);
+  $('#add').onclick=()=>{ if(!D.properties.length) return alert('请先在 “房产与租客” 添加房产'); billForm(null); };
+  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>billForm(D.bills.find(x=>x.id===b.dataset.edit)));
+  list.forEach(b=>renderFiles(el.querySelector(`[data-bf="${b.id}"]`),b.files,false).then(()=>{ const box=el.querySelector(`[data-bf="${b.id}"]`); if(box&&(!b.files||!b.files.length)) box.remove(); }));
+};
+function billForm(b){
+  const isNew=!b;
+  const last=pid=>D.bills.filter(x=>x.propertyId===pid&&x.type===(b?b.type:'electric')).sort((a,c)=>(c.to||'').localeCompare(a.to||''))[0];
+  const body=`
+    <div class="grid2">
+      <label class="f">房产<select name="propertyId">${propOptions(b?b.propertyId:state.billFilter.prop||'')}</select></label>
+      <label class="f">类型<select name="type">${opt(BILL_TYPES,b?b.type:'electric')}</select></label>
+      <label class="f">周期开始<input type="date" name="from" value="${esc(b?b.from:'')}"></label>
+      <label class="f">周期结束<input type="date" name="to" value="${esc(b?b.to:'')}"></label>
+      <label class="f">上次读数<input name="prev" inputmode="decimal" value="${esc(b?b.prev:'')}"></label>
+      <label class="f">本次读数<input name="curr" inputmode="decimal" value="${esc(b?b.curr:'')}"></label>
+      <label class="f">用量 <span data-unit></span><input name="usage" inputmode="decimal" value="${esc(b?b.usage:'')}" placeholder="自动 = 本次 − 上次"></label>
+      <label class="f">账单金额 *<input name="amount" inputmode="decimal" value="${b?num(b.amount):''}"></label>
+      <label class="f">账单日期 / 扣款日<input type="date" name="date" value="${esc(b?b.date:today())}"></label>
+      <label class="f">供应商<input name="supplier" value="${esc(b?b.supplier:'')}" placeholder="如 Iberdrola、Canal…"></label>
+      <label class="f">谁付给供应商<select name="payer"><option value="landlord"${b&&b.payer==='tenant'?'':' selected'}>房东（我）付的</option><option value="tenant"${b&&b.payer==='tenant'?' selected':''}>租客直接付的（仅记录）</option></select></label>
+    </div>
+    <div data-ch>
+      <label class="chk"><input type="checkbox" name="chargeTenant"${b&&b.chargeTenant?' checked':''}> 这笔费用要向租客收取（可合并进收租收据）</label>
+      <label class="f" data-ta>向租客收取的金额<input name="tenantAmount" inputmode="decimal" value="${b&&b.chargeTenant?num(b.tenantAmount):''}" placeholder="默认 = 账单金额"></label>
+    </div>
+    <label class="f">备注<input name="note" value="${esc(b?b.note:'')}"></label>
+    ${attachField('files',b?b.files:[])}
+    ${b&&b.paymentId?'<p class="small muted">此账单已写入收据 '+esc((D.payments.find(p=>p.id===b.paymentId)||{}).receiptNo||'')+'。</p>':''}`;
+  modal({title:isNew?'上传账单':'编辑账单',body,buttons:[
+    ...(isNew?[]:[{t:'删除',cls:'danger',fn:async()=>{ if(!confirm('确定删除这条账单记录和附件？')) return false;
+      if(b.paymentId){ const p=D.payments.find(x=>x.id===b.paymentId); if(p){ p.items=p.items.filter(it=>it.billId!==b.id); p.total=r2(p.items.reduce((s,it)=>s+num(it.amount),0)); } }
+      for(const id of b.files||[]) await delFile(id).catch(()=>{}); D.bills=D.bills.filter(x=>x!==b); save(); rerender(); toast('已删除'); }}]),
+    {t:'取消'},
+    {t:'保存',cls:'pri',fn:async f=>{
+      if(fv(f,'amount')===''){ alert('请填写账单金额'); return false; }
+      const rec=b||{id:uid()};
+      const usage=fv(f,'usage')||(fv(f,'prev')!==''&&fv(f,'curr')!==''?String(r2(num(fv(f,'curr'))-num(fv(f,'prev')))):'');
+      const charge=fv(f,'payer')==='landlord' && fv(f,'chargeTenant');
+      Object.assign(rec,{propertyId:fv(f,'propertyId'),type:fv(f,'type'),from:fv(f,'from'),to:fv(f,'to'),prev:fv(f,'prev'),curr:fv(f,'curr'),usage,
+        amount:r2(num(fv(f,'amount'))),date:fv(f,'date'),supplier:fv(f,'supplier'),payer:fv(f,'payer'),chargeTenant:charge,
+        tenantAmount:charge?(fv(f,'tenantAmount')===''?r2(num(fv(f,'amount'))):r2(num(fv(f,'tenantAmount')))):0,note:fv(f,'note')});
+      rec.files=await collectAttach(f,'files');
+      if(!charge && rec.paymentId){ /* keep link, receipt already issued */ }
+      if(isNew) D.bills.push(rec);
+      /* sync amount into an already-issued receipt item */
+      if(rec.paymentId){ const p=D.payments.find(x=>x.id===rec.paymentId); const it=p&&p.items.find(i=>i.billId===rec.id); if(it){ Object.assign(it,billItem(rec)); p.total=r2(p.items.reduce((s,i)=>s+num(i.amount),0)); } }
+      save(); rerender(); toast('账单已保存');
+    }}],
+    onMount(f){
+      mountAttach(f,'files');
+      const sync=()=>{ f.querySelector('[data-unit]').textContent=BILL_TYPES[fv(f,'type')]?.unit?'（'+BILL_TYPES[fv(f,'type')].unit+'）':'';
+        f.querySelector('[data-ch]').style.display=fv(f,'payer')==='landlord'?'':'none';
+        f.querySelector('[data-ta]').style.display=fv(f,'chargeTenant')?'':'none'; };
+      const prefill=()=>{ if(!isNew) return; const l=D.bills.filter(x=>x.propertyId===fv(f,'propertyId')&&x.type===fv(f,'type')).sort((a,c)=>(c.to||c.date||'').localeCompare(a.to||a.date||''))[0];
+        if(l){ if(l.curr!==''&&l.curr!=null) f.elements.prev.value=l.curr; if(l.to) f.elements.from.value=addDays(l.to,1); f.elements.supplier.value=l.supplier||''; f.elements.chargeTenant.checked=!!l.chargeTenant; f.elements.payer.value=l.payer||'landlord'; }
+        else { f.elements.prev.value=''; } sync(); };
+      ['type','payer','chargeTenant'].forEach(n=>f.elements[n].addEventListener('change',sync));
+      ['type','propertyId'].forEach(n=>f.elements[n].addEventListener('change',prefill));
+      const autoUse=()=>{ if(fv(f,'prev')!==''&&fv(f,'curr')!=='') f.elements.usage.placeholder='= '+r2(num(fv(f,'curr'))-num(fv(f,'prev'))); };
+      f.elements.prev.addEventListener('input',autoUse); f.elements.curr.addEventListener('input',autoUse);
+      prefill(); sync(); autoUse();
+    }});
+}
+
+/* ---------------- PROPERTIES & CONTRACTS ---------------- */
+views.props=function(el){
+  el.innerHTML=`<div class="row between" style="margin-bottom:12px"><h2 style="margin:0">房产与租客</h2><button class="pri" id="addp">＋ 添加房产</button></div>
+  ${D.properties.length?D.properties.map(p=>{ const cs=D.contracts.filter(c=>c.propertyId===p.id).sort((a,b)=>(b.start||'').localeCompare(a.start||'')); const cur=activeContract(p.id);
+    return `<div class="card prop ${p.type}"><div class="row between"><div><b style="font-size:16px">${esc(propLabel(p))}</b> <span class="tag">${esc(PTYPES[p.type]?.zh||'')}</span> ${cur?'<span class="tag ok">出租中</span>':'<span class="tag warn">空置</span>'}
+      <div class="muted small">${esc(p.address||'')}${p.ref?' · 编号/Ref: '+esc(p.ref):''}</div></div>
+      <div class="row"><button class="sm" data-ep="${p.id}">编辑房产</button><button class="sm pri" data-ac="${p.id}">＋ 新租客/合同</button></div></div>
+      ${cs.length?`<div class="tbl-wrap" style="margin-top:8px"><table><tr><th>租客</th><th>合同期</th><th class="num">月租</th><th class="num">押金</th><th>交租日</th><th></th></tr>
+      ${cs.map(c=>`<tr><td><b>${esc(c.tenant)}</b>${c.idno?'<div class="small muted">'+esc(c.idno)+'</div>':''}${c.phone?'<div class="small muted">📞 '+esc(c.phone)+'</div>':''}</td>
+      <td>${fmtDate(c.start)} – ${c.end?fmtDate(c.end):'不定期'} ${c.closed?'<span class="tag">已结束</span>':contractActiveIn(c,thisMonth())?'<span class="tag ok">生效</span>':''}</td>
+      <td class="num">${money(num(c.rent))}</td><td class="num">${c.deposit?money(num(c.deposit)):'—'}</td><td>每月 ${c.payDay||1} 号</td>
+      <td class="right"><button class="sm" data-ec="${c.id}">编辑</button> <button class="sm" data-hist="${c.id}">账目</button></td></tr>`).join('')}</table></div>`
+      :'<p class="muted small" style="margin:8px 0 0">还没有租客合同</p>'}
+      <div class="files" data-pf="${p.id}"></div></div>`; }).join('')
+  :'<div class="card empty">还没有房产。点 “添加房产” 添加你出租的房子和车库。</div>'}`;
+  $('#addp').onclick=()=>propForm(null);
+  el.querySelectorAll('[data-ep]').forEach(b=>b.onclick=()=>propForm(prop(b.dataset.ep)));
+  el.querySelectorAll('[data-ac]').forEach(b=>b.onclick=()=>contractForm(null,b.dataset.ac));
+  el.querySelectorAll('[data-ec]').forEach(b=>b.onclick=()=>contractForm(contract(b.dataset.ec)));
+  el.querySelectorAll('[data-hist]').forEach(b=>b.onclick=()=>tenantHistory(contract(b.dataset.hist)));
+  D.properties.forEach(p=>{ const ids=[...(p.files||[]),...D.contracts.filter(c=>c.propertyId===p.id).flatMap(c=>c.files||[])]; const box=el.querySelector(`[data-pf="${p.id}"]`); if(ids.length) renderFiles(box,ids,false); else box.remove(); });
+};
+function propForm(p){
+  const isNew=!p;
+  modal({title:isNew?'添加房产':'编辑房产',body:`
+    <div class="grid2">
+      <label class="f">名称 *<input name="name" value="${esc(p?p.name:'')}" placeholder="如：Calle Mayor 3 2ºA / 车库 12 号"></label>
+      <label class="f">类型<select name="type">${opt(PTYPES,p?p.type:'house')}</select></label>
+    </div>
+    <label class="f">地址（会印在收据上）<input name="address" value="${esc(p?p.address:'')}"></label>
+    <label class="f">产权编号 / Referencia catastral（可空）<input name="ref" value="${esc(p?p.ref:'')}"></label>
+    <label class="f">备注<textarea name="note">${esc(p?p.note:'')}</textarea></label>
+    ${attachField('files',p?p.files:[])}`,
+    buttons:[...(isNew?[]:[{t:'删除',cls:'danger',fn:async()=>{
+        const used=D.contracts.some(c=>c.propertyId===p.id)||D.bills.some(b=>b.propertyId===p.id);
+        if(used){ alert('该房产下还有合同或账单记录，不能删除。'); return false; }
+        if(!confirm('确定删除？')) return false; for(const id of p.files||[]) await delFile(id).catch(()=>{});
+        D.properties=D.properties.filter(x=>x!==p); save(); rerender(); }}]),
+      {t:'取消'},{t:'保存',cls:'pri',fn:async f=>{
+        if(!fv(f,'name')){ alert('请填写名称'); return false; }
+        const rec=p||{id:uid()}; Object.assign(rec,{name:fv(f,'name'),type:fv(f,'type'),address:fv(f,'address'),ref:fv(f,'ref'),note:fv(f,'note')});
+        rec.files=await collectAttach(f,'files'); if(isNew) D.properties.push(rec); save(); rerender(); toast('已保存'); }}],
+    onMount:f=>mountAttach(f,'files')});
+}
+function contractForm(c,propId){
+  const isNew=!c;
+  modal({title:isNew?'新租客 / 合同':'编辑合同',wide:true,body:`
+    <div class="grid2">
+      <label class="f">房产<select name="propertyId">${propOptions(c?c.propertyId:propId)}</select></label>
+      <label class="f">租客姓名 *<input name="tenant" value="${esc(c?c.tenant:'')}"></label>
+      <label class="f">证件号 DNI / NIE / 护照<input name="idno" value="${esc(c?c.idno:'')}"></label>
+      <label class="f">电话<input name="phone" type="tel" value="${esc(c?c.phone:'')}"></label>
+      <label class="f">邮箱<input name="email" type="email" value="${esc(c?c.email:'')}"></label>
+      <label class="f">习惯付款方式<select name="method">${opt(METHODS,c?c.method:'transfer')}</select></label>
+    </div>
+    <div class="grid3">
+      <label class="f">月租金 *<input name="rent" inputmode="decimal" value="${c?num(c.rent):''}"></label>
+      <label class="f">押金<input name="deposit" inputmode="decimal" value="${c&&c.deposit?num(c.deposit):''}"></label>
+      <label class="f">每月交租日（1–31）<input name="payDay" type="number" min="1" max="31" value="${c?c.payDay||1:5}"></label>
+      <label class="f">合同开始 *<input type="date" name="start" value="${esc(c?c.start:today())}"></label>
+      <label class="f">合同结束（可空）<input type="date" name="end" value="${esc(c?c.end:'')}"></label>
+    </div>
+    <label class="chk"><input type="checkbox" name="closed"${c&&c.closed?' checked':''}> 合同已结束 / 租客已搬走（结束后的月份不再提醒收租）</label>
+    <label class="f">备注<textarea name="note">${esc(c?c.note:'')}</textarea></label>
+    ${attachField('files',c?c.files:[])}`,
+    buttons:[...(isNew?[]:[{t:'删除',cls:'danger',fn:async()=>{
+        if(D.payments.some(p=>p.contractId===c.id)){ alert('该合同已有收款记录，不能删除。可以勾选“合同已结束”。'); return false; }
+        if(!confirm('确定删除这个合同？')) return false; for(const id of c.files||[]) await delFile(id).catch(()=>{});
+        D.contracts=D.contracts.filter(x=>x!==c); save(); rerender(); }}]),
+      {t:'取消'},{t:'保存',cls:'pri',fn:async f=>{
+        if(!fv(f,'tenant')||fv(f,'rent')===''||!fv(f,'start')){ alert('请填写租客姓名、月租金和合同开始日期'); return false; }
+        const rec=c||{id:uid()};
+        Object.assign(rec,{propertyId:fv(f,'propertyId'),tenant:fv(f,'tenant'),idno:fv(f,'idno'),phone:fv(f,'phone'),email:fv(f,'email'),method:fv(f,'method'),
+          rent:r2(num(fv(f,'rent'))),deposit:r2(num(fv(f,'deposit'))),payDay:Math.min(31,Math.max(1,parseInt(fv(f,'payDay'))||1)),start:fv(f,'start'),end:fv(f,'end'),closed:fv(f,'closed'),note:fv(f,'note')});
+        if(rec.closed && !rec.end) rec.end=today();
+        rec.files=await collectAttach(f,'files'); if(isNew) D.contracts.push(rec); save(); rerender(); toast('已保存'); }}],
+    onMount:f=>mountAttach(f,'files')});
+}
+function tenantHistory(c){
+  const ps=D.payments.filter(p=>p.contractId===c.id).sort((a,b)=>(b.period||b.paidDate).localeCompare(a.period||a.paidDate));
+  const od=overdueList().filter(o=>o.c.id===c.id);
+  const tot=ps.reduce((s,p)=>s+num(p.amountPaid),0);
+  modal({title:'账目 · '+esc(c.tenant),wide:true,body:`
+    <div class="stats"><div class="stat ok"><div class="k">累计收款</div><div class="v">${money(tot)}</div></div><div class="stat ${od.length?'bad':''}"><div class="k">逾期未收</div><div class="v">${money(od.reduce((s,o)=>s+o.owed,0))}</div></div></div>
+    ${od.length?`<p class="small" style="color:var(--bad)">逾期月份：${od.map(o=>fmtMonthZh(o.m)).join('、')}</p>`:''}
+    ${ps.length?`<div class="tbl-wrap"><table><tr><th>收据号</th><th>类型 / 月份</th><th>收款日</th><th class="num">应收</th><th class="num">实收</th><th></th></tr>
+    ${ps.map(p=>`<tr><td>${esc(p.receiptNo)}</td><td>${esc(KINDS[p.kind].zh)} ${p.period?fmtMonthZh(p.period):''}</td><td>${fmtDate(p.paidDate)}</td><td class="num">${money(num(p.total))}</td><td class="num">${money(num(p.amountPaid))}</td><td class="right"><button type="button" class="sm" data-rc="${p.id}">🧾</button></td></tr>`).join('')}</table></div>`:'<div class="empty">暂无收款</div>'}`,
+    onMount(f,close){ f.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>{ close(); showReceipt(b.dataset.rc); }); }});
+}
+
+/* ---------------- RECEIPTS ---------------- */
+views.receipts=function(el){
+  const q=(state.rq||'').toLowerCase();
+  let list=D.payments.slice().sort((a,b)=>(b.receiptNo||'').localeCompare(a.receiptNo||'',undefined,{numeric:true}));
+  if(q) list=list.filter(p=>[p.receiptNo,p.tenant,propLabel(prop(p.propertyId)),p.period,fmtMonthZh(p.period)].join(' ').toLowerCase().includes(q));
+  el.innerHTML=`<div class="row between" style="margin-bottom:12px"><h2 style="margin:0">收据</h2>
+    <div class="row"><input id="rq" placeholder="搜索 租客 / 编号 / 月份" value="${esc(state.rq||'')}" style="width:220px"><button id="batch">批量打印…</button></div></div>
+  <div class="card">${list.length?`<div class="tbl-wrap"><table><tr><th>编号</th><th>租客</th><th>房产</th><th>项目</th><th>收款日</th><th class="num">金额</th><th></th></tr>
+    ${list.map(p=>`<tr><td><b>${esc(p.receiptNo)}</b></td><td>${esc(p.tenant)}</td><td>${esc(propLabel(prop(p.propertyId)))}</td><td>${esc(KINDS[p.kind].zh)} ${p.period?fmtMonthZh(p.period):''}${p.items.length>1?' <span class="tag">+'+(p.items.length-1)+' 项</span>':''}</td>
+    <td>${fmtDate(p.paidDate)}</td><td class="num">${money(num(p.amountPaid))}${paymentStatus(p)==='partial'?'<div class="small" style="color:var(--warn)">应收 '+money(num(p.total))+'</div>':''}</td>
+    <td class="right"><button class="sm" data-edit="${p.id}">修改</button> <button class="sm pri" data-rc="${p.id}">🧾 查看/打印</button></td></tr>`).join('')}</table></div>`
+    :'<div class="empty">还没有收据。在 “收租” 页记一笔收款后会自动生成。</div>'}</div>`;
+  const rq=$('#rq'); rq.oninput=()=>{ state.rq=rq.value; const pos=rq.selectionStart; rerender(); const n=$('#rq'); n.focus(); n.setSelectionRange(pos,pos); };
+  el.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>showReceipt(b.dataset.rc));
+  el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>paymentForm(D.payments.find(p=>p.id===b.dataset.edit)));
+  $('#batch').onclick=()=>{
+    modal({title:'批量打印收据',body:`<label class="f">月份（按收据所属月份 / 收款日期）<input type="month" name="m" value="${thisMonth()}"></label>`,
+      buttons:[{t:'取消'},{t:'打印',cls:'pri',fn:async f=>{ const m=fv(f,'m'); const ps=D.payments.filter(p=>(p.period||p.paidDate.slice(0,7))===m);
+        if(!ps.length){ alert('该月没有收据'); return false; } await printReceipts(ps.map(p=>p.id)); }}]});
+  };
+};
+const L={
+  title:{zh:'收　据',es:'RECIBO'},
+  copyL:{zh:'存根联（房东留存）',es:'Matriz (arrendador)'},
+  copyT:{zh:'收据联（交租客）',es:'Ejemplar arrendatario'},
+  no:{zh:'编号',es:'Nº'}, date:{zh:'日期',es:'Fecha'},
+  recv:{zh:'今收到',es:'He recibido de'}, idno:{zh:'证件号',es:'DNI/NIE'},
+  for:{zh:'物业',es:'Inmueble'}, period:{zh:'所属期间',es:'Periodo'},
+  item:{zh:'项目',es:'Concepto'}, amt:{zh:'金额',es:'Importe'},
+  total:{zh:'合计',es:'Total'}, paid:{zh:'实收',es:'Recibido'}, bal:{zh:'尚欠',es:'Pendiente'},
+  words:{zh:'大写',es:'Son'}, method:{zh:'付款方式',es:'Forma de pago'},
+  note:{zh:'备注',es:'Observaciones'}, sign:{zh:'收款人（房东）签名',es:'Firma del arrendador'},
+  landlord:{zh:'收款人',es:'Arrendador'}, paidStamp:{zh:'已收讫',es:'PAGADO'}
+};
+function lbl(k,lang){ const v=L[k]; if(lang==='zh') return v.zh; if(lang==='es') return v.es; return v.zh+' / '+v.es; }
+async function receiptHTML(p,copyKey){
+  const S=D.settings, lang=S.lang||'zh-es', c=contract(p.contractId)||{}, pr=prop(p.propertyId)||{};
+  const sig=S.signFile?await fileUrl(S.signFile):null;
+  const both=lang==='zh-es';
+  const perTxt=p.period?(lang==='es'?fmtMonthEs(p.period):lang==='zh'?fmtMonthZh(p.period):fmtMonthZh(p.period)+' / '+fmtMonthEs(p.period)):'';
+  const descE=it=>lang==='es'?esc(it.descEs||it.desc):lang==='zh'?esc(it.desc):(esc(it.desc)+(it.descEs&&it.descEs!==it.desc?'<br><span style="font-size:8.5pt">'+esc(it.descEs)+'</span>':''));
+  const partial=num(p.amountPaid)<num(p.total)-0.004;
+  const words=(lang!=='es'?`<div>大写：${cnUpper(num(p.amountPaid))}</div>`:'')+(lang!=='zh'?`<div>${L.words.es}: ${esWords(num(p.amountPaid))}</div>`:'');
+  const methodTxt=lang==='es'?METHODS[p.method]?.es:lang==='zh'?METHODS[p.method]?.zh:(METHODS[p.method]?.zh+' / '+METHODS[p.method]?.es);
+  return `<div class="rc">
+    ${copyKey?`<div class="copy">${lbl(copyKey,lang)}</div>`:''}
+    <div class="ttl">${lang==='es'?L.title.es:L.title.zh}${both?'<small>RECIBO DE ALQUILER</small>':lang==='es'?'<small>de alquiler</small>':''}</div>
+    <div class="meta"><span>${lbl('no',lang)}：<span class="no">${esc(p.receiptNo)}</span></span><span>${lbl('date',lang)}：${fmtDate(p.paidDate)}</span></div>
+    <p class="l">${lbl('recv',lang)}：<span class="u"><b>${esc(p.tenant)}</b></span>${c.idno?`　${lbl('idno',lang)}：<span class="u">${esc(c.idno)}</span>`:''}</p>
+    <p class="l">${lbl('for',lang)}：<span class="u">${esc(pr.address||pr.name||'')}</span>${p.period?`　${lbl('period',lang)}：<span class="u">${perTxt}</span>`:''}</p>
+    <table><tr><th>${lbl('item',lang)}</th><th style="width:32mm" class="num">${lbl('amt',lang)}</th></tr>
+      ${p.items.map(it=>`<tr><td>${descE(it)}</td><td class="num">${money(num(it.amount))}</td></tr>`).join('')}
+      <tr><td class="num"><b>${lbl('total',lang)}</b></td><td class="num"><b>${money(num(p.total))}</b></td></tr>
+      ${partial?`<tr><td class="num">${lbl('paid',lang)}</td><td class="num"><b>${money(num(p.amountPaid))}</b></td></tr><tr><td class="num">${lbl('bal',lang)}</td><td class="num">${money(r2(num(p.total)-num(p.amountPaid)))}</td></tr>`:''}
+    </table>
+    <div class="words">${words}</div>
+    <p class="l">${lbl('method',lang)}：${esc(methodTxt||'')}${p.note?`　${lbl('note',lang)}：${esc(p.note)}`:''}</p>
+    ${S.stamp&&!partial?`<div class="stamp">${lang==='es'?L.paidStamp.es:lang==='zh'?L.paidStamp.zh:'已收讫 PAGADO'}</div>`:''}
+    <div class="foot">
+      <div class="lr"><b>${lbl('landlord',lang)}：</b>${esc(S.name||'')}${S.idno?'　'+esc(S.idno):''}<br>${esc(S.address||'')}${S.phone?'<br>☎ '+esc(S.phone):''}${S.email?'　'+esc(S.email):''}${S.iban?'<br>IBAN '+esc(S.iban):''}</div>
+      <div class="sig"><div class="line">${sig?`<img src="${sig}">`:''}</div><div style="font-size:9.5pt;margin-top:1mm">${lbl('sign',lang)}</div></div>
+    </div></div>`;
+}
+async function receiptPage(p){
+  const copies=+D.settings.copies||2;
+  if(copies===1) return `<div class="rc-page">${await receiptHTML(p,'')}</div>`;
+  const lang=D.settings.lang||'zh-es';
+  return `<div class="rc-page">${await receiptHTML(p,'copyL')}<div class="cut">✂ ${lang==='es'?'cortar por aquí':lang==='zh'?'沿此线剪开':'沿此线剪开 / cortar por aquí'}</div>${await receiptHTML(p,'copyT')}</div>`;
+}
+async function showReceipt(id){
+  const p=D.payments.find(x=>x.id===id); if(!p) return;
+  const html=await receiptPage(p);
+  modal({title:'收据 '+esc(p.receiptNo),wide:true,body:`<div class="row small" style="margin-bottom:10px">
+      <label>语言 <select name="lang" style="width:auto">${opt({'zh-es':{zh:'中文 + 西班牙语'},zh:{zh:'仅中文'},es:{zh:'仅西班牙语'}},D.settings.lang)}</select></label>
+      <label>份数 <select name="copies" style="width:auto"><option value="2"${D.settings.copies!=1?' selected':''}>一式两联（存根+收据）</option><option value="1"${D.settings.copies==1?' selected':''}>只印一联</option></select></label>
+    </div><div class="rc-preview" id="rcp">${html}</div>
+    <p class="muted small">提示：打印时选择 A4 纸。想要电子版发给租客，在打印窗口选 “另存为 PDF”。</p>`,
+    buttons:[{t:'关闭'},{t:'修改收款',fn:()=>paymentForm(p)},{t:'🖨️ 打印 / 存 PDF',cls:'pri',fn:()=>{ printReceipts([p.id]); return false; }}],
+    onMount(f){ const upd=async()=>{ D.settings.lang=fv(f,'lang'); D.settings.copies=+fv(f,'copies'); save(); f.querySelector('#rcp').innerHTML=await receiptPage(p); };
+      f.elements.lang.onchange=upd; f.elements.copies.onchange=upd; }});
+}
+async function printReceipts(ids){
+  const pages=[]; for(const id of ids){ const p=D.payments.find(x=>x.id===id); if(p) pages.push(await receiptPage(p)); }
+  const box=$('#print'); box.innerHTML=pages.join('');
+  const imgs=[...box.querySelectorAll('img')]; await Promise.all(imgs.map(i=>i.complete?0:new Promise(r=>{i.onload=i.onerror=r;})));
+  const prevTitle=document.title; if(ids.length===1){ const p=D.payments.find(x=>x.id===ids[0]); document.title='Recibo '+p.receiptNo+' '+p.tenant; }
+  setTimeout(()=>{ window.print(); document.title=prevTitle; },60);
+}
+
+/* ---------------- REPORT ---------------- */
+views.report=function(el){
+  const y=state.reportYear;
+  const years=[...new Set([String(new Date().getFullYear()),...D.payments.map(p=>(p.paidDate||'').slice(0,4)),...D.bills.map(b=>(b.date||b.to||'').slice(0,4))].filter(Boolean))].sort().reverse();
+  const rows=[]; let T={rent:0,extra:0,dep:0,exp:0};
+  for(let i=1;i<=12;i++){
+    const m=y+'-'+pad(i);
+    const ps=D.payments.filter(p=>(p.paidDate||'').slice(0,7)===m);
+    let rent=0,extra=0,dep=0;
+    ps.forEach(p=>{ const ratio=num(p.total)?num(p.amountPaid)/num(p.total):1;
+      p.items.forEach(it=>{ const a=num(it.amount)*ratio; if(p.kind==='deposit') dep+=a; else if(it.billId) extra+=a; else if(p.kind==='rent'&&!it.billId) rent+=a; else extra+=a; }); });
+    const exp=D.bills.filter(b=>b.payer!=='tenant' && (b.date||b.to||'').slice(0,7)===m).reduce((s,b)=>s+num(b.amount),0);
+    rows.push({m,rent,extra,dep,exp}); T.rent+=rent;T.extra+=extra;T.dep+=dep;T.exp+=exp;
+  }
+  const byProp=D.properties.map(p=>{ const inc=D.payments.filter(x=>x.propertyId===p.id&&x.kind!=='deposit'&&(x.paidDate||'').startsWith(y)).reduce((s,x)=>s+num(x.amountPaid),0);
+    const ex=D.bills.filter(b=>b.propertyId===p.id&&b.payer!=='tenant'&&(b.date||b.to||'').startsWith(y)).reduce((s,b)=>s+num(b.amount),0); return {p,inc,ex}; });
+  const byType={}; D.bills.filter(b=>b.payer!=='tenant'&&(b.date||b.to||'').startsWith(y)).forEach(b=>{ byType[b.type]=(byType[b.type]||0)+num(b.amount); });
+  const recov=D.bills.filter(b=>b.chargeTenant&&(b.date||b.to||'').startsWith(y)).reduce((s,b)=>s+num(b.tenantAmount),0);
+  const maxv=Math.max(1,...rows.map(r=>Math.max(r.rent+r.extra,r.exp)));
+  el.innerHTML=`<div class="row between" style="margin-bottom:12px"><h2 style="margin:0">年度报表</h2>
+    <div class="row"><select id="ry" style="width:auto">${years.map(x=>`<option${x===y?' selected':''}>${x}</option>`).join('')}</select><button id="csv">导出 CSV（Excel）</button></div></div>
+  <div class="stats">
+    <div class="stat ok"><div class="k">${y} 租金收入</div><div class="v">${money(T.rent)}</div></div>
+    <div class="stat"><div class="k">向租客收回的费用</div><div class="v">${money(T.extra)}</div></div>
+    <div class="stat warn"><div class="k">房东支付的账单/支出</div><div class="v">${money(T.exp)}</div></div>
+    <div class="stat ${T.rent+T.extra-T.exp>=0?'ok':'bad'}"><div class="k">净收入（不含押金）</div><div class="v">${money(T.rent+T.extra-T.exp)}</div></div>
+  </div>
+  <div class="card"><h3>按月</h3><div class="tbl-wrap"><table><tr><th>月份</th><th class="num">租金</th><th class="num">收回费用</th><th class="num">押金</th><th class="num">支出</th><th class="num">净额</th><th style="width:30%"></th></tr>
+    ${rows.map(r=>`<tr><td>${+r.m.slice(5)}月</td><td class="num">${money(r.rent)}</td><td class="num">${money(r.extra)}</td><td class="num">${r.dep?money(r.dep):'—'}</td><td class="num">${money(r.exp)}</td><td class="num"><b>${money(r.rent+r.extra-r.exp)}</b></td>
+      <td><div style="height:7px;background:var(--ok);border-radius:3px;width:${(r.rent+r.extra)/maxv*100}%"></div><div style="height:7px;background:#e0a33a;border-radius:3px;margin-top:2px;width:${r.exp/maxv*100}%"></div></td></tr>`).join('')}
+    <tr><th>合计</th><th class="num">${money(T.rent)}</th><th class="num">${money(T.extra)}</th><th class="num">${money(T.dep)}</th><th class="num">${money(T.exp)}</th><th class="num">${money(T.rent+T.extra-T.exp)}</th><th></th></tr></table></div>
+    <p class="small muted">绿色 = 收入，橙色 = 支出。收入按实际收款日期计算；押金单独列出，不计入净收入。</p></div>
+  <div class="grid2" style="gap:14px">
+    <div class="card"><h3>按房产</h3>${byProp.length?byProp.map(x=>`<div class="sum-line"><span>${esc(propLabel(x.p))}</span><span>收 ${money(x.inc)} · 支 ${money(x.ex)}</span></div>`).join(''):'<p class="muted small">无</p>'}</div>
+    <div class="card"><h3>支出分类</h3>${Object.keys(byType).length?Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="sum-line"><span>${BILL_TYPES[k]?.ic||''} ${esc(BILL_TYPES[k]?.zh||k)}</span><b>${money(v)}</b></div>`).join(''):'<p class="muted small">无</p>'}
+      <p class="small muted">其中已转给租客承担：${money(recov)}</p></div>
+  </div>`;
+  $('#ry').onchange=e=>{ state.reportYear=e.target.value; rerender(); };
+  $('#csv').onclick=()=>{
+    const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    const lines=[['类型','日期','房产','租客/供应商','项目','所属月份','应收/账单金额','实收','备注'].map(q).join(',')];
+    D.payments.filter(p=>(p.paidDate||'').startsWith(y)).forEach(p=>lines.push([ '收款 '+p.receiptNo,p.paidDate,propLabel(prop(p.propertyId)),p.tenant,p.items.map(i=>i.desc).join(' + '),p.period,num(p.total).toFixed(2),num(p.amountPaid).toFixed(2),p.note].map(q).join(',')));
+    D.bills.filter(b=>(b.date||b.to||'').startsWith(y)).forEach(b=>lines.push(['账单 '+(BILL_TYPES[b.type]?.zh||b.type),b.date||b.to,propLabel(prop(b.propertyId)),b.supplier,(b.from?b.from+'~'+b.to:'')+(b.usage?' 用量'+b.usage:''),'',num(b.amount).toFixed(2),b.payer==='tenant'?'租客自付':b.chargeTenant?'转租客 '+num(b.tenantAmount).toFixed(2):'房东承担',b.note].map(q).join(',')));
+    download('﻿'+lines.join('\r\n'),`收租报表-${y}.csv`,'text/csv;charset=utf-8');
+  };
+};
+function download(content,name,type){ const b=content instanceof Blob?content:new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000); }
+
+/* ---------------- SETTINGS / BACKUP ---------------- */
+views.settings=function(el){
+  const S=D.settings;
+  el.innerHTML=`<h2>设置</h2>
+  <form class="card" id="sf"><h3>房东信息（印在收据上）</h3>
+    <div class="grid2">
+      <label class="f">姓名 / 名称<input name="name" value="${esc(S.name)}"></label>
+      <label class="f">证件号 DNI / NIE<input name="idno" value="${esc(S.idno)}"></label>
+      <label class="f">电话<input name="phone" value="${esc(S.phone)}"></label>
+      <label class="f">邮箱<input name="email" value="${esc(S.email)}"></label>
+    </div>
+    <label class="f">地址<input name="address" value="${esc(S.address)}"></label>
+    <label class="f">收款银行账号 IBAN（可空，会印在收据上）<input name="iban" value="${esc(S.iban)}"></label>
+    <h3 style="margin-top:8px">收据</h3>
+    <div class="grid3">
+      <label class="f">货币符号<input name="currency" value="${esc(S.currency)}"></label>
+      <label class="f">中文大写货币单位<input name="currencyWord" value="${esc(S.currencyWord)}" placeholder="欧元 / 元"></label>
+      <label class="f">编号前缀<input name="prefix" value="${esc(S.prefix)}"></label>
+      <label class="f">收据语言<select name="lang">${opt({'zh-es':{zh:'中文 + 西班牙语'},zh:{zh:'仅中文'},es:{zh:'仅西班牙语'}},S.lang)}</select></label>
+      <label class="f">份数<select name="copies"><option value="2"${S.copies!=1?' selected':''}>一式两联</option><option value="1"${S.copies==1?' selected':''}>一联</option></select></label>
+      <label class="f">当前编号计数（下一张 = 此数 + 1）<input name="seq" type="number" min="0" value="${D.seq.receipt||0}"></label>
+    </div>
+    <label class="chk"><input type="checkbox" name="stamp"${S.stamp?' checked':''}> 全额收讫的收据加盖 “已收讫 PAGADO” 印章</label>
+    <label class="f">签名图片（可选：在白纸上签名后拍照上传，会印在签名处）<input type="file" name="sign" accept="image/*"></label>
+    <div class="files" id="sigbox"></div>
+    <div class="row" style="margin-top:10px"><button class="pri" type="submit">保存设置</button>${S.signFile?'<button type="button" class="danger" id="rmsig">删除签名</button>':''}</div>
+  </form>
+  <div class="card"><h3>💾 备份与恢复</h3>
+    <p class="small">所有数据（包括上传的账单照片）只保存在<b>这台设备的这个浏览器</b>里，不会上传到任何服务器。请<b>定期下载备份</b>，换手机/电脑时用 “恢复备份” 导入。清除浏览器数据会丢失记录。</p>
+    <div class="row"><button class="pri" id="bk">⬇ 下载完整备份</button><label class="btn">⬆ 恢复备份<input type="file" id="rs" accept=".json,application/json" hidden></label></div>
+    <p class="small muted" id="usage"></p>
+  </div>
+  <div class="card"><h3>其他</h3><div class="row"><button id="demo">载入示例数据（试用）</button><button class="danger" id="wipe">清空全部数据</button></div></div>`;
+  const f=$('#sf');
+  if(S.signFile) renderFiles($('#sigbox'),[S.signFile],false);
+  f.onsubmit=async e=>{ e.preventDefault();
+    ['name','idno','phone','email','address','iban','currency','currencyWord','prefix','lang'].forEach(k=>S[k]=fv(f,k));
+    S.copies=+fv(f,'copies'); S.stamp=fv(f,'stamp'); D.seq.receipt=Math.max(0,parseInt(fv(f,'seq'))||0);
+    const sf=readAsFiles(f.elements.sign); if(sf.length){ if(S.signFile) await delFile(S.signFile).catch(()=>{}); S.signFile=(await storeUploads(sf))[0]; }
+    save(); toast('设置已保存'); route(); };
+  if($('#rmsig')) $('#rmsig').onclick=async()=>{ await delFile(S.signFile).catch(()=>{}); S.signFile=null; save(); route(); };
+  $('#bk').onclick=backup;
+  $('#rs').onchange=e=>restore(e.target.files[0]);
+  $('#wipe').onclick=async()=>{ if(!confirm('确定清空所有数据？此操作不可恢复（建议先下载备份）。')) return; if(prompt('请输入 “清空” 确认')!=='清空') return; D=blank(); save(); await clearFiles(); route(); toast('已清空'); };
+  $('#demo').onclick=()=>{ if(D.properties.length && !confirm('已有数据，示例数据会追加进去。继续？')) return; loadDemo(); location.hash='#home'; route(); toast('已载入示例数据'); };
+  if(navigator.storage&&navigator.storage.estimate) navigator.storage.estimate().then(e=>{ $('#usage')&&($('#usage').textContent=`已使用存储约 ${(e.usage/1048576).toFixed(1)} MB`); });
+};
+function blobToDataURL(b){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(b); }); }
+async function backup(){
+  const files=await allFiles(); const out=[];
+  for(const f of files) out.push({id:f.id,name:f.name,type:f.type,added:f.added,data:await blobToDataURL(f.blob)});
+  download(JSON.stringify({app:'zuqi',version:1,exported:new Date().toISOString(),data:D,files:out}),`收租备份-${today()}.json`,'application/json');
+  D.settings.lastBackup=today(); save(); toast('备份已下载');
+}
+async function restore(file){
+  if(!file) return;
+  try{
+    const j=JSON.parse(await file.text()); if(j.app!=='zuqi'||!j.data) throw new Error('不是收租管家的备份文件');
+    if(!confirm(`备份时间：${(j.exported||'').slice(0,10)}\n恢复会覆盖当前所有数据，确定？`)) return;
+    await clearFiles();
+    for(const f of j.files||[]){ const blob=await (await fetch(f.data)).blob(); await putFile({id:f.id,name:f.name,type:f.type,added:f.added,blob}); }
+    D=Object.assign(blank(),j.data); D.settings=Object.assign(blank().settings,j.data.settings||{}); save();
+    Object.keys(urlCache).forEach(k=>delete urlCache[k]); route(); toast('恢复完成');
+  }catch(e){ alert('恢复失败：'+e.message); }
+}
+function loadDemo(){
+  const y=new Date().getFullYear(); const m0=thisMonth();
+  const h={id:uid(),name:'Calle Mayor 12, 3ºB',type:'house',address:'Calle Mayor 12, 3ºB, 28013 Madrid',files:[]};
+  const g={id:uid(),name:'车库 Plaza 27',type:'garage',address:'Calle Mayor 12, Sótano -1, Plaza 27, 28013 Madrid',files:[]};
+  D.properties.push(h,g);
+  const ch={id:uid(),propertyId:h.id,tenant:'Juan García López',idno:'12345678Z',phone:'600 123 456',method:'transfer',rent:850,deposit:1700,payDay:5,start:addMonth(m0,-3)+'-01',end:'',files:[]};
+  const cg={id:uid(),propertyId:g.id,tenant:'María Pérez',idno:'X1234567L',phone:'611 222 333',method:'bizum',rent:90,deposit:90,payDay:1,start:addMonth(m0,-2)+'-01',end:'',files:[]};
+  D.contracts.push(ch,cg);
+  for(let k=-3;k<0;k++){ const m=addMonth(m0,k); const rno=nextReceiptNo(); bumpReceiptNo(rno);
+    D.payments.push({id:uid(),kind:'rent',contractId:ch.id,propertyId:h.id,tenant:ch.tenant,period:m,paidDate:m+'-05',method:'transfer',items:[{desc:'租金 '+fmtMonthZh(m),descEs:'Renta '+fmtMonthEs(m),amount:850}],total:850,amountPaid:850,note:'',receiptNo:rno}); }
+  const lm=addMonth(m0,-1);
+  D.bills.push({id:uid(),propertyId:h.id,type:'electric',from:addMonth(m0,-2)+'-01',to:monthEnd(lm),prev:'10234',curr:'10552',usage:'318',amount:68.4,date:lm+'-20',supplier:'Iberdrola',payer:'landlord',chargeTenant:true,tenantAmount:68.4,note:'',files:[]});
+  D.bills.push({id:uid(),propertyId:h.id,type:'water',from:addMonth(m0,-3)+'-01',to:monthEnd(lm),prev:'512',curr:'538',usage:'26',amount:41.2,date:lm+'-18',supplier:'Canal de Isabel II',payer:'landlord',chargeTenant:true,tenantAmount:41.2,note:'',files:[]});
+  D.bills.push({id:uid(),propertyId:h.id,type:'community',from:'',to:'',prev:'',curr:'',usage:'',amount:120,date:lm+'-02',supplier:'Comunidad de propietarios',payer:'landlord',chargeTenant:false,tenantAmount:0,note:'季度物业费',files:[]});
+  if(!D.settings.name) Object.assign(D.settings,{name:'王小明 (ejemplo)',idno:'Y0000000T',address:'Calle Ejemplo 1, Madrid',phone:'622 000 000'});
+  save();
+}
+
+/* ---------- start ---------- */
+route();
+if(D.properties.length && (!D.settings.lastBackup || D.settings.lastBackup<addDays(today(),-30))){
+  setTimeout(()=>toast('提醒：已超过 30 天没有下载备份（设置 / 备份）'),800);
+}
+</script>
+</body>
+</html>
