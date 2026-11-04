@@ -168,6 +168,7 @@ const BILL_TYPES = {
 };
 const METHODS = {cash:{zh:'现金',es:'Efectivo'},transfer:{zh:'银行转账',es:'Transferencia'},bizum:{zh:'Bizum',es:'Bizum'},card:{zh:'刷卡',es:'Tarjeta'},other:{zh:'其他',es:'Otro'}};
 const KINDS = {rent:{zh:'租金',es:'Alquiler'},deposit:{zh:'押金',es:'Fianza'},other:{zh:'其他收款',es:'Otro cobro'}};
+const LANGS = {'zh-es':{zh:'中文 + 西班牙语',tag:'中+西'},zh:{zh:'仅中文',tag:'中文'},es:{zh:'仅西班牙语',tag:'西语'}};
 const PTYPES = {house:{zh:'住房',es:'Vivienda',ic:'🏠'},garage:{zh:'车库/车位',es:'Plaza de garaje',ic:'🚗'},shop:{zh:'商铺',es:'Local',ic:'🏪'},other:{zh:'其他',es:'Otro',ic:'📦'}};
 
 let D = load();
@@ -224,6 +225,7 @@ function contractActiveIn(c,m){ if(!c.start) return false; if(c.start.slice(0,7)
 function activeContract(propId,date){ const m=(date||today()).slice(0,7); return D.contracts.find(c=>c.propertyId===propId && contractActiveIn(c,m)); }
 function rentPayment(cid,m){ return D.payments.find(p=>p.contractId===cid && p.kind==='rent' && p.period===m); }
 function dueDate(c,m){ const d=Math.min(c.payDay||1,+monthEnd(m).slice(8)); return m+'-'+pad(d); }
+function receiptLang(p){ const c=contract(p.contractId); return (c&&LANGS[c.lang]?c.lang:'')||D.settings.lang||'zh-es'; }
 function paymentStatus(p){ if(!p) return 'none'; const paid=num(p.amountPaid), tot=num(p.total); if(paid>=tot-0.004) return 'paid'; if(paid>0) return 'partial'; return 'none'; }
 
 /* overdue: every month since contract start up to now where payment due date passed and not fully paid */
@@ -655,7 +657,7 @@ views.props=function(el){
       <div class="muted small">${esc(p.address||'')}${p.ref?' · 编号/Ref: '+esc(p.ref):''}</div></div>
       <div class="row"><button class="sm" data-ep="${p.id}">编辑房产</button><button class="sm pri" data-ac="${p.id}">＋ 新租客/合同</button></div></div>
       ${cs.length?`<div class="tbl-wrap" style="margin-top:8px"><table><tr><th>租客</th><th>合同期</th><th class="num">月租</th><th class="num">押金</th><th>交租日</th><th></th></tr>
-      ${cs.map(c=>`<tr><td><b>${esc(c.tenant)}</b>${c.idno?'<div class="small muted">'+esc(c.idno)+'</div>':''}${c.phone?'<div class="small muted">📞 '+esc(c.phone)+'</div>':''}</td>
+      ${cs.map(c=>`<tr><td><b>${esc(c.tenant)}</b>${c.idno?'<div class="small muted">'+esc(c.idno)+'</div>':''}${c.phone?'<div class="small muted">📞 '+esc(c.phone)+'</div>':''}<div><span class="tag pri" title="收据语言">🧾 ${LANGS[c.lang]?LANGS[c.lang].tag:'默认 '+(LANGS[D.settings.lang]?.tag||'')}</span></div></td>
       <td>${fmtDate(c.start)} – ${c.end?fmtDate(c.end):'不定期'} ${c.closed?'<span class="tag">已结束</span>':contractActiveIn(c,thisMonth())?'<span class="tag ok">生效</span>':''}</td>
       <td class="num">${money(num(c.rent))}</td><td class="num">${c.deposit?money(num(c.deposit)):'—'}</td><td>每月 ${c.payDay||1} 号</td>
       <td class="right"><button class="sm" data-ec="${c.id}">编辑</button> <button class="sm" data-hist="${c.id}">账目</button></td></tr>`).join('')}</table></div>`
@@ -701,6 +703,7 @@ function contractForm(c,propId){
       <label class="f">电话<input name="phone" type="tel" value="${esc(c?c.phone:'')}"></label>
       <label class="f">邮箱<input name="email" type="email" value="${esc(c?c.email:'')}"></label>
       <label class="f">习惯付款方式<select name="method">${opt(METHODS,c?c.method:'transfer')}</select></label>
+      <label class="f">收据语言<select name="lang"><option value="">跟随默认设置（${esc(LANGS[D.settings.lang]?.zh||'')}）</option>${opt(LANGS,c?c.lang:'')}</select></label>
     </div>
     <div class="grid3">
       <label class="f">月租金 *<input name="rent" inputmode="decimal" value="${c?num(c.rent):''}"></label>
@@ -719,7 +722,7 @@ function contractForm(c,propId){
       {t:'取消'},{t:'保存',cls:'pri',fn:async f=>{
         if(!fv(f,'tenant')||fv(f,'rent')===''||!fv(f,'start')){ alert('请填写租客姓名、月租金和合同开始日期'); return false; }
         const rec=c||{id:uid()};
-        Object.assign(rec,{propertyId:fv(f,'propertyId'),tenant:fv(f,'tenant'),idno:fv(f,'idno'),phone:fv(f,'phone'),email:fv(f,'email'),method:fv(f,'method'),
+        Object.assign(rec,{propertyId:fv(f,'propertyId'),tenant:fv(f,'tenant'),idno:fv(f,'idno'),phone:fv(f,'phone'),email:fv(f,'email'),method:fv(f,'method'),lang:fv(f,'lang'),
           rent:r2(num(fv(f,'rent'))),deposit:r2(num(fv(f,'deposit'))),payDay:Math.min(31,Math.max(1,parseInt(fv(f,'payDay'))||1)),start:fv(f,'start'),end:fv(f,'end'),closed:fv(f,'closed'),note:fv(f,'note')});
         if(rec.closed && !rec.end) rec.end=today();
         rec.files=await collectAttach(f,'files'); if(isNew) D.contracts.push(rec); save(); rerender(); toast('已保存'); }}],
@@ -773,9 +776,9 @@ const L={
 };
 function lbl(k,lang){ const v=L[k]; if(lang==='zh') return v.zh; if(lang==='es') return v.es; return v.zh+' / '+v.es; }
 async function receiptHTML(p,copyKey){
-  const S=D.settings, lang=S.lang||'zh-es', c=contract(p.contractId)||{}, pr=prop(p.propertyId)||{};
+  const S=D.settings, lang=receiptLang(p), c=contract(p.contractId)||{}, pr=prop(p.propertyId)||{};
   const sig=S.signFile?await fileUrl(S.signFile):null;
-  const both=lang==='zh-es';
+  const both=lang==='zh-es'; const CL=lang==='es'?': ':'：';
   const perTxt=p.period?(lang==='es'?fmtMonthEs(p.period):lang==='zh'?fmtMonthZh(p.period):fmtMonthZh(p.period)+' / '+fmtMonthEs(p.period)):'';
   const descE=it=>lang==='es'?esc(it.descEs||it.desc):lang==='zh'?esc(it.desc):(esc(it.desc)+(it.descEs&&it.descEs!==it.desc?'<br><span style="font-size:8.5pt">'+esc(it.descEs)+'</span>':''));
   const partial=num(p.amountPaid)<num(p.total)-0.004;
@@ -784,38 +787,38 @@ async function receiptHTML(p,copyKey){
   return `<div class="rc">
     ${copyKey?`<div class="copy">${lbl(copyKey,lang)}</div>`:''}
     <div class="ttl">${lang==='es'?L.title.es:L.title.zh}${both?'<small>RECIBO DE ALQUILER</small>':lang==='es'?'<small>de alquiler</small>':''}</div>
-    <div class="meta"><span>${lbl('no',lang)}：<span class="no">${esc(p.receiptNo)}</span></span><span>${lbl('date',lang)}：${fmtDate(p.paidDate)}</span></div>
-    <p class="l">${lbl('recv',lang)}：<span class="u"><b>${esc(p.tenant)}</b></span>${c.idno?`　${lbl('idno',lang)}：<span class="u">${esc(c.idno)}</span>`:''}</p>
-    <p class="l">${lbl('for',lang)}：<span class="u">${esc(pr.address||pr.name||'')}</span>${p.period?`　${lbl('period',lang)}：<span class="u">${perTxt}</span>`:''}</p>
+    <div class="meta"><span>${lbl('no',lang)}${CL}<span class="no">${esc(p.receiptNo)}</span></span><span>${lbl('date',lang)}${CL}${fmtDate(p.paidDate)}</span></div>
+    <p class="l">${lbl('recv',lang)}${CL}<span class="u"><b>${esc(p.tenant)}</b></span>${c.idno?`　${lbl('idno',lang)}${CL}<span class="u">${esc(c.idno)}</span>`:''}</p>
+    <p class="l">${lbl('for',lang)}${CL}<span class="u">${esc(pr.address||pr.name||'')}</span>${p.period?`　${lbl('period',lang)}${CL}<span class="u">${perTxt}</span>`:''}</p>
     <table><tr><th>${lbl('item',lang)}</th><th style="width:32mm" class="num">${lbl('amt',lang)}</th></tr>
       ${p.items.map(it=>`<tr><td>${descE(it)}</td><td class="num">${money(num(it.amount))}</td></tr>`).join('')}
       <tr><td class="num"><b>${lbl('total',lang)}</b></td><td class="num"><b>${money(num(p.total))}</b></td></tr>
       ${partial?`<tr><td class="num">${lbl('paid',lang)}</td><td class="num"><b>${money(num(p.amountPaid))}</b></td></tr><tr><td class="num">${lbl('bal',lang)}</td><td class="num">${money(r2(num(p.total)-num(p.amountPaid)))}</td></tr>`:''}
     </table>
     <div class="words">${words}</div>
-    <p class="l">${lbl('method',lang)}：${esc(methodTxt||'')}${p.note?`　${lbl('note',lang)}：${esc(p.note)}`:''}</p>
+    <p class="l">${lbl('method',lang)}${CL}${esc(methodTxt||'')}${p.note?`　${lbl('note',lang)}${CL}${esc(p.note)}`:''}</p>
     ${S.stamp&&!partial?`<div class="stamp">${lang==='es'?L.paidStamp.es:lang==='zh'?L.paidStamp.zh:'已收讫 PAGADO'}</div>`:''}
     <div class="foot">
-      <div class="lr"><b>${lbl('landlord',lang)}：</b>${esc(S.name||'')}${S.idno?'　'+esc(S.idno):''}<br>${esc(S.address||'')}${S.phone?'<br>☎ '+esc(S.phone):''}${S.email?'　'+esc(S.email):''}${S.iban?'<br>IBAN '+esc(S.iban):''}</div>
+      <div class="lr"><b>${lbl('landlord',lang)}${CL}</b>${esc(S.name||'')}${S.idno?'　'+esc(S.idno):''}<br>${esc(S.address||'')}${S.phone?'<br>☎ '+esc(S.phone):''}${S.email?'　'+esc(S.email):''}${S.iban?'<br>IBAN '+esc(S.iban):''}</div>
       <div class="sig"><div class="line">${sig?`<img src="${sig}">`:''}</div><div style="font-size:9.5pt;margin-top:1mm">${lbl('sign',lang)}</div></div>
     </div></div>`;
 }
 async function receiptPage(p){
   const copies=+D.settings.copies||2;
   if(copies===1) return `<div class="rc-page">${await receiptHTML(p,'')}</div>`;
-  const lang=D.settings.lang||'zh-es';
+  const lang=receiptLang(p);
   return `<div class="rc-page">${await receiptHTML(p,'copyL')}<div class="cut">✂ ${lang==='es'?'cortar por aquí':lang==='zh'?'沿此线剪开':'沿此线剪开 / cortar por aquí'}</div>${await receiptHTML(p,'copyT')}</div>`;
 }
 async function showReceipt(id){
   const p=D.payments.find(x=>x.id===id); if(!p) return;
   const html=await receiptPage(p);
   modal({title:'收据 '+esc(p.receiptNo),wide:true,body:`<div class="row small" style="margin-bottom:10px">
-      <label>语言 <select name="lang" style="width:auto">${opt({'zh-es':{zh:'中文 + 西班牙语'},zh:{zh:'仅中文'},es:{zh:'仅西班牙语'}},D.settings.lang)}</select></label>
+      <label>${esc(p.tenant)} 的收据语言 <select name="lang" style="width:auto">${opt(LANGS,receiptLang(p))}</select></label>
       <label>份数 <select name="copies" style="width:auto"><option value="2"${D.settings.copies!=1?' selected':''}>一式两联（存根+收据）</option><option value="1"${D.settings.copies==1?' selected':''}>只印一联</option></select></label>
     </div><div class="rc-preview" id="rcp">${html}</div>
     <p class="muted small">提示：打印时选择 A4 纸。想要电子版发给租客，在打印窗口选 “另存为 PDF”。</p>`,
     buttons:[{t:'关闭'},{t:'修改收款',fn:()=>paymentForm(p)},{t:'🖨️ 打印 / 存 PDF',cls:'pri',fn:()=>{ printReceipts([p.id]); return false; }}],
-    onMount(f){ const upd=async()=>{ D.settings.lang=fv(f,'lang'); D.settings.copies=+fv(f,'copies'); save(); f.querySelector('#rcp').innerHTML=await receiptPage(p); };
+    onMount(f){ const upd=async()=>{ const cc=contract(p.contractId); if(cc) cc.lang=fv(f,'lang'); D.settings.copies=+fv(f,'copies'); save(); f.querySelector('#rcp').innerHTML=await receiptPage(p); };
       f.elements.lang.onchange=upd; f.elements.copies.onchange=upd; }});
 }
 async function printReceipts(ids){
@@ -892,7 +895,7 @@ views.settings=function(el){
       <label class="f">货币符号<input name="currency" value="${esc(S.currency)}"></label>
       <label class="f">中文大写货币单位<input name="currencyWord" value="${esc(S.currencyWord)}" placeholder="欧元 / 元"></label>
       <label class="f">编号前缀<input name="prefix" value="${esc(S.prefix)}"></label>
-      <label class="f">收据语言<select name="lang">${opt({'zh-es':{zh:'中文 + 西班牙语'},zh:{zh:'仅中文'},es:{zh:'仅西班牙语'}},S.lang)}</select></label>
+      <label class="f">默认收据语言（租客没单独设置时用）<select name="lang">${opt(LANGS,S.lang)}</select></label>
       <label class="f">份数<select name="copies"><option value="2"${S.copies!=1?' selected':''}>一式两联</option><option value="1"${S.copies==1?' selected':''}>一联</option></select></label>
       <label class="f">当前编号计数（下一张 = 此数 + 1）<input name="seq" type="number" min="0" value="${D.seq.receipt||0}"></label>
     </div>
