@@ -92,9 +92,24 @@
       '<button class="t-btn" data-act="set-table">' + t('bft.save') + '</button></div></div>';
   }
 
+  // ¿Se puede pedir ahora? (cuenta pedida o tiempo terminado: no)
+  function blocked() {
+    if (!S.session) return 'wait';
+    if (S.session.checkoutAt) return 'bill';
+    if (S.cfg.stopAtLimit && B.timeState(S.cfg, S.session).over) return 'time';
+    return null;
+  }
+  function timeText() {
+    var ts = B.timeState(S.cfg, S.session);
+    if (!ts.limited) return '';
+    var txt = ts.left < 3600000 ? Math.ceil(ts.left / 60000) + ' min' : B.hmm(ts.left + 59999);
+    return ts.over ? t('bft.timeOver') : (ts.warn ? '⚠️ ' : '') + t('bft.timeLeft', { t: txt });
+  }
   function head(st) {
+    var ts = B.timeState(S.cfg, S.session);
     return '<header class="t-head"><button class="t-table" data-act="secret">' + esc(table) + '</button>' +
-      '<div class="t-round"><small>' + t('bf.round', { n: st.r.n }) + '</small><b id="t-clock">' + B.mmss(st.r.left) + '</b></div>' +
+      '<div class="t-round"><small>' + t('bf.round', { n: st.r.n }) + '</small><b id="t-clock">' + B.mmss(Math.min(st.r.left, ts.left)) + '</b>' +
+      (ts.limited ? '<small id="t-total" class="' + (ts.warn || ts.over ? 'warn' : '') + '">' + timeText() + '</small>' : '') + '</div>' +
       '<div id="t-left" class="t-left' + (st.left ? '' : ' full') + '">' + leftText(st) + '</div>' +
       '<button class="t-mine" data-act="mine">🧾 ' + t('bft.mine') + '</button>' + langs() + '</header>';
   }
@@ -127,32 +142,39 @@
       '<footer class="t-bar"><button class="t-send" data-act="send"' + (n && !S.sending ? '' : ' disabled') + '>' + t('bft.send') + (n ? ' · ' + n : '') + '</button></footer>';
   }
 
-  function viewWait() {
-    return '<header class="t-head"><button class="t-table" data-act="secret">' + esc(table) + '</button><div style="flex:1"></div>' + langs() + '</header>' +
-      '<div class="t-center"><p style="font-size:80px;margin:0">🍣</p><h1>' + t('bft.welcome') + '</h1><p>' + t(S.cfg.on ? 'bft.wait' : 'bft.off') + '</p></div>';
+  function viewWait(why) {
+    var icon = why === 'bill' ? '🧾' : why === 'time' ? '⏰' : '🍣';
+    var title = why === 'bill' ? t('bft.billTitle') : why === 'time' ? t('bft.timeOver') : t('bft.welcome');
+    var text = why === 'bill' ? t('bft.billText') : why === 'time' ? t('bft.timeText') : t(S.cfg.on ? 'bft.wait' : 'bft.off');
+    return '<header class="t-head"><button class="t-table" data-act="secret">' + esc(table) + '</button><div style="flex:1"></div>' +
+      (S.session ? '<button class="t-mine" data-act="mine">🧾 ' + t('bft.mine') + '</button>' : '') + langs() + '</header>' +
+      '<div class="t-center"><p style="font-size:80px;margin:0">' + icon + '</p><h1>' + title + '</h1><p>' + text + '</p></div>';
   }
 
   function render() {
     if (!table) { app.innerHTML = viewSetup(); return; }
     var y = window.scrollY;
-    app.innerHTML = S.cfg.on && S.session ? viewMenu() : viewWait();
+    var why = S.cfg.on ? blocked() : 'wait';
+    app.innerHTML = why ? viewWait(why) : viewMenu();
     window.scrollTo(0, y);
   }
   // reloj: solo se actualiza la cabecera (sin repintar las fotos)
   var lastRound = null;
   setInterval(function () {
     if (!S.session || !S.cfg.on) return;
-    var st = state();
-    if (st.r.idx !== lastRound) { lastRound = st.r.idx; return render(); }    // ronda nueva
-    var c = document.getElementById('t-clock'), l = document.getElementById('t-left');
-    if (c) c.textContent = B.mmss(st.r.left);
+    var st = state(), ts = B.timeState(S.cfg, S.session);
+    var key = st.r.idx + '|' + blocked() + '|' + ts.warn;
+    if (key !== lastRound) { lastRound = key; return render(); }    // ronda nueva, aviso o fin del tiempo
+    var c = document.getElementById('t-clock'), l = document.getElementById('t-left'), tt = document.getElementById('t-total');
+    if (c) c.textContent = B.mmss(Math.min(st.r.left, ts.left));
+    if (tt) tt.textContent = timeText();
     if (l && !st.left) l.innerHTML = leftText(st);
   }, 1000);
 
   // ---------------------------------------------------------------- pedir
   function send() {
     var n = cartCount();
-    if (!n || S.sending || !S.session) return;
+    if (!n || S.sending || !S.session || blocked()) return;
     var st = state(), room = st.lim - st.used;
     if (n > room) return toast(t('bft.over', { n: Math.max(0, room) }));
     var items = [];
@@ -227,7 +249,7 @@
     lang: function (d) { I.set(d.l); render(); },
     cat: function (d) { S.cat = d.id; render(); window.scrollTo(0, 0); },
     plus: function (d) {
-      if (!S.session) return;
+      if (!S.session || blocked()) return;
       if (state().left <= 0) return toast(t('bft.full', { t: B.mmss(state().r.left) }));
       S.cart[d.id] = (S.cart[d.id] || 0) + 1; render();
     },

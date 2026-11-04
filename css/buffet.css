@@ -115,3 +115,17 @@
 .bf-kitchen .t-toast { top: 70px; }
 #print-area { display: none; }
 @media print { body.bf-kitchen > *:not(#print-area) { display: none !important; } #print-area { display: block; } }
+
+/* ---------------------------------------------------------------- paso 2: tiempo y cobro */
+.bf-table.warn { border-color: #f59e0b; background: #fffbeb; }
+.bf-table.over { border-color: var(--alert); background: #fef2f2; }
+.bf-table.paying { border-color: var(--ok); background: #f0fdf4; }
+.bf-state { font-weight: 700; }
+.bf-table.warn .bf-state { color: #b45309; }
+.bf-table.over .bf-state { color: var(--alert); }
+.bf-table.paying .bf-state { color: var(--ok); }
+.bf-bill { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0; background: #fafbfc; }
+.bf-bill .list .tot td { font-weight: 700; font-size: 18px; border-top: 2px solid var(--line); }
+.bf-staff .seg-tabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.bf-staff .modal-box .btn.on { background: var(--dark); color: #fff; border-color: var(--dark); }
+.t-round small.warn { color: #fde68a; font-weight: 700; }

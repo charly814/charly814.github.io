@@ -68,6 +68,13 @@
 
   var app = document.getElementById('app');
   var modal = document.getElementById('modal');
+  // Enlace desde el buffet (buffet.html): pos.html?buffet=1&mesa=T5[&cobrar=1] abre esa
+  // mesa con el TPV de siempre (bebidas, extras, cobro); pos.html?buffet=1&v=caja, la caja.
+  // Al volver al plano de mesas se regresa a la pantalla del buffet.
+  var BUFFET_LINK = (function () {
+    var q = new URLSearchParams(location.search);
+    return q.get('buffet') === '1' ? { table: String(q.get('mesa') || '').toUpperCase(), pay: q.get('cobrar') === '1', v: q.get('v'), started: false } : null;
+  })();
   var modalBox = document.getElementById('modal-box');
   var mobile = function () { return window.innerWidth <= 860; };
 
@@ -95,7 +102,8 @@
   });
   Store.on('settings', function (v) {
     // Modo buffet (Gestión → 🍣 Buffet): este TPV de bar no se usa, se abre la pantalla del buffet.
-    if (v && v.mode === 'buffet') { location.replace('buffet.html'); return; }
+    // (salvo cuando el buffet manda aquí una mesa para añadir bebidas o cobrarla)
+    if (v && v.mode === 'buffet' && !BUFFET_LINK) { location.replace('buffet.html'); return; }
     S.settings = Object.assign({}, P.DEFAULT_SETTINGS, v || {});
     // logo del ticket: se carga una vez para tenerlo listo al imprimir
     if (S.settings.logoImg) Store.getImage('logo', S.settings.logoImg).then(function (d) { S.logo = d; });
@@ -403,7 +411,28 @@
   var raf = 0;
   function later() { if (!raf) raf = requestAnimationFrame(function () { raf = 0; render(); }); }
 
+  function buffetLink() {
+    if (!BUFFET_LINK || !S.user) return false;
+    if (!BUFFET_LINK.started) {
+      BUFFET_LINK.started = true;
+      if (P.TABLE_ID_RE.test(BUFFET_LINK.table)) { S.table = BUFFET_LINK.table; S.view = 'ticket'; S.sel = -1; }
+      else if (BUFFET_LINK.v === 'caja') S.view = 'caja';
+      if (BUFFET_LINK.pay) {
+        // el cobro se abre en cuanto no haya otra ventana encima (p. ej. «Abrir caja»)
+        var tries = 0, iv = setInterval(function () {
+          if (++tries > 120) return clearInterval(iv);
+          if (!modal.classList.contains('hidden') || S.view !== 'ticket') return;
+          clearInterval(iv);
+          if (ticketOf(S.table).lines.length) allow('pay', function () { openPay(ticketOf(S.table)); });
+        }, 500);
+      }
+    }
+    if (S.view === 'map') { location.replace('buffet.html'); return true; }
+    return false;
+  }
+
   function render() {
+    if (buffetLink()) return;
     if (!S.user) S.view = 'login';
     if (Store.mode === 'cloud' && !Store.hasAuth) S.view = 'setup';
     app.innerHTML = (S.user ? offlineBanner() : '') + ({
@@ -426,6 +455,7 @@
     if (S.pending) conn += ' <span class="conn err">' + t('sync.pending', { n: S.pending }) + '</span>';
     return '<header class="topbar"><div><small>TPV/' + esc(S.user.name) + ' · ' + conn + '</small><h1>' + esc(title) + '</h1></div>' +
       '<div class="tb-actions">' +
+      (BUFFET_LINK ? '<a class="tb-btn primary" href="buffet.html" style="text-decoration:none">← 🍣 Buffet</a>' : '') +
       '<button class="tb-btn' + (n ? ' primary' : '') + '" data-act="orders">📲 ' + t('tb.orders') + (n ? '<span class="badge">' + n + '</span>' : '') + '</button>' +
       (S.view !== 'map' ? '<button class="tb-btn" data-act="go" data-v="map">🪑 ' + t('tb.tables') + '</button>' : '<button class="tb-btn" data-act="open-table" data-id="' + QUICK + '">⚡ ' + t('quickSale') + '</button>') +
       '<button class="tb-btn" data-act="go" data-v="caja">💶 ' + t('tb.caja') + '</button>' +
@@ -568,7 +598,7 @@
       return '<div class="tk-line' + (i === S.sel ? ' sel' : '') + '" data-act="sel-line" data-i="' + i + '">' +
         '<span>' + fmtQty(l.qty) + '</span>' +
         '<span>' + esc(lineName(l)) + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.src === 'voice' ? '<i class="tag voice">🎤</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
-        (l.sent ? '<i class="tag sent">✓ ' + t('tk.kitchen') + '</i>' : '') +
+        (l.src === 'buffet' ? '<i class="tag">🍣</i>' : l.sent ? '<i class="tag sent">✓ ' + t('tk.kitchen') + '</i>' : '') +
         (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
         '<span>' + fmt(l.price).replace(' €', '') + '</span><span>' + fmt(l.price * l.qty).replace(' €', '') + '</span></div>';
     }).join('');
@@ -623,7 +653,7 @@
           (pu ? '<img src="' + pu + '" alt="">' : '') + '<span>' + esc(P.tr(it, I.lang)) + '</span><b>' + fmt(itemPrice(it, S.table)) + '</b></button>';
       }).join('') + '</div>' +
       '<nav class="actions">' +
-      act('go', '🪑', t('tb.tables'), 'data-v="map"') +
+      (BUFFET_LINK ? act('go', '🍣', t('bf.title'), 'data-v="map"') : act('go', '🪑', t('tb.tables'), 'data-v="map"')) +
       (pendingOrders().length ? act('orders', '📲', t('tb.orders') + ' (' + pendingOrders().length + ')', '', 'alert-act') : '') +
       act('print-ticket', '🖨️', t('act.print')) +
       act('drawer', '💶', t('act.drawer')) +

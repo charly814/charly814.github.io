@@ -545,6 +545,15 @@
       '<div class="card"><h3>' + t('bf.rules') + '</h3><div class="form-grid">' + num('roundMin', 'bf.roundMin') + num('perAdult', 'bf.perAdult') + num('perKid', 'bf.perKid') +
       '<div class="field"><label>' + t('bf.tabletPin') + '</label><input type="text" inputmode="numeric" maxlength="6" style="max-width:120px" data-edit="bf" data-k="tabletPin" value="' + esc(c.tabletPin) + '"></div></div>' +
       '<p class="promo-sum">' + t('bf.example', { n: 2 * c.perAdult + c.perKid, m: c.roundMin }) + '</p></div>' +
+      '<div class="card"><h3>' + t('bf.prices') + '</h3><p class="muted">' + t('bf.pricesHelp') + '</p><div class="scroll-x"><table class="grid"><tr><th></th><th>' + t('bf.adults') + '</th><th>' + t('bf.kids') + '</th></tr>' +
+        [['lunch', '☀️'], ['dinner', '🌙']].map(function (x) {
+          var cell = function (k) { return '<td><input type="text" inputmode="decimal" style="max-width:110px" data-edit="bf-price" data-k="' + k + '" value="' + String(c[k].toFixed(2)).replace('.', ',') + '"> €</td>'; };
+          return '<tr><td>' + x[1] + ' ' + t('bf.' + x[0]) + '</td>' + cell(x[0] + 'Adult') + cell(x[0] + 'Kid') + '</tr>';
+        }).join('') + '</table></div>' +
+        '<div class="form-grid"><div class="field"><label>' + t('bf.dinnerFrom') + '</label><input type="time" style="max-width:140px" data-edit="bf" data-k="dinnerFrom" value="' + esc(c.dinnerFrom) + '"></div></div>' +
+        sw('weekendDinner', 'bf.weekendDinner') + '</div>' +
+      '<div class="card"><h3>' + t('bf.timeTitle') + '</h3><div class="form-grid">' + num('timeLimitMin', 'bf.timeLimitMin') + num('warnMin', 'bf.warnMin') + '</div>' +
+        sw('stopAtLimit', 'bf.stopAtLimit') + '</div>' +
       '<div class="card"><h3>' + t('bf.kitchen') + '</h3>' + sw('kitchenScreen', 'bf.kitchenScreen') + sw('kitchenPrint', 'bf.kitchenPrint') + '<p class="muted">' + t('bf.printHelp') + '</p></div>' +
       '<div class="card"><h3>' + t('bf.dishes') + '</h3><p class="muted">' + t('bf.dishesHelp') + '</p>' + A.menu.map(function (cat) {
         var whole = c.cats.indexOf(cat.id) >= 0;
@@ -1604,12 +1613,20 @@
         return Store.update('', { 'settings/mode': val === 'buffet' ? 'buffet' : 'bar', 'buffet/public/config': bc });
       case 'bf':
         if (el.type === 'checkbox') return saveBuffet((function () { var o = {}; o[d.k] = !!val; return o; })());
+        if (d.k === 'dinnerFrom') {
+          if (!/^\d{1,2}:\d{2}$/.test(val)) return;
+          return saveBuffet({ dinnerFrom: String(val) });
+        }
         if (d.k === 'tabletPin') {
           if (!/^\d{4,6}$/.test(val)) { toast(t('msg.pinFormat')); el.value = Buffet.cfg(A.buffet).tabletPin; return; }
           return saveBuffet({ tabletPin: String(val) });
         }
         var nv = Math.max(d.k === 'roundMin' ? 1 : 0, Math.floor(Number(String(val).replace(',', '.')) || 0));
         return saveBuffet((function () { var o = {}; o[d.k] = nv; return o; })());
+      case 'bf-price':
+        var pv = P.round2(String(val).replace(',', '.'));
+        if (isNaN(pv) || pv < 0) { toast(t('adm.required')); return; }
+        return saveBuffet((function () { var o = {}; o[d.k] = pv; return o; })());
       case 'bf-cat': case 'bf-item':
         var bk = d.edit === 'bf-cat' ? 'cats' : 'items';
         var arr = Buffet.cfg(A.buffet)[bk].filter(function (x) { return x !== d.v; });
