@@ -144,6 +144,8 @@ input, select, textarea { font: inherit; }
 .numpad button { height: 50px; border: 0; background: transparent; font-size: 22px; border-radius: 6px; }
 .numpad button:hover { background: #f5f6fa; }
 .numpad button.fn { background: var(--dark); color: #fff; font-size: 15px; font-weight: 700; }
+.numpad button.minus-key { grid-column: span 4; height: 46px; background: #fee2e2; color: #b91c1c; font-size: 16px; font-weight: 700; }
+.numpad button.minus-key:hover { background: #fecaca; }
 
 .tk-right { display: flex; flex-direction: column; min-height: 0; }
 .cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; padding: 10px; background: #fff; border-bottom: 1px solid var(--line); }

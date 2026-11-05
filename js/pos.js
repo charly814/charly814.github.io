@@ -631,9 +631,11 @@
       key('4') + key('5') + key('6') + key('DTO€', 'DTO €', 'fn') +
       key('1') + key('2') + key('3') + key('PREC', 'PREC', 'fn') +
       key('0') + key(',') + key('CLR', 'CLR', 'fn') + key('CANT', 'CANT', 'fn') +
+      // quitar una unidad de la línea elegida: al lado del teclado, que es donde se mira
+      '<button class="minus-key" data-act="qty-minus">❌ ' + t('act.minus') + '</button>' +
       '</div>' +
       '<nav class="m-ticket-actions">' +
-      act('mods', '✏️', t('act.mod')) + act('qty-minus', '➖', t('act.minus')) + act('qty-plus', '➕', t('act.plus')) +
+      act('mods', '✏️', t('act.mod')) +
       act('del-line', '🗑️', t('act.del')) + act('kitchen', '👨‍🍳', t('act.kitchen')) +
       act('hide-ticket', '↩', t('act.back')) +
       '<button class="act pay" data-act="pay"><b>💶</b>' + t('act.pay') + ' ' + fmt(tot.total) + '</button></nav>' +
@@ -662,8 +664,6 @@
       act('voice', '🎤', t('act.voice'), '', 'voice-act') +
       act('mods', '✏️', t('act.mod')) +
       act('free', '✎', t('act.free')) +
-      act('qty-minus', '➖', t('act.minus')) +
-      act('qty-plus', '➕', t('act.plus')) +
       act('del-line', '🗑️', t('act.del')) +
       act('split', '✂️', t('act.split')) +
       act('move', '⇄', t('act.move')) +
