@@ -11,6 +11,9 @@
   var QUICK = 'RAPIDA';
   var METHODS = ['efectivo', 'tarjeta', 'bizum'];
   var METHOD_ES = P.METHOD_ES;
+  // Mesas juntadas: colores de grupo distintos de los de estado (libre, ocupada, QR, temporal).
+  // Va aquí arriba porque el plano se pinta ya mientras se cargan los datos.
+  var JOIN_COLORS = ['#0d9488', '#db2777', '#2563eb', '#65a30d', '#0891b2', '#a16207', '#be123c', '#4f46e5'];
 
   var S = {
     view: 'login',
@@ -360,8 +363,6 @@
     while (S.joins[m] && guard++ < 10) m = S.joins[m];
     return m;
   }
-  // colores de grupo distintos de los de estado (libre, ocupada, QR, temporal)
-  var JOIN_COLORS = ['#0d9488', '#db2777', '#2563eb', '#65a30d', '#0891b2', '#a16207', '#be123c', '#4f46e5'];
   function childrenOf(id) { return Object.keys(S.joins).filter(function (c) { return S.joins[c] === id; }); }
 
   // Al cerrar la cuenta de una mesa: se deshacen sus uniones y desaparecen sus mesas temporales.
