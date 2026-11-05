@@ -151,9 +151,9 @@
     var st = document.createElement('style');
     st.textContent =
       '.pv{position:relative;width:300px;height:360px;max-width:100%;margin:0 auto;perspective:900px;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab}' +
-      '.pv-plate{position:absolute;left:10px;right:10px;bottom:6px;height:56px;border-radius:50%;background:radial-gradient(ellipse at center,#fff 0 52%,#e8ecf2 53% 62%,#fff 63% 70%,rgba(0,0,0,.12) 71%,transparent 74%)}' +
+      '.pv-plate{position:absolute;left:10px;width:280px;bottom:6px;height:56px;border-radius:50%;background:radial-gradient(ellipse at center,#fff 0 52%,#e8ecf2 53% 62%,#fff 63% 70%,rgba(0,0,0,.12) 71%,transparent 74%)}' +
       '.pv-stack{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .5s cubic-bezier(.2,.8,.2,1)}' +
-      '.pv-l{position:absolute;left:0;width:300px;transition:bottom .45s cubic-bezier(.3,1.4,.5,1),opacity .3s;will-change:bottom,transform}' +
+      '.pv-l{position:absolute;left:calc(50% - 150px);width:300px;transition:bottom .45s cubic-bezier(.3,1.4,.5,1),opacity .3s;will-change:bottom,transform}' +
       '.pv-l svg{display:block;width:300px;overflow:visible;filter:drop-shadow(0 5px 3px rgba(0,0,0,.28))}' +
       '.pv-l.drop{animation:pv-drop .7s cubic-bezier(.3,0,.4,1) both}' +
       '@keyframes pv-drop{0%{transform:translateY(-320px) rotate(-8deg);opacity:0}15%{opacity:1}62%{transform:translateY(0) rotate(0)}76%{transform:translateY(-16px) scaleY(1.04)}88%{transform:translateY(0) scaleY(.94)}100%{transform:none}}' +
@@ -161,12 +161,10 @@
       '.pv-l.out.left{transform:translateX(-130%) rotate(-28deg)}' +
       '.pv-l.hit svg{animation:pv-hit .6s ease-out}' +
       '@keyframes pv-hit{0%{transform:scaleY(.8);filter:drop-shadow(0 0 10px #fde047) brightness(1.35)}55%{transform:scaleY(1.06)}100%{transform:none}}' +
-      '.pv-tag{position:absolute;right:-8px;bottom:50%;transform:translate(100%,50%);font:600 13px/1.2 system-ui,sans-serif;color:#334155;background:#fff;border-radius:999px;padding:3px 9px;box-shadow:0 2px 6px rgba(0,0,0,.15);white-space:nowrap;opacity:0;transition:opacity .3s;pointer-events:none}' +
+      '.pv-tag{position:absolute;right:0;bottom:50%;transform:translate(10px,50%);font:600 13px/1.2 system-ui,sans-serif;color:#334155;background:#fff;border-radius:999px;padding:3px 9px;box-shadow:0 2px 6px rgba(0,0,0,.15);white-space:nowrap;opacity:0;transition:opacity .3s;pointer-events:none}' +
       '.pv.exploded .pv-tag{opacity:1}' +
       '.pv-l.extra .pv-tag{opacity:1;background:#16a34a;color:#fff;font-size:12px;padding:2px 8px}' +
-      '.pv:not(.exploded) .pv-l.extra .pv-tag{right:0;transform:translate(6px,50%)}' +
-      '.pv:not(.exploded) .pv-l.extra .pv-tag.tl{right:auto;left:0;transform:translate(-6px,50%)}' +
-      '.pv.exploded .pv-l .pv-tag.tl{right:auto;left:-8px;transform:translate(-100%,50%)}' +
+      '.pv-tag.tl{right:auto;left:0;transform:translate(-10px,50%)}' +
       '.pv.exploded .pv-l{transition:bottom .55s cubic-bezier(.3,1.3,.5,1)}' +
       '.pv-land{animation:pv-land .35s ease-out}' +
       '@keyframes pv-land{40%{transform:scaleY(.97)}100%{transform:none}}' +
@@ -189,9 +187,10 @@
     addCss();
     opts = opts || {};
     var R = RECIPES[kind] || RECIPES.burger;
-    var H = opts.height || 360, lang = opts.lang || 'es', sel = {}, exploded = false, lidUp = 0, nodes = {}, first = true;
+    var H = opts.height || 360, W = opts.width || 300, lang = opts.lang || 'es', sel = {}, exploded = opts.exploded !== false, lidUp = 0, nodes = {}, first = true;
     el.innerHTML = '<div class="pv"><div class="pv-plate"></div><div class="pv-stack"></div></div>';
-    var box = el.firstChild, stack = box.lastChild;
+    var box = el.firstChild, stack = box.lastChild, plate = box.firstChild;
+    box.classList.toggle('exploded', exploded);
 
     function spec(id) { return LAYERS[(R.draw && R.draw[id]) || id](); }
     function visible() { return R.order.filter(function (id) { return !R.show[id] || R.show[id](sel); }); }
@@ -201,7 +200,7 @@
 
     function layout() {
       // las capas van un poco separadas para que se distinga bien cada una
-      var ids = visible(), base = 34, gap = exploded ? 24 : 10, ex = 0, tags = [];
+      var ids = visible(), base = 34, gap = exploded ? 20 : 10, ex = 0, tags = [];
       ids.forEach(function (id, i) {
         var n = nodes[id], sp = n.sp;
         if (id === R.lid) base += lidUp + (exploded ? 0 : 8);
@@ -214,7 +213,8 @@
         base += sp.lift + gap;
       });
       var top = base + (nodes[R.lid] ? nodes[R.lid].sp.h : 0);
-      var k = Math.min(1, (H - 8) / top);
+      // se agranda hasta llenar el sitio disponible (ancho y alto)
+      var k = Math.min((W - 24) / 300, (H - 8) / top, 1.8);
       // que no se pisen: en cada lado, al menos 24 px (ya escalados) entre una y otra
       [true, false].forEach(function (side) {
         var prev = -1e9;
@@ -223,7 +223,9 @@
           t.n.tag.style.bottom = (t.y - t.b) + 'px';
         });
       });
-      box.style.height = H + 'px';
+      box.style.height = H + 'px'; box.style.width = W + 'px';
+      var pw = 290 * Math.max(k, 0.75);
+      plate.style.width = pw + 'px'; plate.style.left = ((W - pw) / 2) + 'px'; plate.style.height = (pw * 0.2) + 'px';
       stack.style.transformOrigin = '50% 100%';
       stack.dataset.k = k;
       applyTilt();

@@ -15,8 +15,8 @@
     .lang { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
     .lang button { border: 0; background: #fff; padding: 6px 9px; font-size: 13px; }
     .lang button.on { background: var(--accent); color: #fff; }
-    .stage { position: sticky; top: 0; z-index: 5; max-width: 560px; margin: 0 auto; padding: 4px 16px 6px; overflow: hidden; background: var(--bg); box-shadow: 0 10px 12px -10px rgba(120,60,0,.25); }
-    .stage .hint { margin: 0 0 6px; }
+    .stage { position: sticky; top: 0; z-index: 5; max-width: 560px; margin: 0 auto; padding: 4px 12px 6px; overflow: hidden; background: var(--bg); box-shadow: 0 10px 12px -10px rgba(120,60,0,.25); }
+    .stage .hint { position: absolute; top: 6px; left: 0; right: 0; margin: 0; pointer-events: none; }
     .hint { text-align: center; color: var(--muted); font-size: 12px; margin: -4px 0 6px; }
     .tools { display: flex; justify-content: center; gap: 8px; }
     .tools button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 14px; }
@@ -89,7 +89,7 @@
     var lang = (navigator.language || 'es').slice(0, 2);
     if (!(lang in L)) lang = 'es';
     try { lang = localStorage.getItem('platet-lang') || lang; } catch (e) { /* sin almacenamiento */ }
-    var sel = {}, exploded = false;
+    var sel = {}, exploded = true;
     function t(k) { return T[k][L[lang]]; }
     function fmt(n) { return n.toFixed(2).replace('.', ',') + ' €'; }
 
@@ -99,7 +99,7 @@
     var THUMB = {};
     Object.keys(LAYER).forEach(function (k) { THUMB[k] = PlatetVisual.svg(LAYER[k]); });
     function origin(layer) { return CARD[layer] ? document.querySelector('.ing[data-id="' + CARD[layer] + '"] i') : null; }
-    var v = PlatetVisual.mount(document.getElementById('burger'), 'burger', { lang: lang, height: Math.max(190, Math.min(340, Math.round(innerHeight * 0.33))) });
+    var v = PlatetVisual.mount(document.getElementById('burger'), 'burger', { lang: lang, width: Math.min(innerWidth - 24, 520), height: Math.max(240, Math.min(560, Math.round(innerHeight * (innerHeight > 700 ? 0.48 : 0.42)))) });
     v.set(sel);
 
     function card(r, kind) {
