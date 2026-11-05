@@ -226,7 +226,8 @@ function activeContract(propId,date){ const m=(date||today()).slice(0,7); return
 function rentPayment(cid,m){ return D.payments.find(p=>p.contractId===cid && p.kind==='rent' && p.period===m); }
 function dueDate(c,m){ const d=Math.min(c.payDay||1,+monthEnd(m).slice(8)); return m+'-'+pad(d); }
 function receiptLang(p){ const c=contract(p.contractId); return (c&&LANGS[c.lang]?c.lang:'')||D.settings.lang||'zh-es'; }
-function paymentStatus(p){ if(!p) return 'none'; const paid=num(p.amountPaid), tot=num(p.total); if(paid>=tot-0.004) return 'paid'; if(paid>0) return 'partial'; return 'none'; }
+const got=p=>p.pending?0:num(p.amountPaid);
+function paymentStatus(p){ if(!p) return 'none'; if(p.pending) return 'pending'; const paid=num(p.amountPaid), tot=num(p.total); if(paid>=tot-0.004) return 'paid'; if(paid>0) return 'partial'; return 'none'; }
 
 /* overdue: every month since contract start up to now where payment due date passed and not fully paid */
 function overdueList(){
@@ -238,7 +239,7 @@ function overdueList(){
       if(contractActiveIn(c,m)){
         const p=rentPayment(c.id,m); const st=paymentStatus(p);
         if(st!=='paid' && dueDate(c,m)<t){
-          const owed=p? r2(num(p.total)-num(p.amountPaid)) : num(c.rent);
+          const owed=p? r2(num(p.total)-got(p)) : num(c.rent);
           out.push({c,m,p,owed,st});
         }
       }
@@ -398,7 +399,7 @@ views.home=function(el){
   const m=thisMonth();
   const act=D.contracts.filter(c=>contractActiveIn(c,m));
   const expected=act.reduce((s,c)=>s+num(c.rent),0);
-  const received=D.payments.filter(p=>p.paidDate&&p.paidDate.slice(0,7)===m).reduce((s,p)=>s+num(p.amountPaid),0);
+  const received=D.payments.filter(p=>!p.pending&&(p.receivedDate||p.paidDate||'').slice(0,7)===m).reduce((s,p)=>s+got(p),0);
   const od=overdueList(); const odSum=od.reduce((s,o)=>s+o.owed,0);
   const pendingBills=D.bills.filter(b=>b.chargeTenant && !b.paymentId);
   const pbSum=pendingBills.reduce((s,b)=>s+num(b.tenantAmount),0);
@@ -427,11 +428,11 @@ views.home=function(el){
     ${pendingBills.map(b=>`<div class="sum-line"><span>${BILL_TYPES[b.type]?.ic||''} ${esc(BILL_TYPES[b.type]?.zh||b.type)} · ${esc(propLabel(prop(b.propertyId)))} <span class="muted small">${rangeTxt(b)}</span></span><b>${money(num(b.tenantAmount))}</b></div>`).join('')}
     <p class="muted small">下次在 “收租” 时可以勾选这些费用，一起写进收据。</p></div>`:''}
   `;
-  el.querySelectorAll('[data-collect]').forEach(b=>b.onclick=()=>{ const [cid,mm]=b.dataset.collect.split('|'); collectRent(cid,mm); });
+  el.querySelectorAll('[data-collect]').forEach(b=>b.onclick=()=>{ const [cid,mm]=b.dataset.collect.split('|'); const ex=rentPayment(cid,mm); if(ex&&ex.pending) confirmPaid(ex); else collectRent(cid,mm); });
 };
 function rangeTxt(b){ return [fmtDate(b.from),fmtDate(b.to)].filter(Boolean).join('–'); }
 function addDays(s,n){ const d=new Date(s+'T12:00:00'); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
-function statusTag(st,due){ if(st==='paid') return '<span class="tag ok">已收</span>'; if(st==='partial') return '<span class="tag warn">部分收</span>'; if(due && due<today()) return '<span class="tag bad">逾期</span>'; return '<span class="tag">未收</span>'; }
+function statusTag(st,due){ if(st==='pending') return due&&due<today()?'<span class="tag bad">收据已开·逾期</span>':'<span class="tag pri">收据已开·待收</span>'; if(st==='paid') return '<span class="tag ok">已收</span>'; if(st==='partial') return '<span class="tag warn">部分收</span>'; if(due && due<today()) return '<span class="tag bad">逾期</span>'; return '<span class="tag">未收</span>'; }
 
 /* ---------------- RENT ---------------- */
 views.rent=function(el){
@@ -440,13 +441,13 @@ views.rent=function(el){
   const others=D.payments.filter(p=>p.kind!=='rent' && (p.paidDate||'').slice(0,7)===m);
   el.innerHTML=`
   <div class="row between" style="margin-bottom:12px"><h2 style="margin:0">收租 · ${fmtMonthZh(m)}</h2>
-    <div class="row"><button class="sm" id="pm">◀ 上月</button><input type="month" id="mm" value="${m}" style="width:auto"><button class="sm" id="nm">下月 ▶</button></div></div>
+    <div class="row"><button class="sm pri" id="year">📅 一次生成全年收据</button><button class="sm" id="pm">◀ 上月</button><input type="month" id="mm" value="${m}" style="width:auto"><button class="sm" id="nm">下月 ▶</button></div></div>
   <div class="card">
     ${act.length?`<div class="tbl-wrap"><table><tr><th>房产</th><th>租客</th><th>交租日</th><th class="num">应收</th><th class="num">已收</th><th>状态</th><th></th></tr>
     ${act.map(c=>{ const p=rentPayment(c.id,m); const st=paymentStatus(p); const due=dueDate(c,m);
       return `<tr><td>${esc(propLabel(prop(c.propertyId)))}</td><td>${esc(c.tenant)}</td><td>${fmtDate(due)}</td>
-      <td class="num">${money(p?num(p.total):num(c.rent))}</td><td class="num">${p?money(num(p.amountPaid)):'—'}</td><td>${statusTag(st,due)}</td>
-      <td class="right">${p?`<button class="sm" data-edit="${p.id}">修改</button> <button class="sm pri" data-rc="${p.id}">🧾 收据</button>`:`<button class="sm pri" data-collect="${c.id}">收租</button>`}</td></tr>`; }).join('')}</table></div>`
+      <td class="num">${money(p?num(p.total):num(c.rent))}</td><td class="num">${p&&!p.pending?money(got(p)):'—'}</td><td>${statusTag(st,due)}</td>
+      <td class="right">${p?`${p.pending?`<button class="sm ok" data-conf="${p.id}">✔ 确认已收</button> `:''}<button class="sm" data-edit="${p.id}">修改</button> <button class="sm${p.pending?'':' pri'}" data-rc="${p.id}">🧾 收据</button>`:`<button class="sm pri" data-collect="${c.id}">收租</button>`}</td></tr>`; }).join('')}</table></div>`
     :'<div class="empty">这个月没有生效中的租约。<br><a href="#props">去添加房产和租客 →</a></div>'}
   </div>
   <div class="card"><div class="row between"><h3>其他收款（押金等）</h3><button class="sm" id="other">＋ 其他收款</button></div>
@@ -458,11 +459,13 @@ views.rent=function(el){
   el.querySelectorAll('[data-collect]').forEach(b=>b.onclick=()=>collectRent(b.dataset.collect,m));
   el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>paymentForm(D.payments.find(p=>p.id===b.dataset.edit)));
   el.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>showReceipt(b.dataset.rc));
+  el.querySelectorAll('[data-conf]').forEach(b=>b.onclick=()=>confirmPaid(D.payments.find(p=>p.id===b.dataset.conf)));
+  $('#year').onclick=yearReceipts;
   $('#other').onclick=()=>{ if(!D.contracts.length) return alert('请先添加租客合同'); paymentForm(null,{kind:'deposit'}); };
 };
 function collectRent(cid,m){
   const c=contract(cid); if(!c) return;
-  const existing=rentPayment(cid,m); if(existing) return paymentForm(existing);
+  const existing=rentPayment(cid,m); if(existing) return existing.pending?confirmPaid(existing):paymentForm(existing);
   paymentForm(null,{kind:'rent',contractId:cid,period:m});
 }
 
@@ -499,6 +502,7 @@ function paymentForm(p,preset){
       <div class="sum-line total"><span>合计应收</span><span id="tot">0</span></div>
       <label class="f" style="margin-top:8px">实收金额（部分付款时修改）<input name="amountPaid" inputmode="decimal" value="${p?num(p.amountPaid):''}" placeholder="默认 = 合计"></label>
       <label class="f">备注（会印在收据上）<input name="note" value="${esc(p?p.note:'')}"></label>
+      <label class="chk"><input type="checkbox" name="pending"${p&&p.pending?' checked':''}> 预开收据，还没收到钱（收到后点 “确认已收”）</label>
     </div>`;
   const md=modal({title:isNew?'记一笔收款':'修改收款',wide:true,body,
     buttons:[
@@ -545,6 +549,8 @@ function paymentForm(p,preset){
     const rec=p||{id:uid(),created:today()};
     Object.assign(rec,{kind:kindV,contractId:cidV,propertyId:cc.propertyId,tenant:cc.tenant,period:kindV==='rent'?per:'',paidDate:fv(f,'paidDate')||today(),method:fv(f,'method'),
       items:clean,total,amountPaid:fv(f,'amountPaid')===''?total:r2(num(fv(f,'amountPaid'))),note:fv(f,'note'),receiptNo:rno});
+    if(rec.pending && !fv(f,'pending')) rec.receivedDate=today();
+    rec.pending=!!fv(f,'pending'); if(rec.pending) delete rec.receivedDate;
     if(isNew){ D.payments.push(rec); bumpReceiptNo(rno); }
     D.bills.forEach(b=>{ if(b.paymentId===rec.id) b.paymentId=null; });
     clean.forEach(it=>{ if(it.billId){ const b=D.bills.find(x=>x.id===it.billId); if(b) b.paymentId=rec.id; } });
@@ -731,13 +737,64 @@ function contractForm(c,propId){
 function tenantHistory(c){
   const ps=D.payments.filter(p=>p.contractId===c.id).sort((a,b)=>(b.period||b.paidDate).localeCompare(a.period||a.paidDate));
   const od=overdueList().filter(o=>o.c.id===c.id);
-  const tot=ps.reduce((s,p)=>s+num(p.amountPaid),0);
+  const tot=ps.reduce((s,p)=>s+got(p),0);
   modal({title:'账目 · '+esc(c.tenant),wide:true,body:`
     <div class="stats"><div class="stat ok"><div class="k">累计收款</div><div class="v">${money(tot)}</div></div><div class="stat ${od.length?'bad':''}"><div class="k">逾期未收</div><div class="v">${money(od.reduce((s,o)=>s+o.owed,0))}</div></div></div>
     ${od.length?`<p class="small" style="color:var(--bad)">逾期月份：${od.map(o=>fmtMonthZh(o.m)).join('、')}</p>`:''}
     ${ps.length?`<div class="tbl-wrap"><table><tr><th>收据号</th><th>类型 / 月份</th><th>收款日</th><th class="num">应收</th><th class="num">实收</th><th></th></tr>
-    ${ps.map(p=>`<tr><td>${esc(p.receiptNo)}</td><td>${esc(KINDS[p.kind].zh)} ${p.period?fmtMonthZh(p.period):''}</td><td>${fmtDate(p.paidDate)}</td><td class="num">${money(num(p.total))}</td><td class="num">${money(num(p.amountPaid))}</td><td class="right"><button type="button" class="sm" data-rc="${p.id}">🧾</button></td></tr>`).join('')}</table></div>`:'<div class="empty">暂无收款</div>'}`,
+    ${ps.map(p=>`<tr><td>${esc(p.receiptNo)}</td><td>${esc(KINDS[p.kind].zh)} ${p.period?fmtMonthZh(p.period):''}</td><td>${fmtDate(p.paidDate)}</td><td class="num">${money(num(p.total))}</td><td class="num">${p.pending?'<span class="tag pri">待收</span>':money(got(p))}</td><td class="right"><button type="button" class="sm" data-rc="${p.id}">🧾</button></td></tr>`).join('')}</table></div>`:'<div class="empty">暂无收款</div>'}`,
     onMount(f,close){ f.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>{ close(); showReceipt(b.dataset.rc); }); }});
+}
+
+/* ---------- pre-issued receipts ---------- */
+function confirmPaid(p){
+  if(!p) return;
+  modal({title:'确认已收款',body:`<p>${esc(p.tenant)} · ${p.period?fmtMonthZh(p.period):''} · 收据 <b>${esc(p.receiptNo)}</b> · <b>${money(num(p.total))}</b></p>
+    <div class="grid2"><label class="f">实际收款日期<input type="date" name="d" value="${today()}"></label>
+    <label class="f">付款方式<select name="method">${opt(METHODS,p.method)}</select></label></div>
+    <p class="small muted">收据上印好的日期不变；实际收款日期用于报表统计。</p>`,
+    buttons:[{t:'取消'},{t:'✔ 确认已收',cls:'ok',fn:f=>{ p.pending=false; p.receivedDate=fv(f,'d')||today(); p.method=fv(f,'method'); save(); rerender(); toast('已确认收款'); }}]});
+}
+function yearReceipts(){
+  const act=D.contracts.filter(c=>!c.closed);
+  if(!act.length) return alert('请先添加租客合同');
+  const y=new Date().getFullYear();
+  const start=thisMonth()<=y+'-01'?y+'-01':thisMonth();
+  modal({title:'📅 一次生成全年收据',wide:true,body:`
+    <p class="small">为选中的租客提前开好每个月的租金收据，可一次全部打印。每张收据日期 = 当月交租日。<br>这些收据先标记为 <span class="tag pri">收据已开·待收</span>，到时候收到钱，把那张纸交给租客，再在软件里点 <b>“✔ 确认已收”</b>。</p>
+    <h3>租客</h3>
+    ${act.map(c=>`<label class="chk"><input type="checkbox" name="c_${c.id}" checked> ${esc(c.tenant)} — ${esc(propLabel(prop(c.propertyId)))} · ${money(num(c.rent))}/月 · 每月 ${c.payDay||1} 号</label>`).join('')}
+    <div class="grid3">
+      <label class="f">从哪个月开始<input type="month" name="from" value="${start}"></label>
+      <label class="f">几个月<input type="number" name="n" min="1" max="24" value="12"></label>
+      <label class="f">收据日期<select name="dmode"><option value="due">每月交租日</option><option value="first">每月 1 号</option></select></label>
+    </div>
+    <label class="chk"><input type="checkbox" name="printNow" checked> 生成后马上打印（每个月一张 A4，一式两联）</label>
+    <p class="small muted" id="yr-prev"></p>`,
+    buttons:[{t:'取消'},{t:'生成收据',cls:'pri',fn:async f=>{
+      const plan=yearPlan(f); if(!plan.list.length){ alert('没有需要生成的月份（可能都已经有记录了）。'); return false; }
+      if(!confirm(`将生成 ${plan.list.length} 张收据${plan.skip?`（跳过已有记录 / 不在合同期内的 ${plan.skip} 个月）`:''}，确定？`)) return false;
+      const ids=[];
+      plan.list.forEach(({c,m})=>{
+        const rno=nextReceiptNo(); bumpReceiptNo(rno);
+        const rec={id:uid(),created:today(),kind:'rent',contractId:c.id,propertyId:c.propertyId,tenant:c.tenant,period:m,
+          paidDate:fv(f,'dmode')==='first'?m+'-01':dueDate(c,m),method:c.method||'transfer',
+          items:[{desc:'租金 '+fmtMonthZh(m),descEs:'Renta '+fmtMonthEs(m),amount:num(c.rent)}],total:num(c.rent),amountPaid:num(c.rent),note:'',receiptNo:rno,pending:true};
+        D.payments.push(rec); ids.push(rec.id);
+      });
+      save(); rerender(); toast(`已生成 ${ids.length} 张收据`);
+      if(fv(f,'printNow')) await printReceipts(ids);
+    }}],
+    onMount(f){ const upd=()=>{ const p=yearPlan(f); f.querySelector('#yr-prev').textContent=`将生成 ${p.list.length} 张收据`+(p.skip?`，跳过 ${p.skip} 个月（已有记录或不在合同期内）`:'')+(p.list.length?`：${fmtMonthZh(p.list[0].m)} 起`:''); };
+      f.addEventListener('input',upd); f.addEventListener('change',upd); upd(); }});
+}
+function yearPlan(f){
+  const from=fv(f,'from')||thisMonth(), n=Math.min(24,Math.max(1,parseInt(fv(f,'n'))||12));
+  const list=[]; let skip=0;
+  D.contracts.filter(c=>!c.closed && f.elements['c_'+c.id] && f.elements['c_'+c.id].checked).forEach(c=>{
+    for(let i=0;i<n;i++){ const m=addMonth(from,i); if(!contractActiveIn(c,m)||rentPayment(c.id,m)){ skip++; continue; } list.push({c,m}); }
+  });
+  return {list,skip};
 }
 
 /* ---------------- RECEIPTS ---------------- */
@@ -748,7 +805,7 @@ views.receipts=function(el){
   el.innerHTML=`<div class="row between" style="margin-bottom:12px"><h2 style="margin:0">收据</h2>
     <div class="row"><input id="rq" placeholder="搜索 租客 / 编号 / 月份" value="${esc(state.rq||'')}" style="width:220px"><button id="batch">批量打印…</button></div></div>
   <div class="card">${list.length?`<div class="tbl-wrap"><table><tr><th>编号</th><th>租客</th><th>房产</th><th>项目</th><th>收款日</th><th class="num">金额</th><th></th></tr>
-    ${list.map(p=>`<tr><td><b>${esc(p.receiptNo)}</b></td><td>${esc(p.tenant)}</td><td>${esc(propLabel(prop(p.propertyId)))}</td><td>${esc(KINDS[p.kind].zh)} ${p.period?fmtMonthZh(p.period):''}${p.items.length>1?' <span class="tag">+'+(p.items.length-1)+' 项</span>':''}</td>
+    ${list.map(p=>`<tr><td><b>${esc(p.receiptNo)}</b></td><td>${esc(p.tenant)}</td><td>${esc(propLabel(prop(p.propertyId)))}</td><td>${esc(KINDS[p.kind].zh)} ${p.period?fmtMonthZh(p.period):''}${p.items.length>1?' <span class="tag">+'+(p.items.length-1)+' 项</span>':''}${p.pending?' <span class="tag pri">预开·待收</span>':''}</td>
     <td>${fmtDate(p.paidDate)}</td><td class="num">${money(num(p.amountPaid))}${paymentStatus(p)==='partial'?'<div class="small" style="color:var(--warn)">应收 '+money(num(p.total))+'</div>':''}</td>
     <td class="right"><button class="sm" data-edit="${p.id}">修改</button> <button class="sm pri" data-rc="${p.id}">🧾 查看/打印</button></td></tr>`).join('')}</table></div>`
     :'<div class="empty">还没有收据。在 “收租” 页记一笔收款后会自动生成。</div>'}</div>`;
@@ -836,14 +893,14 @@ views.report=function(el){
   const rows=[]; let T={rent:0,extra:0,dep:0,exp:0};
   for(let i=1;i<=12;i++){
     const m=y+'-'+pad(i);
-    const ps=D.payments.filter(p=>(p.paidDate||'').slice(0,7)===m);
+    const ps=D.payments.filter(p=>!p.pending&&(p.receivedDate||p.paidDate||'').slice(0,7)===m);
     let rent=0,extra=0,dep=0;
-    ps.forEach(p=>{ const ratio=num(p.total)?num(p.amountPaid)/num(p.total):1;
+    ps.forEach(p=>{ const ratio=num(p.total)?got(p)/num(p.total):1;
       p.items.forEach(it=>{ const a=num(it.amount)*ratio; if(p.kind==='deposit') dep+=a; else if(it.billId) extra+=a; else if(p.kind==='rent'&&!it.billId) rent+=a; else extra+=a; }); });
     const exp=D.bills.filter(b=>b.payer!=='tenant' && (b.date||b.to||'').slice(0,7)===m).reduce((s,b)=>s+num(b.amount),0);
     rows.push({m,rent,extra,dep,exp}); T.rent+=rent;T.extra+=extra;T.dep+=dep;T.exp+=exp;
   }
-  const byProp=D.properties.map(p=>{ const inc=D.payments.filter(x=>x.propertyId===p.id&&x.kind!=='deposit'&&(x.paidDate||'').startsWith(y)).reduce((s,x)=>s+num(x.amountPaid),0);
+  const byProp=D.properties.map(p=>{ const inc=D.payments.filter(x=>x.propertyId===p.id&&x.kind!=='deposit'&&!x.pending&&(x.receivedDate||x.paidDate||'').startsWith(y)).reduce((s,x)=>s+got(x),0);
     const ex=D.bills.filter(b=>b.propertyId===p.id&&b.payer!=='tenant'&&(b.date||b.to||'').startsWith(y)).reduce((s,b)=>s+num(b.amount),0); return {p,inc,ex}; });
   const byType={}; D.bills.filter(b=>b.payer!=='tenant'&&(b.date||b.to||'').startsWith(y)).forEach(b=>{ byType[b.type]=(byType[b.type]||0)+num(b.amount); });
   const recov=D.bills.filter(b=>b.chargeTenant&&(b.date||b.to||'').startsWith(y)).reduce((s,b)=>s+num(b.tenantAmount),0);
@@ -870,7 +927,7 @@ views.report=function(el){
   $('#csv').onclick=()=>{
     const q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
     const lines=[['类型','日期','房产','租客/供应商','项目','所属月份','应收/账单金额','实收','备注'].map(q).join(',')];
-    D.payments.filter(p=>(p.paidDate||'').startsWith(y)).forEach(p=>lines.push([ '收款 '+p.receiptNo,p.paidDate,propLabel(prop(p.propertyId)),p.tenant,p.items.map(i=>i.desc).join(' + '),p.period,num(p.total).toFixed(2),num(p.amountPaid).toFixed(2),p.note].map(q).join(',')));
+    D.payments.filter(p=>(p.paidDate||'').startsWith(y)).forEach(p=>lines.push([ '收款 '+p.receiptNo,p.paidDate,propLabel(prop(p.propertyId)),p.tenant,p.items.map(i=>i.desc).join(' + '),p.period,num(p.total).toFixed(2),p.pending?'预开未收':got(p).toFixed(2),p.note].map(q).join(',')));
     D.bills.filter(b=>(b.date||b.to||'').startsWith(y)).forEach(b=>lines.push(['账单 '+(BILL_TYPES[b.type]?.zh||b.type),b.date||b.to,propLabel(prop(b.propertyId)),b.supplier,(b.from?b.from+'~'+b.to:'')+(b.usage?' 用量'+b.usage:''),'',num(b.amount).toFixed(2),b.payer==='tenant'?'租客自付':b.chargeTenant?'转租客 '+num(b.tenantAmount).toFixed(2):'房东承担',b.note].map(q).join(',')));
     download('﻿'+lines.join('\r\n'),`收租报表-${y}.csv`,'text/csv;charset=utf-8');
   };
