@@ -607,7 +607,7 @@
     'guests.title': ['¿Cuántos comensales?', 'How many diners?', '几位客人？'],
     'guests.other': ['Otro número', 'Other number', '其他人数'],
     'guests.skip': ['Saltar', 'Skip', '跳过'],
-    'admin.f.askGuests': ['Preguntar los comensales al abrir una mesa', 'Ask the number of diners when opening a table', '开桌时询问用餐人数'],
+    'admin.f.askGuests': ['Preguntar los comensales al abrir una mesa (útil en restaurante; en bar mejor desactivado — siempre se pueden poner con el botón 👥)', 'Ask the number of diners when opening a table (useful in restaurants; better off in a bar — you can always set them with the 👥 button)', '开桌时询问用餐人数（餐厅适用；酒吧建议关掉，需要时可以点账单上的 👥 按钮填写）'],
     'adm.rep.guests': ['Comensales', 'Diners', '用餐人数'],
     'adm.rep.perGuest': ['Gasto por comensal', 'Spend per diner', '人均消费'],
 

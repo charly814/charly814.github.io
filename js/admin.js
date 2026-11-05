@@ -1140,7 +1140,7 @@
       return '<div class="field"><label>' + t('admin.f.' + k) + '</label><input type="text" value="' + esc(st[k]) + '" data-edit="set" data-k="' + k + '"></div>';
     };
     var html = '<div class="card"><h3>' + t('admin.ticketData') + '</h3><div class="form-grid">' + f('name') + f('address') + f('nif') + f('vat') + f('series') + '</div>' +
-      '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="set" data-k="askGuests"' + (st.askGuests !== false ? ' checked' : '') + '> ' + t('admin.f.askGuests') + '</label>' +
+      '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="set" data-k="askGuests"' + (st.askGuests === true ? ' checked' : '') + '> ' + t('admin.f.askGuests') + '</label>' +
       '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
       '<div class="card"><h3>🔗 ' + t('join.title') + '</h3><p class="muted">' + t('join.help') + '</p><div class="join-opts">' + ['badge', 'color', 'grey'].map(function (k) {
         var on = (st.joinStyle || 'badge') === k;

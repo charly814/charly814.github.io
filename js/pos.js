@@ -823,7 +823,7 @@
       // una mesa juntada abre la cuenta de su mesa principal
       S.table = mainOf(d.id); S.view = 'ticket'; S.sel = -1; S.buf = ''; S.showTicket = false; render();
       var tk = ticketOf(S.table), tb = allTables().filter(function (x) { return x.id === S.table; })[0];
-      if (S.settings.askGuests !== false && !tk.lines.length && !tk.guests && tb && tb.shape !== 'stool') openGuests(S.table);
+      if (S.settings.askGuests === true && !tk.lines.length && !tk.guests && tb && tb.shape !== 'stool') openGuests(S.table);
     },
     guests: function () { openGuests(S.table); },
     tarifa: function () { openTarifa(); },
