@@ -70,6 +70,28 @@
     .sheet input[type=text] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; }
     .qty-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 16px 0; }
     .qty-row b { font-size: 20px; }
+    /* plato con vista animada (hamburguesa por capas) */
+    .sheet.vis { max-height: 96vh; padding-top: 0; background: #fff7ed; }
+    .vis-stage { position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: 6px 12px 8px; background: #fff7ed; box-shadow: 0 10px 12px -10px rgba(120,60,0,.25); }
+    .vis-stage .vis-hint { position: absolute; top: 8px; left: 0; right: 0; text-align: center; color: var(--muted); font-size: 12px; margin: 0; pointer-events: none; z-index: 1; }
+    .vis-tools { display: flex; justify-content: center; gap: 8px; }
+    .vis-tools button { border: 1px solid #fde2c8; background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 14px; }
+    .vis-tools button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    .vis-x { position: absolute; top: 6px; right: 10px; z-index: 2; width: 36px; height: 36px; border-radius: 50%; border: 0; background: rgba(0,0,0,.08); font-size: 18px; }
+    .vis-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 12px 0 0; }
+    .vis-head h2 { margin: 0; font-size: 20px; }
+    .vis-head b { color: var(--price); white-space: nowrap; }
+    .vcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+    .vcard { position: relative; border: 2px solid #fde2c8; background: #fff; border-radius: 14px; padding: 8px 6px 7px; text-align: center; font-size: 14px; transition: transform .15s, border-color .2s, background .2s; }
+    .vcard:active { transform: scale(.95); }
+    .vcard i { display: flex; align-items: center; justify-content: center; height: 42px; margin-bottom: 2px; }
+    .vcard i svg { width: 74px; max-height: 42px; overflow: visible; filter: drop-shadow(0 2px 1px rgba(0,0,0,.2)); }
+    .vcard small { display: block; color: var(--muted); font-size: 12px; }
+    .vcard.sin.on { border-color: var(--price); background: #fef2f2; }
+    .vcard.sin.on i svg { filter: grayscale(1); opacity: .4; }
+    .vcard.sin.on::after { content: ''; position: absolute; left: 18%; right: 18%; top: 29px; height: 3px; background: var(--price); transform: rotate(-20deg); border-radius: 2px; }
+    .vcard.extra.on { border-color: var(--ok); background: #f0fdf4; }
+    .vcard.extra.on small { color: var(--ok); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -89,6 +111,7 @@
   <script src="js/store.js"></script>
   <script src="js/common.js"></script>
   <script src="js/i18n.js"></script>
+  <script src="js/visual.js"></script>
   <script>
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () { /* sin modo offline */ });
   </script>
@@ -259,6 +282,7 @@
 
     function openCart() {
       sheetMode = 'cart';
+      dropVis();
       var lines = validLines();
       if (!lines.length) return closeSheet();
       sheet.innerHTML = '<h2>' + t('c.yourOrder', { t: esc(t('table', { t: table })) }) + '</h2>' +
@@ -289,6 +313,8 @@
       var it = P.findItem(menu, pid);
       if (!it) return;
       sheetMode = sheetMode && sheetMode.pid === pid ? sheetMode : { pid: pid, sel: {}, note: '', qty: 1, picks: ((it.combo && it.combo.courses) || []).map(function () { return []; }) };
+      if (it.visual && window.PlatetVisual && PlatetVisual.RECIPES[it.visual] && !isCombo(it)) return openVisual(it);
+      dropVis();
       var st = sheetMode;
       var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
       var price = unitPrice({ pid: pid, mods: ids, combo: st.picks }) * st.qty;
@@ -313,7 +339,88 @@
       sheetBg.classList.remove('hidden');
     }
 
-    function closeSheet() { sheetMode = null; sheetBg.classList.add('hidden'); }
+    // ---------------------------------------------------------------- plato con vista animada
+    // La parte de arriba (el dibujo) se crea una vez; al tocar algo solo se repinta lo de abajo.
+    var vis = null;   // { pid, kind, v, open }
+    function visKeys(kind) {
+      // modificadores que mueven una capa: { modId: clave }
+      var r = {};
+      mods.forEach(function (m) { var k = PlatetVisual.keyOf(kind, m); if (k && !Object.keys(r).some(function (x) { return r[x] === k; })) r[m.id] = k; });
+      return r;
+    }
+    function visSel(kind, st) {
+      var km = visKeys(kind), s = {};
+      Object.keys(km).forEach(function (id) { if (st.sel[id]) s[km[id]] = true; });
+      return s;
+    }
+    function visOrigin(kind) {
+      var km = visKeys(kind), R = PlatetVisual.RECIPES[kind];
+      return function (layer) {
+        var id = Object.keys(km).filter(function (x) { return R.keys[km[x]].layer === layer; })[0];
+        return id ? sheet.querySelector('.vcard[data-id="' + id + '"] i') : null;
+      };
+    }
+    function openVisual(it) {
+      var st = sheetMode, kind = it.visual;
+      if (!vis || vis.pid !== it.id || !document.getElementById('vis-host')) {
+        if (vis) vis.v.destroy();
+        sheet.classList.add('vis');
+        sheet.innerHTML = '<div class="vis-stage"><button class="vis-x" data-a="close" aria-label="✕">✕</button><p class="vis-hint" id="vis-hint"></p><div id="vis-host"></div>' +
+          '<div class="vis-tools"><button data-a="vexplode" id="vis-exp"></button><button data-a="vreset" id="vis-reset"></button></div></div><div id="vis-body"></div>';
+        sheetBg.classList.remove('hidden');
+        var w = Math.min(sheet.clientWidth - 8, 520);
+        vis = { pid: it.id, kind: kind, open: true, v: PlatetVisual.mount(document.getElementById('vis-host'), kind, { lang: I.lang, width: w, height: Math.max(220, Math.min(520, Math.round(innerHeight * (innerHeight > 700 ? 0.45 : 0.4)))) }) };
+        vis.v.set(visSel(kind, st));
+      }
+      vis.v.lang(I.lang);
+      document.getElementById('vis-hint').textContent = t('c.vis.hint');
+      var ex = document.getElementById('vis-exp');
+      ex.textContent = vis.open ? t('c.vis.close') : t('c.vis.open'); ex.classList.toggle('on', vis.open);
+      document.getElementById('vis-reset').textContent = t('c.vis.reset');
+      var km = visKeys(kind);
+      var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
+      var price = unitPrice({ pid: it.id, mods: ids }) * st.qty;
+      var card = function (m) {
+        var on = !!st.sel[m.id];
+        return '<button class="vcard ' + m.type + (on ? ' on' : '') + '" data-a="mod" data-id="' + esc(m.id) + '"><i>' + PlatetVisual.thumb(kind, km[m.id]) + '</i>' + esc(P.tr(m, I.lang)) +
+          '<small>' + (m.type === 'extra' ? '+' + fmt(m.price || 0) : (on ? t('c.vis.without') : t('c.vis.incl'))) + '</small></button>';
+      };
+      var mapped = function (type) { return mods.filter(function (m) { return m.type === type && km[m.id]; }); };
+      var rest = function (type) {
+        var list = mods.filter(function (m) { return m.type === type && !km[m.id]; });
+        return list.length ? '<div class="chips-sel">' + list.map(function (m) {
+          return '<button class="' + (st.sel[m.id] ? 'on' : '') + '" data-a="mod" data-id="' + esc(m.id) + '">' + (type === 'sin' ? t('mod.sin') + ' ' : '') + esc(P.tr(m, I.lang)) + (m.price ? ' +' + fmt(m.price) : '') + '</button>';
+        }).join('') + '</div>' : '';
+      };
+      var sinC = mapped('sin'), exC = mapped('extra');
+      document.getElementById('vis-body').innerHTML =
+        '<div class="vis-head"><h2>' + esc(P.tr(it, I.lang)) + '</h2><b>' + fmt(price) + '</b></div>' +
+        (sinC.length ? '<h4 class="mod-h sin">' + t('c.vis.no') + '</h4><div class="vcards">' + sinC.map(card).join('') + '</div>' : '') +
+        (exC.length ? '<h4 class="mod-h extra">' + t('c.vis.yes') + '</h4><div class="vcards">' + exC.map(card).join('') + '</div>' : '') +
+        '<h4 class="mod-h">' + t('c.vis.more') + '</h4>' + rest('sin') + rest('extra') + rest('prep') +
+        '<h4 class="mod-h">' + t('c.itemNote') + '</h4><input type="text" id="item-note" maxlength="80" value="' + esc(st.note) + '">' +
+        '<div class="qty-row"><span class="stepper"><button data-a="cqty" data-d="-1">−</button><b>' + st.qty + '</b><button class="add" data-a="cqty" data-d="1">+</button></span></div>' +
+        '<button class="btn" data-a="cadd">' + t('c.addToOrder', { n: fmt(price) }) + '</button>' +
+        '<button class="btn ghost" data-a="close">' + t('cancel') + '</button>';
+      document.getElementById('item-note').oninput = function (e) { st.note = e.target.value; };
+    }
+    // tocar un ingrediente: el dibujo se anima y se repinta solo la lista
+    function visToggle(id) {
+      var st = sheetMode, kind = vis.kind, km = visKeys(kind), R = PlatetVisual.RECIPES[kind];
+      st.sel[id] = !st.sel[id];
+      if (st.sel[id] && km[id]) {
+        (R.exclusive || []).forEach(function (pair) {
+          var other = pair[0] === km[id] ? pair[1] : pair[1] === km[id] ? pair[0] : null;
+          if (other) Object.keys(km).forEach(function (x) { if (km[x] === other) st.sel[x] = false; });
+        });
+      }
+      if (navigator.vibrate) navigator.vibrate(12);
+      vis.v.set(visSel(kind, st), { origin: visOrigin(kind) });
+      openCustom(st.pid);
+    }
+
+    function dropVis() { if (vis) { vis.v.destroy(); vis = null; sheet.classList.remove('vis'); } }
+    function closeSheet() { sheetMode = null; sheetBg.classList.add('hidden'); dropVis(); }
     function refreshSheet() {
       if (sheetMode === 'cart') openCart();
       else if (sheetMode) openCustom(sheetMode.pid);
@@ -389,7 +496,13 @@
           if (l) { l.qty--; if (l.qty <= 0) cart.splice(cart.indexOf(l), 1); }
           break;
         case 'custom': if (!canOrder(b.dataset.id)) return; sheetMode = null; return openCustom(b.dataset.id);
-        case 'mod': sheetMode.sel[b.dataset.id] = !sheetMode.sel[b.dataset.id]; return openCustom(sheetMode.pid);
+        case 'mod':
+          if (vis && vis.pid === sheetMode.pid) return visToggle(b.dataset.id);
+          sheetMode.sel[b.dataset.id] = !sheetMode.sel[b.dataset.id]; return openCustom(sheetMode.pid);
+        case 'vexplode': if (vis) { vis.open = !vis.open; vis.v.explode(vis.open); openCustom(sheetMode.pid); } return;
+        case 'vreset':
+          if (vis) { sheetMode.sel = {}; vis.v.set({}, { origin: visOrigin(vis.kind) }); openCustom(sheetMode.pid); }
+          return;
         case 'cqty': sheetMode.qty = Math.min(20, Math.max(1, sheetMode.qty + Number(b.dataset.d))); return openCustom(sheetMode.pid);
         case 'pick':
           var pk = sheetMode.picks[+b.dataset.c], oi = +b.dataset.o;

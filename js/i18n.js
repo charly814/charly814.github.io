@@ -606,6 +606,10 @@
     'adm.rep.perGuest': ['Gasto por comensal', 'Spend per diner', '人均消费'],
 
     // ---- menú del día
+    'adm.visual': ['Vista animada en el pedido QR', 'Animated view in QR ordering', '扫码点餐动画展示'],
+    'adm.visualNone': ['No (normal)', 'No (normal)', '不使用（普通）'],
+    'adm.visualBurger': ['🍔 Hamburguesa por capas', '🍔 Layered burger', '🍔 分层汉堡'],
+    'adm.visualHelp': ['El cliente ve la hamburguesa montarse y los ingredientes volar al quitar o añadir. Usa los modificadores «Sin cebolla / tomate / lechuga / queso» y «Extra queso / bacon / huevo / doble carne» (con esos nombres en español). El pedido llega igual que siempre.', 'The customer sees the burger being built and ingredients flying in and out. It uses the modifiers "Sin cebolla / tomate / lechuga / queso" and "Extra queso / bacon / huevo / doble carne" (with those Spanish names). The order arrives as usual.', '顾客会看到汉堡一层层叠起来，加料、去料时配料会飞进飞出。用的是收银系统里的修改项「不要 洋葱/番茄/生菜/奶酪」和「加料 奶酪/培根/鸡蛋/双份肉」（西语名字要一致）。订单和平常一样到厨房。'],
     'adm.combo': ['Es un menú con platos a elegir (menú del día, combos)', 'It is a menu with dishes to choose (set menu, combos)', '这是可以选菜的套餐（今日套餐、组合）'],
     'adm.coursePh': ['Primero, Segundo, Postre…', 'Starter, Main, Dessert…', '头盘、主菜、甜品……'],
     'adm.pick': ['Elige', 'Choose', '选'],
@@ -989,6 +993,15 @@
     'c.removed': ['Se han quitado del pedido los platos que ya no se pueden pedir.', 'Dishes that can no longer be ordered were removed from your order.', '已从订单里移除现在不能点的菜。'],
     'c.allergens2': ['Alérgenos', 'Allergens', '过敏原'],
     'c.pickDishes': ['Elige los platos del menú', 'Choose the dishes of the menu', '请选择套餐里的菜'],
+    'c.vis.hint': ['Desliza el dedo sobre el plato para girarlo', 'Drag over the dish to turn it', '手指在上面滑动可以转动'],
+    'c.vis.close': ['🍔 Juntar', '🍔 Put together', '🍔 合起来'],
+    'c.vis.open': ['🔍 Ver capas', '🔍 See layers', '🔍 展开看看'],
+    'c.vis.reset': ['↺ Original', '↺ Original', '↺ 恢复原样'],
+    'c.vis.no': ['QUITAR (toca para quitar)', 'REMOVE (tap to remove)', '不要（点一下去掉）'],
+    'c.vis.yes': ['AÑADIR EXTRA', 'ADD EXTRA', '加料'],
+    'c.vis.incl': ['incluido', 'included', '已包含'],
+    'c.vis.without': ['sin', 'no', '不要'],
+    'c.vis.more': ['MÁS OPCIONES', 'MORE OPTIONS', '更多选项'],
     'c.other': ['¿Quieres algo que no está en la carta? Escríbelo en la nota o pídelo al camarero.', 'Want something not on the menu? Write it in the note or ask the waiter.', '想要菜单上没有的？写在备注里或者问服务员。']
   };
 

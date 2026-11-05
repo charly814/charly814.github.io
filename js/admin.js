@@ -238,6 +238,10 @@
           return '<option value="' + esc(c.id) + '"' + (c.id === st.cat ? ' selected' : '') + '>' + esc(c.icon || '') + ' ' + esc(c.name) + '</option>';
         }).join('') + '</select></div>' +
         '<div class="field"><label>' + t('adm.col.avail') + '</label><label class="switch"><input type="checkbox" data-f="available"' + (st.available !== false ? ' checked' : '') + '><span></span></label></div>' +
+        '<div class="field full"><label>' + t('adm.visual') + '</label><select data-f="visual">' +
+          [['', t('adm.visualNone')], ['burger', t('adm.visualBurger')]].map(function (o) {
+            return '<option value="' + o[0] + '"' + ((st.visual || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+          }).join('') + '</select><p class="muted">' + t('adm.visualHelp') + '</p></div>' +
         '<div class="field full"><label>' + t('adm.photo') + '</label><div class="photo-box"><div class="preview">' + prev + '</div><div>' +
         '<label class="btn primary" style="display:inline-flex;align-items:center;cursor:pointer">' + t('adm.upload') + '<input id="ph-file" type="file" accept="image/*" hidden></label> ' +
         (hasPhoto ? '<button class="btn" data-k="nophoto">' + t('adm.removePhoto') + '</button>' : '') +
@@ -315,6 +319,8 @@
         price: price, available: st.available !== false, allergens: st.allergens.slice(), img: cur && !photo.removed ? (cur.img || 0) : 0,
         barcode: String(st.barcode || '').trim()
       };
+      // vista animada en el pedido QR (no vale para menús con platos a elegir)
+      if (st.visual && !st.combo) item.visual = st.visual;
       if (st.combo) {
         var courses = st.combo.courses.filter(function (c) { return c.options.length; })
           .map(function (c) { return Object.assign({}, c, { name: String(c.name || '').trim() || '—' }); });

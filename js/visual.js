@@ -141,9 +141,35 @@
         bacon: function (s) { return !!s.e2; }, egg: function (s) { return !!s.e3; }
       },
       extras: ['patty2', 'cheese2', 'bacon', 'egg'],
-      lid: 'bunT'
+      lid: 'bunT',
+      // Qué modificador del TPV mueve cada capa. Se busca por el nombre en español
+      // (así sirve aunque el restaurante haya creado sus propios modificadores).
+      keys: {
+        s1: { type: 'sin', names: ['cebolla'], layer: 'onion' },
+        s2: { type: 'sin', names: ['tomate'], layer: 'tomato' },
+        s3: { type: 'sin', names: ['lechuga'], layer: 'lettuce' },
+        s4: { type: 'sin', names: ['queso'], layer: 'cheese' },
+        e1: { type: 'extra', names: ['queso', 'extra de queso', 'extra queso', 'doble queso'], layer: 'cheese2', thumb: 'cheese' },
+        e2: { type: 'extra', names: ['bacon', 'beicon', 'bacón', 'beicon extra'], layer: 'bacon' },
+        e3: { type: 'extra', names: ['huevo', 'huevo frito'], layer: 'egg' },
+        e7: { type: 'extra', names: ['doble carne', 'carne extra', 'extra de carne'], layer: 'patty2', thumb: 'patty' }
+      },
+      // no pueden ir juntos
+      exclusive: [['s4', 'e1']]
     }
   };
+  function norm(x) { return String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); }
+  // clave de la receta (s1, e2…) que corresponde a un modificador, o null
+  function keyOf(kind, m) {
+    var R = RECIPES[kind], n = norm(m && m.name);
+    if (!R || !m) return null;
+    var ks = Object.keys(R.keys);
+    for (var i = 0; i < ks.length; i++) {
+      var k = R.keys[ks[i]];
+      if (k.type === m.type && k.names.map(norm).indexOf(n) >= 0) return ks[i];
+    }
+    return null;
+  }
 
   var css = false;
   function addCss() {
@@ -391,5 +417,10 @@
     };
   }
 
-  window.PlatetVisual = { mount: mount, svg: svgOf, RECIPES: RECIPES, LAYERS: LAYERS, NAMES: NAMES };
+  window.PlatetVisual = {
+    mount: mount, svg: svgOf, keyOf: keyOf, RECIPES: RECIPES, LAYERS: LAYERS, NAMES: NAMES,
+    KINDS: { burger: ['Hamburguesa', 'Burger', '汉堡', '🍔'] },
+    // miniatura del ingrediente de una clave (s1, e2…)
+    thumb: function (kind, key) { var k = RECIPES[kind].keys[key]; return k ? svgOf(k.thumb || k.layer) : ''; }
+  };
 })();
