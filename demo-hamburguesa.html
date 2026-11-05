@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Hamburguesa a tu gusto · Platet</title>
+  <style>
+    :root { --bg: #fff7ed; --ink: #1f2937; --muted: #78716c; --accent: #ea580c; --ok: #16a34a; --no: #dc2626; --line: #fde2c8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, 'Segoe UI', sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; padding-bottom: 110px; }
+    button { font-family: inherit; cursor: pointer; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 0; max-width: 560px; margin: 0 auto; }
+    header h1 { margin: 0; font-size: 20px; }
+    header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+    .lang { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+    .lang button { border: 0; background: #fff; padding: 6px 9px; font-size: 13px; }
+    .lang button.on { background: var(--accent); color: #fff; }
+    .stage { position: sticky; top: 0; z-index: 5; max-width: 560px; margin: 0 auto; padding: 4px 16px 6px; overflow: hidden; background: var(--bg); box-shadow: 0 10px 12px -10px rgba(120,60,0,.25); }
+    .stage .hint { margin: 0 0 6px; }
+    .hint { text-align: center; color: var(--muted); font-size: 12px; margin: -4px 0 6px; }
+    .tools { display: flex; justify-content: center; gap: 8px; }
+    .tools button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 7px 14px; font-size: 14px; }
+    .tools button.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+    main { max-width: 560px; margin: 0 auto; padding: 4px 16px 0; }
+    h3 { margin: 18px 0 8px; font-size: 13px; letter-spacing: 1px; }
+    h3.no { color: var(--no); } h3.yes { color: var(--ok); }
+    .ings { margin-top: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+    .ing { position: relative; border: 2px solid var(--line); background: #fff; border-radius: 14px; padding: 8px 6px 7px; text-align: center; font-size: 14px; transition: transform .15s, border-color .2s, background .2s; }
+    .ing:active { transform: scale(.95); }
+    .ing i { display: block; font-style: normal; font-size: 26px; line-height: 1.2; }
+    .ing small { display: block; color: var(--muted); font-size: 12px; }
+    .ing.no.on { border-color: var(--no); background: #fef2f2; }
+    .ing.no.on i { filter: grayscale(1); opacity: .45; }
+    .ing.no.on::after { content: ''; position: absolute; left: 18%; right: 18%; top: 26px; height: 3px; background: var(--no); transform: rotate(-20deg); border-radius: 2px; }
+    .ing.yes.on { border-color: var(--ok); background: #f0fdf4; }
+    .ing.yes.on small { color: var(--ok); font-weight: 600; }
+    .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 35%); }
+    .bar button { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 528px; margin: 0 auto; border: 0; border-radius: 16px; padding: 16px 18px; background: var(--accent); color: #fff; font-size: 17px; font-weight: 700; box-shadow: 0 8px 20px rgba(234,88,12,.35); }
+    .bar button > span { text-align: left; min-width: 0; }
+    .bar b { white-space: nowrap; margin-left: 12px; }
+    .bar small { display: block; font-weight: 400; font-size: 12px; opacity: .9; text-align: left; }
+    .price-pop { animation: pop .35s; }
+    @keyframes pop { 50% { transform: scale(1.15); } }
+    .toast { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 999px; font-size: 14px; z-index: 9; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1 id="title"></h1><p id="sub"></p></div>
+    <span class="lang" id="lang"></span>
+  </header>
+  <div class="stage"><div id="burger"></div>
+    <p class="hint" id="hint"></p>
+    <div class="tools"><button id="explode"></button><button id="reset"></button></div>
+  </div>
+  <main>
+    <h3 class="no" id="h-no"></h3><div class="ings" id="no"></div>
+    <h3 class="yes" id="h-yes"></h3><div class="ings" id="yes"></div>
+  </main>
+  <div class="bar"><button id="add"><span><span id="add-t"></span><small id="add-s"></small></span><b id="price"></b></button></div>
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="js/visual.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var BASE = 9.5;
+    // mismos id y precios que los modificadores por defecto del TPV
+    var NO = [['s3', '🥬', ['Lechuga', 'Lettuce', '生菜']], ['s2', '🍅', ['Tomate', 'Tomato', '番茄']], ['s4', '🧀', ['Queso', 'Cheese', '芝士']], ['s1', '🧅', ['Cebolla', 'Onion', '洋葱']]];
+    var YES = [['e7', '🥩', ['Doble carne', 'Double meat', '双份肉'], 2], ['e1', '🧀', ['Queso', 'Cheese', '芝士'], 0.5], ['e2', '🥓', ['Bacon', 'Bacon', '培根'], 1], ['e3', '🍳', ['Huevo', 'Egg', '煎蛋'], 1]];
+    var T = {
+      title: ['Hamburguesa Platet', 'Platet Burger', 'Platet 汉堡'],
+      sub: ['Hazla a tu gusto · 180 g de ternera', 'Make it your way · 180 g beef', '按你的口味做 · 180克牛肉'],
+      hint: ['Desliza el dedo sobre la hamburguesa para girarla', 'Drag over the burger to turn it', '手指在汉堡上滑动可以转动'],
+      explode: ['🔍 Ver capas', '🔍 See layers', '🔍 展开看看'],
+      close: ['🍔 Juntar', '🍔 Put together', '🍔 合起来'],
+      reset: ['↺ Original', '↺ Original', '↺ 恢复原样'],
+      no: ['QUITAR (toca para quitar)', 'REMOVE (tap to remove)', '不要（点一下去掉）'],
+      yes: ['AÑADIR EXTRA', 'ADD EXTRA', '加料'],
+      free: ['incluido', 'included', '已包含'],
+      add: ['Añadir al pedido', 'Add to order', '加入订单'],
+      added: ['¡Añadida al pedido!', 'Added to your order!', '已加入订单！'],
+      orig: ['Como viene', 'As it comes', '原味'],
+      sin: ['sin', 'no', '不要'], con: ['con', 'with', '加']
+    };
+    var L = { es: 0, en: 1, zh: 2 };
+    var lang = (navigator.language || 'es').slice(0, 2);
+    if (!(lang in L)) lang = 'es';
+    try { lang = localStorage.getItem('platet-lang') || lang; } catch (e) { /* sin almacenamiento */ }
+    var sel = {}, exploded = false;
+    function t(k) { return T[k][L[lang]]; }
+    function fmt(n) { return n.toFixed(2).replace('.', ',') + ' €'; }
+
+    var v = PlatetVisual.mount(document.getElementById('burger'), 'burger', { lang: lang, height: Math.max(190, Math.min(340, Math.round(innerHeight * 0.33))) });
+    v.set(sel);
+
+    function card(r, kind) {
+      return '<button class="ing ' + kind + (sel[r[0]] ? ' on' : '') + '" data-id="' + r[0] + '"><i>' + r[1] + '</i>' + r[2][L[lang]] +
+        '<small>' + (kind === 'yes' ? '+' + fmt(r[3]) : (sel[r[0]] ? t('sin') : t('free'))) + '</small></button>';
+    }
+    function price() { return YES.reduce(function (s, r) { return s + (sel[r[0]] ? r[3] : 0); }, BASE); }
+    function summary() {
+      var a = NO.filter(function (r) { return sel[r[0]]; }).map(function (r) { return t('sin') + ' ' + r[2][L[lang]].toLowerCase(); })
+        .concat(YES.filter(function (r) { return sel[r[0]]; }).map(function (r) { return t('con') + ' ' + r[2][L[lang]].toLowerCase(); }));
+      return a.length ? a.join(' · ') : t('orig');
+    }
+    var lastPrice;
+    function render() {
+      document.documentElement.lang = lang;
+      ['title', 'sub', 'hint'].forEach(function (k) { document.getElementById(k).textContent = t(k); });
+      document.getElementById('h-no').textContent = t('no');
+      document.getElementById('h-yes').textContent = t('yes');
+      document.getElementById('explode').textContent = exploded ? t('close') : t('explode');
+      document.getElementById('explode').classList.toggle('on', exploded);
+      document.getElementById('reset').textContent = t('reset');
+      document.getElementById('no').innerHTML = NO.map(function (r) { return card(r, 'no'); }).join('');
+      document.getElementById('yes').innerHTML = YES.map(function (r) { return card(r, 'yes'); }).join('');
+      document.getElementById('add-t').textContent = t('add');
+      document.getElementById('add-s').textContent = summary();
+      var p = price(), el = document.getElementById('price');
+      el.textContent = fmt(p);
+      if (lastPrice != null && p !== lastPrice) { el.classList.remove('price-pop'); void el.offsetWidth; el.classList.add('price-pop'); }
+      lastPrice = p;
+      document.getElementById('lang').innerHTML = ['es', 'en', 'zh'].map(function (l) {
+        return '<button class="' + (l === lang ? 'on' : '') + '" data-l="' + l + '">' + { es: 'ES', en: 'EN', zh: '中' }[l] + '</button>';
+      }).join('');
+    }
+
+    document.body.addEventListener('click', function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.l) { lang = b.dataset.l; try { localStorage.setItem('platet-lang', lang); } catch (x) { /* ignorar */ } v.lang(lang); render(); return; }
+      if (b.dataset.id) {
+        var id = b.dataset.id;
+        sel[id] = !sel[id];
+        // «sin queso» y «extra de queso» no van juntos
+        if (sel[id] && id === 's4') sel.e1 = false;
+        if (sel[id] && id === 'e1') sel.s4 = false;
+        if (navigator.vibrate) navigator.vibrate(12);
+        v.set(sel); render(); return;
+      }
+      if (b.id === 'explode') { exploded = !exploded; v.explode(exploded); render(); return; }
+      if (b.id === 'reset') { sel = {}; v.set(sel); render(); return; }
+      if (b.id === 'add') {
+        var tt = document.getElementById('toast');
+        tt.textContent = '✓ ' + t('added'); tt.classList.remove('hidden');
+        setTimeout(function () { tt.classList.add('hidden'); }, 1800);
+      }
+    });
+    render();
+  })();
+  </script>
+</body>
+</html>
