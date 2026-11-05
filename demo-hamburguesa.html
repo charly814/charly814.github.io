@@ -27,11 +27,12 @@
     .ings { margin-top: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
     .ing { position: relative; border: 2px solid var(--line); background: #fff; border-radius: 14px; padding: 8px 6px 7px; text-align: center; font-size: 14px; transition: transform .15s, border-color .2s, background .2s; }
     .ing:active { transform: scale(.95); }
-    .ing i { display: block; font-style: normal; font-size: 26px; line-height: 1.2; }
+    .ing i { display: flex; align-items: center; justify-content: center; height: 42px; margin-bottom: 2px; }
+    .ing i svg { width: 74px; max-height: 42px; overflow: visible; filter: drop-shadow(0 2px 1px rgba(0,0,0,.2)); transition: filter .2s, opacity .2s; }
     .ing small { display: block; color: var(--muted); font-size: 12px; }
     .ing.no.on { border-color: var(--no); background: #fef2f2; }
-    .ing.no.on i { filter: grayscale(1); opacity: .45; }
-    .ing.no.on::after { content: ''; position: absolute; left: 18%; right: 18%; top: 26px; height: 3px; background: var(--no); transform: rotate(-20deg); border-radius: 2px; }
+    .ing.no.on i svg { filter: grayscale(1); opacity: .4; }
+    .ing.no.on::after { content: ''; position: absolute; left: 18%; right: 18%; top: 29px; height: 3px; background: var(--no); transform: rotate(-20deg); border-radius: 2px; }
     .ing.yes.on { border-color: var(--ok); background: #f0fdf4; }
     .ing.yes.on small { color: var(--ok); font-weight: 600; }
     .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 35%); }
@@ -92,11 +93,17 @@
     function t(k) { return T[k][L[lang]]; }
     function fmt(n) { return n.toFixed(2).replace('.', ',') + ' €'; }
 
+    // capa del dibujo de cada ingrediente (para la miniatura y el vuelo)
+    var LAYER = { s3: 'lettuce', s2: 'tomato', s4: 'cheese', s1: 'onion', e7: 'patty', e1: 'cheese', e2: 'bacon', e3: 'egg' };
+    var CARD = { lettuce: 's3', tomato: 's2', cheese: 's4', onion: 's1', patty2: 'e7', cheese2: 'e1', bacon: 'e2', egg: 'e3' };
+    var THUMB = {};
+    Object.keys(LAYER).forEach(function (k) { THUMB[k] = PlatetVisual.svg(LAYER[k]); });
+    function origin(layer) { return CARD[layer] ? document.querySelector('.ing[data-id="' + CARD[layer] + '"] i') : null; }
     var v = PlatetVisual.mount(document.getElementById('burger'), 'burger', { lang: lang, height: Math.max(190, Math.min(340, Math.round(innerHeight * 0.33))) });
     v.set(sel);
 
     function card(r, kind) {
-      return '<button class="ing ' + kind + (sel[r[0]] ? ' on' : '') + '" data-id="' + r[0] + '"><i>' + r[1] + '</i>' + r[2][L[lang]] +
+      return '<button class="ing ' + kind + (sel[r[0]] ? ' on' : '') + '" data-id="' + r[0] + '"><i>' + THUMB[r[0]] + '</i>' + r[2][L[lang]] +
         '<small>' + (kind === 'yes' ? '+' + fmt(r[3]) : (sel[r[0]] ? t('sin') : t('free'))) + '</small></button>';
     }
     function price() { return YES.reduce(function (s, r) { return s + (sel[r[0]] ? r[3] : 0); }, BASE); }
@@ -138,10 +145,10 @@
         if (sel[id] && id === 's4') sel.e1 = false;
         if (sel[id] && id === 'e1') sel.s4 = false;
         if (navigator.vibrate) navigator.vibrate(12);
-        v.set(sel); render(); return;
+        v.set(sel, { origin: origin }); render(); return;
       }
       if (b.id === 'explode') { exploded = !exploded; v.explode(exploded); render(); return; }
-      if (b.id === 'reset') { sel = {}; v.set(sel); render(); return; }
+      if (b.id === 'reset') { sel = {}; v.set(sel, { origin: origin }); render(); return; }
       if (b.id === 'add') {
         var tt = document.getElementById('toast');
         tt.textContent = '✓ ' + t('added'); tt.classList.remove('hidden');

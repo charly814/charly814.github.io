@@ -126,7 +126,7 @@
   // order: de abajo a arriba. show(sel) decide si la capa está.
   var NAMES = {
     bunB: ['Pan', 'Bun', '面包底'], bunT: ['Pan', 'Bun', '面包盖'], patty: ['Carne', 'Beef', '牛肉饼'], patty2: ['Doble carne', 'Double meat', '双份肉'],
-    cheese: ['Queso', 'Cheese', '芝士'], cheese2: ['Extra de queso', 'Extra cheese', '加芝士'], lettuce: ['Lechuga', 'Lettuce', '生菜'],
+    cheese: ['Queso', 'Cheese', '芝士'], cheese2: ['Queso', 'Cheese', '芝士'], lettuce: ['Lechuga', 'Lettuce', '生菜'],
     tomato: ['Tomate', 'Tomato', '番茄'], onion: ['Cebolla', 'Onion', '洋葱'], bacon: ['Bacon', 'Bacon', '培根'], egg: ['Huevo', 'Egg', '煎蛋']
   };
   var RECIPES = {
@@ -140,6 +140,7 @@
         onion: function (s) { return !s.s1; }, patty2: function (s) { return !!s.e7; }, cheese2: function (s) { return !!s.e1; },
         bacon: function (s) { return !!s.e2; }, egg: function (s) { return !!s.e3; }
       },
+      extras: ['patty2', 'cheese2', 'bacon', 'egg'],
       lid: 'bunT'
     }
   };
@@ -153,18 +154,35 @@
       '.pv-plate{position:absolute;left:10px;right:10px;bottom:6px;height:56px;border-radius:50%;background:radial-gradient(ellipse at center,#fff 0 52%,#e8ecf2 53% 62%,#fff 63% 70%,rgba(0,0,0,.12) 71%,transparent 74%)}' +
       '.pv-stack{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .5s cubic-bezier(.2,.8,.2,1)}' +
       '.pv-l{position:absolute;left:0;width:300px;transition:bottom .45s cubic-bezier(.3,1.4,.5,1),opacity .3s;will-change:bottom,transform}' +
-      '.pv-l svg{display:block;width:300px;overflow:visible;filter:drop-shadow(0 3px 2px rgba(0,0,0,.18))}' +
+      '.pv-l svg{display:block;width:300px;overflow:visible;filter:drop-shadow(0 5px 3px rgba(0,0,0,.28))}' +
       '.pv-l.drop{animation:pv-drop .7s cubic-bezier(.3,0,.4,1) both}' +
       '@keyframes pv-drop{0%{transform:translateY(-320px) rotate(-8deg);opacity:0}15%{opacity:1}62%{transform:translateY(0) rotate(0)}76%{transform:translateY(-16px) scaleY(1.04)}88%{transform:translateY(0) scaleY(.94)}100%{transform:none}}' +
       '.pv-l.out{transition:transform .45s ease-in,opacity .45s ease-in;transform:translateX(130%) rotate(28deg);opacity:0}' +
       '.pv-l.out.left{transform:translateX(-130%) rotate(-28deg)}' +
-      '.pv-tag{position:absolute;right:-8px;bottom:50%;transform:translate(100%,50%);font:600 13px/1.2 system-ui,sans-serif;color:#334155;background:#fff;border-radius:999px;padding:3px 9px;box-shadow:0 2px 6px rgba(0,0,0,.15);white-space:nowrap;opacity:0;transition:opacity .3s}' +
+      '.pv-l.hit svg{animation:pv-hit .6s ease-out}' +
+      '@keyframes pv-hit{0%{transform:scaleY(.8);filter:drop-shadow(0 0 10px #fde047) brightness(1.35)}55%{transform:scaleY(1.06)}100%{transform:none}}' +
+      '.pv-tag{position:absolute;right:-8px;bottom:50%;transform:translate(100%,50%);font:600 13px/1.2 system-ui,sans-serif;color:#334155;background:#fff;border-radius:999px;padding:3px 9px;box-shadow:0 2px 6px rgba(0,0,0,.15);white-space:nowrap;opacity:0;transition:opacity .3s;pointer-events:none}' +
       '.pv.exploded .pv-tag{opacity:1}' +
+      '.pv-l.extra .pv-tag{opacity:1;background:#16a34a;color:#fff;font-size:12px;padding:2px 8px}' +
+      '.pv:not(.exploded) .pv-l.extra .pv-tag{right:0;transform:translate(6px,50%)}' +
+      '.pv:not(.exploded) .pv-l.extra .pv-tag.tl{right:auto;left:0;transform:translate(-6px,50%)}' +
+      '.pv.exploded .pv-l .pv-tag.tl{right:auto;left:-8px;transform:translate(-100%,50%)}' +
       '.pv.exploded .pv-l{transition:bottom .55s cubic-bezier(.3,1.3,.5,1)}' +
       '.pv-land{animation:pv-land .35s ease-out}' +
       '@keyframes pv-land{40%{transform:scaleY(.97)}100%{transform:none}}' +
-      '@media (prefers-reduced-motion:reduce){.pv-l.drop{animation:none}.pv-l,.pv-stack{transition:none}}';
+      '.pv-fly{position:fixed;z-index:1000;pointer-events:none;will-change:transform}' +
+      '.pv-fly svg{display:block;width:100%;overflow:visible;filter:drop-shadow(0 14px 10px rgba(0,0,0,.3))}' +
+      '.pv-bub{position:absolute;left:50%;top:4px;z-index:200;font:700 16px/1 system-ui,sans-serif;color:#fff;padding:6px 12px;border-radius:999px;white-space:nowrap;box-shadow:0 4px 10px rgba(0,0,0,.2);animation:pv-bub 1.4s ease-out forwards;pointer-events:none}' +
+      '.pv-bub.yes{background:#16a34a}.pv-bub.no{background:#dc2626}' +
+      '@keyframes pv-bub{0%{transform:translate(-50%,20px) scale(.6);opacity:0}15%{transform:translate(-50%,0) scale(1.08);opacity:1}25%{transform:translate(-50%,0) scale(1)}75%{opacity:1}100%{transform:translate(-50%,-26px);opacity:0}}' +
+      '@media (prefers-reduced-motion:reduce){.pv-l.drop,.pv-l.hit svg,.pv-bub{animation:none}.pv-l,.pv-stack{transition:none}}';
     document.head.appendChild(st);
+  }
+  var MOTION = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  function svgOf(id) {
+    var sp = LAYERS[id]();
+    return '<svg viewBox="0 -2 300 ' + (sp.h + 2) + '">' + G + sp.svg + '</svg>';
   }
 
   function mount(el, kind, opts) {
@@ -178,21 +196,33 @@
     function spec(id) { return LAYERS[(R.draw && R.draw[id]) || id](); }
     function visible() { return R.order.filter(function (id) { return !R.show[id] || R.show[id](sel); }); }
     function name(id) { var n = NAMES[id] || [id, id, id]; return n[{ es: 0, en: 1, zh: 2 }[lang] || 0]; }
+    function isExtra(id) { return (R.extras || []).indexOf(id) >= 0; }
+    function tagText(id) { return (isExtra(id) ? '+ ' : '') + name(id); }
 
     function layout() {
-      var ids = visible(), base = 34, gap = exploded ? 22 : 0;
-      // en modo despiece se reparte el alto disponible
+      // las capas van un poco separadas para que se distinga bien cada una
+      var ids = visible(), base = 34, gap = exploded ? 24 : 10, ex = 0, tags = [];
       ids.forEach(function (id, i) {
         var n = nodes[id], sp = n.sp;
-        if (id === R.lid && lidUp) base += lidUp;
+        if (id === R.lid) base += lidUp + (exploded ? 0 : 8);
         n.el.style.bottom = (base - (sp.below || 0)) + 'px';
         n.el.style.zIndex = 10 + i;
-        n.el.style.transform = '';
+        // etiquetas: una a cada lado (los extras siempre, el resto al despiezar)
+        var left = isExtra(id) ? ex++ % 2 === 1 : exploded && i % 2 === 1;
+        n.tag.classList.toggle('tl', left);
+        if (isExtra(id) || exploded) tags.push({ n: n, left: left, y: base + sp.lift / 2 + 4, b: base - (sp.below || 0) });
         base += sp.lift + gap;
       });
       var top = base + (nodes[R.lid] ? nodes[R.lid].sp.h : 0);
-      // si no cabe, se escala todo un poco
       var k = Math.min(1, (H - 8) / top);
+      // que no se pisen: en cada lado, al menos 24 px (ya escalados) entre una y otra
+      [true, false].forEach(function (side) {
+        var prev = -1e9;
+        tags.filter(function (t) { return t.left === side; }).forEach(function (t) {
+          t.y = Math.max(t.y, prev + 24 / k); prev = t.y;
+          t.n.tag.style.bottom = (t.y - t.b) + 'px';
+        });
+      });
       box.style.height = H + 'px';
       stack.style.transformOrigin = '50% 100%';
       stack.dataset.k = k;
@@ -201,18 +231,63 @@
 
     function make(id) {
       var sp = spec(id), d = document.createElement('div');
-      d.className = 'pv-l'; d.dataset.id = id;
-      d.innerHTML = '<svg viewBox="0 -2 300 ' + (sp.h + 2) + '" height="' + (sp.h + 2) + '">' + G + sp.svg + '</svg><span class="pv-tag">' + name(id) + '</span>';
-      return { el: d, sp: sp };
+      d.className = 'pv-l' + (isExtra(id) ? ' extra' : ''); d.dataset.id = id;
+      d.innerHTML = '<svg viewBox="0 -2 300 ' + (sp.h + 2) + '" height="' + (sp.h + 2) + '">' + G + sp.svg + '</svg><span class="pv-tag"></span>';
+      var n = { el: d, sp: sp, tag: d.lastChild };
+      n.tag.textContent = tagText(id);
+      return n;
     }
 
-    var outSide = 0;
-    function set(s) {
+    function bubble(text, kind) {
+      var b = document.createElement('span');
+      b.className = 'pv-bub ' + kind; b.textContent = text;
+      var others = box.querySelectorAll('.pv-bub').length;
+      b.style.top = (4 + others * 34) + 'px';
+      box.appendChild(b);
+      setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 1500);
+    }
+
+    // Una copia de la capa vuela desde la tarjeta del ingrediente (o vuelve a ella)
+    function flight(svg, from, to, back) {
+      var f = document.createElement('div');
+      f.className = 'pv-fly';
+      f.style.left = to.left + 'px'; f.style.top = to.top + 'px'; f.style.width = to.width + 'px'; f.style.height = to.height + 'px';
+      f.appendChild(svg);
+      document.body.appendChild(f);
+      var dx = (from.left + from.width / 2) - (to.left + to.width / 2), dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+      var sc = Math.max(0.15, Math.min(1, from.width * 0.9 / to.width));
+      var arc = Math.min(dy, 0) - 110;
+      var kf = [
+        { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(' + sc + ') rotate(-30deg)', opacity: back ? 1 : 0.4 },
+        { transform: 'translate(' + (dx * 0.4) + 'px,' + (dy * 0.45 + arc * 0.6) + 'px) scale(' + (back ? 0.8 : 1.15) + ') rotate(12deg)', opacity: 1, offset: 0.55 },
+        { transform: 'translate(0,0) scale(1) rotate(0)', opacity: 1 }
+      ];
+      if (back) kf.reverse();
+      if (back) kf[2].opacity = 0.2;
+      var a = f.animate(kf, { duration: back ? 560 : 720, easing: back ? 'cubic-bezier(.5,0,.8,.6)' : 'cubic-bezier(.35,0,.25,1)', fill: 'both' });
+      return new Promise(function (res) {
+        var done = function () { if (f.parentNode) f.parentNode.removeChild(f); res(); };
+        a.onfinish = done; setTimeout(done, 1200);
+      });
+    }
+
+    var outSide = 0, lidTimer;
+    // o.origin(capa) -> elemento de la tarjeta de ese ingrediente (para el vuelo)
+    function set(s, o) {
+      o = o || {};
       sel = Object.assign({}, s || {});
       var want = visible(), added = [];
       Object.keys(nodes).forEach(function (id) {
         if (want.indexOf(id) >= 0) return;
         var n = nodes[id]; delete nodes[id];
+        var org = MOTION && o.origin && o.origin(id);
+        bubble('− ' + name(id), 'no');
+        if (org) {
+          var r = n.el.querySelector('svg').getBoundingClientRect();
+          flight(n.el.querySelector('svg').cloneNode(true), org.getBoundingClientRect(), r, true);
+          n.el.parentNode.removeChild(n.el);
+          return;
+        }
         n.el.classList.add('out'); if (outSide++ % 2) n.el.classList.add('left');
         n.el.style.zIndex = 50;
         setTimeout(function () { if (n.el.parentNode) n.el.parentNode.removeChild(n.el); }, 480);
@@ -223,16 +298,35 @@
         if (!first) added.push(id);
       });
       if (added.length) {
-        lidUp = 60; layout();
+        lidUp = 70; layout();
+        var last = 0;
         added.forEach(function (id, i) {
-          var e = nodes[id].el; e.style.animationDelay = (i * 0.12) + 's'; e.classList.add('drop');
-          setTimeout(function () { e.classList.remove('drop'); e.style.animationDelay = ''; }, 800 + i * 120);
+          var n = nodes[id], org = MOTION && o.origin && o.origin(id);
+          if (!org) {
+            n.el.style.animationDelay = (i * 0.12) + 's'; n.el.classList.add('drop');
+            setTimeout(function () { n.el.classList.remove('drop'); n.el.style.animationDelay = ''; }, 800 + i * 120);
+            last = Math.max(last, 520 + i * 120);
+            bubble('+ ' + name(id), 'yes');
+            return;
+          }
+          n.el.style.opacity = '0';
+          last = Math.max(last, 300 + i * 160 + 720);
+          setTimeout(function () {
+            if (nodes[id] !== n) return;
+            bubble('+ ' + name(id), 'yes');
+            var to = n.el.querySelector('svg').getBoundingClientRect();
+            flight(n.el.querySelector('svg').cloneNode(true), org.getBoundingClientRect(), to).then(function () {
+              n.el.style.opacity = '';
+              n.el.classList.remove('hit'); void n.el.offsetWidth; n.el.classList.add('hit');
+              setTimeout(function () { n.el.classList.remove('hit'); }, 650);
+            });
+          }, 300 + i * 160);   // primero se levanta la tapa
         });
-        clearTimeout(set.t);
-        set.t = setTimeout(function () {
+        clearTimeout(lidTimer);
+        lidTimer = setTimeout(function () {
           lidUp = 0; layout();
           stack.classList.remove('pv-land'); void stack.offsetWidth; stack.classList.add('pv-land');
-        }, 520 + added.length * 120);
+        }, last);
       } else layout();
       if (first) {
         // al abrir: el plato se monta de abajo arriba
@@ -245,7 +339,7 @@
     }
 
     // ---------------------------------------------------------------- girar con el dedo
-    var rx = 8, ry = -10, drag = null, idle = 0, raf;
+    var rx = 14, ry = -10, drag = null, idle = 0, raf;
     function applyTilt() {
       var k = Number(stack.dataset.k) || 1;
       stack.style.transform = 'scale(' + k + ') rotateX(' + rx.toFixed(1) + 'deg) rotateY(' + ry.toFixed(1) + 'deg)';
@@ -279,21 +373,21 @@
       if (!drag && Date.now() - idle > 2500) {
         var t = (Date.now() - t0) / 1000;
         ry += ((-10 + Math.sin(t * 0.8) * 14) - ry) * 0.04;
-        rx += ((8 + Math.sin(t * 0.5) * 3) - rx) * 0.04;
+        rx += ((14 + Math.sin(t * 0.5) * 3) - rx) * 0.04;
         stack.style.transition = 'none'; applyTilt();
       }
       raf = requestAnimationFrame(sway);
     }
-    if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) raf = requestAnimationFrame(sway);
+    if (MOTION) raf = requestAnimationFrame(sway);
 
     return {
       set: set,
       explode: function (on) { exploded = !!on; box.classList.toggle('exploded', exploded); layout(); },
-      lang: function (l) { lang = l; Object.keys(nodes).forEach(function (id) { nodes[id].el.querySelector('.pv-tag').textContent = name(id); }); },
+      lang: function (l) { lang = l; Object.keys(nodes).forEach(function (id) { nodes[id].tag.textContent = tagText(id); }); },
       layers: visible,
       destroy: function () { cancelAnimationFrame(raf); el.innerHTML = ''; }
     };
   }
 
-  window.PlatetVisual = { mount: mount, RECIPES: RECIPES, LAYERS: LAYERS, NAMES: NAMES };
+  window.PlatetVisual = { mount: mount, svg: svgOf, RECIPES: RECIPES, LAYERS: LAYERS, NAMES: NAMES };
 })();
