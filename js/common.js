@@ -402,7 +402,7 @@
       var extras = T.showMods ? (l.mods || []).filter(function (m) { return m.type === 'extra'; }).map(function (m) { return m.name; }) : [];
       // menú del día: solo se detallan los platos con suplemento
       (l.combo || []).forEach(function (c) { if (c.extra) extras.push(c.choice); });
-      doc.push(['item', fmtQty(sg * l.qty), l.name, extras.length ? ['+ ' + extras.join(', ')] : [], fmt(sg * l.price * l.qty)]);
+      doc.push(['item', fmtQty(sg * l.qty), l.name + (l.part ? ' (' + l.part + ')' : ''), extras.length ? ['+ ' + extras.join(', ')] : [], fmt(sg * l.price * l.qty)]);
     });
     doc.push(['hr']);
     if (tot.discount) {

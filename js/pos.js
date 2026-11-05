@@ -598,7 +598,7 @@
       var sub = [comboText(l, I.lang), P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
       return '<div class="tk-line' + (i === S.sel ? ' sel' : '') + '" data-act="sel-line" data-i="' + i + '">' +
         '<span>' + fmtQty(l.qty) + '</span>' +
-        '<span>' + esc(lineName(l)) + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.src === 'voice' ? '<i class="tag voice">🎤</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
+        '<span>' + esc(lineName(l)) + (l.part ? '<i class="tag part">÷ ' + esc(l.part) + '</i>' : '') + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.src === 'voice' ? '<i class="tag voice">🎤</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
         (l.src === 'buffet' ? '<i class="tag">🍣</i>' : l.sent ? '<i class="tag sent">✓ ' + t('tk.kitchen') + '</i>' : '') +
         (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
         '<span>' + fmt(l.price).replace(' €', '') + '</span><span>' + fmt(l.price * l.qty).replace(' €', '') + '</span></div>';
@@ -1163,7 +1163,7 @@
       var price = round2(a.base + extrasOf(mods) + comboExtra(a.combo));
       var same = tk.lines.filter(function (l) {
         return l.pid === a.pid && l.name === a.name && l.price === price && !l.sent && (l.note || '') === (a.note || '') &&
-          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV && !a.combo && !l.combo;
+          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV && !a.combo && !l.combo && !l.part;
       })[0];
       if (same) same.qty = round2(same.qty + a.qty);
       else {
@@ -2075,15 +2075,45 @@
 
   // Dividir por productos: se elige qué unidades paga esta persona; se cobran
   // como un ticket propio y el resto sigue en la mesa.
+  // Un plato compartido (p. ej. unas bravas entre 3) se parte en n líneas con el
+  // importe repartido al céntimo; cada persona coge la suya. qty = importe / precio,
+  // así la suma de cantidades vuelve a ser la original y los informes cuadran.
+  function shareLine(tk, i, n) {
+    var l = tk.lines[i], total = round2(l.price * l.qty), cents = Math.round(total * 100);
+    var base = Math.floor(cents / n), extra = cents - base * n, grp = Store.newId();
+    var parts = [];
+    for (var k = 0; k < n; k++) {
+      var amt = (base + (k < extra ? 1 : 0)) / 100;
+      var c = Object.assign({}, l, { qty: l.price ? amt / l.price : round2(l.qty / n), part: (l.qty === 1 ? '' : fmtQty(l.qty) + ' · ') + '1/' + n, partOf: grp });
+      delete c.id; delete c.ord;
+      parts.push(c);
+    }
+    tk.lines.splice.apply(tk.lines, [i, 1].concat(parts));
+    audit('share', tableLabel(tk.table) + ' · ' + l.name + ' ÷ ' + n);
+    return saveTicket(tk);
+  }
+  // deshacer: se vuelven a juntar las partes que siguen en la mesa
+  function unshareLine(tk, grp) {
+    var ls = tk.lines.filter(function (l) { return l.partOf === grp; });
+    if (!ls.length) return Promise.resolve();
+    var first = tk.lines.indexOf(ls[0]);
+    var m = Object.assign({}, ls[0], { qty: round2(ls.reduce(function (a, l) { return a + l.qty; }, 0)) });
+    delete m.part; delete m.partOf; delete m.id; delete m.ord;
+    tk.lines = tk.lines.filter(function (l) { return l.partOf !== grp; });
+    tk.lines.splice(first, 0, m);
+    return saveTicket(tk);
+  }
+
   function openSplit() {
     var tk = ticketOf(S.table);
     var pick = tk.lines.map(function () { return 0; });
+    var sharing = -1;   // línea con los botones ÷2 ÷3… abiertos
     function part() {
       var lines = [], rest = [];
       tk.lines.forEach(function (l, i) {
         var q = Math.min(pick[i], l.qty);
         if (q > 0) lines.push(Object.assign({}, l, { qty: q, id: undefined, ord: undefined }));
-        if (l.qty - q > 0) rest.push(Object.assign({}, l, { qty: round2(l.qty - q) }));
+        if (l.qty - q > 0) rest.push(Object.assign({}, l, { qty: q ? round2(l.qty - q) : l.qty }));
       });
       // el descuento del ticket se reparte en proporción
       var full = P.ticketTotals(tk);
@@ -2097,17 +2127,41 @@
       modalBox.className = 'modal-box wide';
       modalBox.innerHTML = '<h2>' + t('split.title', { t: esc(tableLabel(tk.table)) }) + '</h2><p class="muted">' + t('split.help') + '</p>' +
         '<table class="list split">' + tk.lines.map(function (l, i) {
-          return '<tr><td>' + esc(lineName(l)) + '<small class="muted"> ' + fmt(l.price) + '</small></td>' +
-            '<td class="num"><span class="stepper-row"><button class="btn" data-k="m:' + i + '">−</button><b>' + fmtQty(pick[i]) + ' / ' + fmtQty(l.qty) + '</b>' +
-            '<button class="btn" data-k="p:' + i + '">+</button><button class="btn" data-k="a:' + i + '">' + t('split.all') + '</button></span></td></tr>';
+          var amt = round2(l.price * l.qty);
+          return '<tr><td>' + esc(lineName(l)) + (l.part ? ' <i class="tag part">÷ ' + esc(l.part) + '</i>' : '') +
+            '<small class="muted"> ' + (l.part ? fmt(amt) : fmt(l.price)) + '</small>' +
+            (sharing === i ? '<div class="share-pick"><span class="muted">' + t('split.shareAmong') + '</span>' + [2, 3, 4, 5, 6, 8].map(function (n) {
+              return '<button class="btn" data-k="n:' + i + ':' + n + '">÷' + n + ' <small>' + fmt(round2(amt / n)) + '</small></button>';
+            }).join('') + '</div>' : '') + '</td>' +
+            '<td class="num"><span class="stepper-row">' +
+            (l.part ? '<button class="btn" title="' + esc(t('split.unshare')) + '" data-k="u:' + i + '">↩</button>'
+              : '<button class="btn' + (sharing === i ? ' on' : '') + '" title="' + esc(t('split.share')) + '" data-k="s:' + i + '">÷</button>') +
+            (l.part ? '<button class="btn take' + (pick[i] ? ' on' : '') + '" data-k="a:' + i + '">' + (pick[i] ? '✓ ' : '') + t('split.take') + '</button>'
+              : '<button class="btn" data-k="m:' + i + '">−</button><b>' + fmtQty(pick[i]) + ' / ' + fmtQty(l.qty) + '</b>' +
+              '<button class="btn" data-k="p:' + i + '">+</button><button class="btn" data-k="a:' + i + '">' + t('split.all') + '</button>') + '</span></td></tr>';
         }).join('') + '</table>' +
+        '<p class="muted">' + t('split.shareHint') + '</p>' +
         '<p class="pay-left">' + t('split.selected', { n: fmt(P.ticketTotals(pr.sub).total) }) + '</p>' +
         '<p class="muted">' + t('split.equalHint') + '</p>' +
         '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1"' + (pr.sub.lines.length ? '' : ' disabled') + '>' + t('split.pay') + '</button></div>';
     }
     openModal('split', draw, function (k) {
       if (k === 'X') return closeModal();
-      var i = Number(k.slice(2));
+      var i = Number(k.split(':')[1]);
+      if (k.indexOf('s:') === 0) { sharing = sharing === i ? -1 : i; return draw(); }
+      if (k.indexOf('n:') === 0) {
+        var n = Number(k.split(':')[2]);
+        sharing = -1;
+        shareLine(tk, i, n);
+        pick.splice.apply(pick, [i, 1].concat(new Array(n).fill(0)));
+        return draw();
+      }
+      if (k.indexOf('u:') === 0) {
+        var grp = tk.lines[i].partOf;
+        unshareLine(tk, grp);
+        pick = tk.lines.map(function () { return 0; });
+        return draw();
+      }
       if (k.indexOf('p:') === 0) { pick[i] = Math.min(tk.lines[i].qty, pick[i] + 1); return draw(); }
       if (k.indexOf('m:') === 0) { pick[i] = Math.max(0, pick[i] - 1); return draw(); }
       if (k.indexOf('a:') === 0) { pick[i] = pick[i] === tk.lines[i].qty ? 0 : tk.lines[i].qty; return draw(); }

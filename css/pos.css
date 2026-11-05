@@ -128,6 +128,12 @@ input, select, textarea { font: inherit; }
 .tk-line em { display: block; font-size: 12px; color: var(--muted); font-style: normal; }
 .tag { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
 .tag.qr { background: #fde2e1; color: var(--alert); }
+.tag.part { background: #ede9fe; color: #6d28d9; }
+.share-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.share-pick .btn { min-height: 34px; padding: 4px 10px; }
+.share-pick .btn small { color: var(--muted); font-weight: 400; }
+.stepper-row .btn.take { min-width: 120px; }
+.stepper-row .btn.on { background: #6d28d9; color: #fff; border-color: #6d28d9; }
 .tag.sent { background: #dcfce7; color: var(--ok); }
 .tk-total { padding: 8px 14px; border-top: 1px solid var(--line); }
 .tk-total .row { display: flex; justify-content: space-between; color: var(--muted); }
