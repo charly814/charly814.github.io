@@ -85,6 +85,10 @@ label.chk input{width:auto}
 .modal .mf{padding:12px 16px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d2733;color:#fff;padding:9px 16px;border-radius:8px;z-index:90;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
+.toast.act{pointer-events:auto;display:flex;gap:12px;align-items:center}
+.toast button{background:#fff;color:#1d2733;border:none;padding:4px 10px;font-size:13px;font-weight:600}
+.log-undone td{color:var(--muted);text-decoration:line-through}
+.log-undone td:last-child{text-decoration:none}
 .viewer{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:80;display:flex;flex-direction:column}
 .viewer .vt{color:#fff;padding:10px 14px;display:flex;gap:10px;align-items:center}
 .viewer .vt span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -141,6 +145,7 @@ label.chk input{width:auto}
     <a href="#props" data-v="props">房产与租客</a>
     <a href="#receipts" data-v="receipts">收据</a>
     <a href="#report" data-v="report">报表</a>
+    <a href="#log" data-v="log">操作记录</a>
     <a href="#settings" data-v="settings">设置 / 备份</a>
   </nav>
 </header>
@@ -181,24 +186,39 @@ function load(){
   try{ const s=localStorage.getItem(KEY); if(s){ const d=JSON.parse(s); const b=blank(); d.settings=Object.assign(b.settings,d.settings||{}); return Object.assign(b,d);} }catch(e){}
   return blank();
 }
-function save(){ try{ localStorage.setItem(KEY,JSON.stringify(D)); }catch(e){ alert('保存失败：'+e.message); } }
+let lastSnap=JSON.stringify(D), lastLogged=null;
+/* 每次修改数据都调用 save(动作, 详情)：写入操作记录，并保存修改前的快照，用于撤销 */
+function save(action,detail){
+  const snap=JSON.stringify(D);
+  try{ localStorage.setItem(KEY,snap); }catch(e){ alert('保存失败：'+e.message); return; }
+  if(action && snap!==lastSnap){ const e={id:logId(),t:new Date().toISOString(),action,detail:detail||'',before:lastSnap}; addLog(e); lastLogged={e,at:Date.now()}; }
+  lastSnap=snap;
+}
+function logInfo(action,detail){ addLog({id:logId(),t:new Date().toISOString(),action,detail:detail||'',type:'info'}); }
+let _lc=0; const logId=()=>String(Date.now()).padStart(15,'0')+'-'+String(_lc++%1000).padStart(3,'0');
 
 /* ---------- IndexedDB for files ---------- */
 let _db;
 function idb(){
   if(_db) return Promise.resolve(_db);
   return new Promise((res,rej)=>{
-    const r=indexedDB.open('zuqi-files',1);
-    r.onupgradeneeded=()=>r.result.createObjectStore('files',{keyPath:'id'});
+    const r=indexedDB.open('zuqi-files',2);
+    r.onupgradeneeded=()=>{ const db=r.result; if(!db.objectStoreNames.contains('files')) db.createObjectStore('files',{keyPath:'id'}); if(!db.objectStoreNames.contains('log')) db.createObjectStore('log',{keyPath:'id'}); };
     r.onsuccess=()=>{_db=r.result;res(_db)}; r.onerror=()=>rej(r.error);
   });
 }
-function tx(mode,fn){ return idb().then(db=>new Promise((res,rej)=>{ const t=db.transaction('files',mode); const st=t.objectStore('files'); const out=fn(st); t.oncomplete=()=>res(out&&out.result!==undefined?out.result:out); t.onerror=()=>rej(t.error); })); }
+function tx(mode,fn,store='files'){ return idb().then(db=>new Promise((res,rej)=>{ const t=db.transaction(store,mode); const st=t.objectStore(store); const out=fn(st); t.oncomplete=()=>res(out&&out.result!==undefined?out.result:out); t.onerror=()=>rej(t.error); })); }
 const putFile=f=>tx('readwrite',st=>st.put(f));
 const getFile=id=>tx('readonly',st=>st.get(id));
 const delFile=id=>tx('readwrite',st=>st.delete(id));
 const allFiles=()=>tx('readonly',st=>st.getAll());
 const clearFiles=()=>tx('readwrite',st=>st.clear());
+const KEEP_UNDO=60;
+const allLogs=()=>tx('readonly',st=>st.getAll(),'log').then(a=>a.sort((x,y)=>y.id.localeCompare(x.id)));
+const putLog=e=>tx('readwrite',st=>st.put(e),'log');
+let _logQ=Promise.resolve();
+function addLog(e){ _logQ=_logQ.then(()=>putLog(e)).then(trimLogs).catch(err=>console.error(err)); return _logQ; }
+async function trimLogs(){ const a=await allLogs(); const old=a.filter(e=>e.before).slice(KEEP_UNDO); for(const e of old){ delete e.before; await putLog(e); } }
 if(navigator.storage&&navigator.storage.persist) navigator.storage.persist().catch(()=>{});
 
 /* ---------- helpers ---------- */
@@ -219,7 +239,29 @@ const addMonth=(m,k)=>{ let y=+m.slice(0,4), mo=+m.slice(5,7)-1+k; y+=Math.floor
 const monthEnd=m=>{ const d=new Date(+m.slice(0,4),+m.slice(5,7),0); return m+'-'+pad(d.getDate()); };
 const prop=id=>D.properties.find(p=>p.id===id);
 const contract=id=>D.contracts.find(c=>c.id===id);
-function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on'),2200); }
+function toast(t){ const el=$('#toast'); const canUndo=lastLogged && Date.now()-lastLogged.at<1500;
+  el.textContent=t; el.classList.toggle('act',!!canUndo);
+  if(canUndo){ const b=document.createElement('button'); b.textContent='↶ 撤销'; b.onclick=()=>{ el.classList.remove('on','act'); undoLast(); }; el.appendChild(b); }
+  el.classList.add('on'); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove('on','act'),canUndo?7000:2200); }
+/* 二次确认对话框：返回 Promise<boolean> */
+function askConfirm(title,html,okText='确认',okCls='pri'){ return new Promise(res=>{ let done=false; const fin=v=>{ if(!done){ done=true; res(v); } };
+  const m=modal({title,body:html,buttons:[{t:'↩ 返回修改',fn:()=>fin(false)},{t:okText,cls:okCls,fn:()=>fin(true)}]});
+  new MutationObserver((_,o)=>{ if(!document.body.contains(m.el)){ o.disconnect(); fin(false); } }).observe(document.body,{childList:true}); }); }
+async function undoLast(){
+  const logs=await allLogs();
+  const target=logs.find(e=>!e.undone && e.type!=='undo' && e.type!=='info');
+  if(!target) return alert('没有可以撤销的操作。');
+  if(!target.before) return alert('这条操作太久远（只保留最近 '+KEEP_UNDO+' 步可撤销），无法自动撤销。');
+  const ok=await askConfirm('撤销上一步操作',`<p>将撤销：<b>${esc(target.action)}</b></p><p class="small">${esc(target.detail)}</p><p class="small muted">时间：${fmtTime(target.t)}。撤销后数据恢复到这一步之前的样子，撤销本身也会记录在操作记录里。</p>`,'↶ 确认撤销');
+  if(!ok) return;
+  const b=blank(); const d=JSON.parse(target.before); D=Object.assign(b,d); D.settings=Object.assign(blank().settings,d.settings||{});
+  localStorage.setItem(KEY,target.before); lastSnap=target.before; lastLogged=null;
+  target.undone=true; await putLog(target);
+  await addLog({id:logId(),t:new Date().toISOString(),action:'撤销',detail:target.action+'：'+target.detail,type:'undo'});
+  route(); toast('已撤销：'+target.action);
+}
+const fmtTime=iso=>{ const d=new Date(iso); return fmtDate(d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()))+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); };
+const payDesc=p=>`${p.receiptNo} · ${p.tenant} · ${KINDS[p.kind]?.zh||''}${p.period?' '+fmtMonthZh(p.period):''} · ${money(num(p.total))}`;
 function propLabel(p){ return p?(PTYPES[p.type]?.ic||'')+' '+p.name:'(已删除)'; }
 function contractActiveIn(c,m){ if(!c.start) return false; if(c.start.slice(0,7)>m) return false; if(c.end && c.end.slice(0,7)<m) return false; return !c.closed || (c.end && c.end.slice(0,7)>=m); }
 function activeContract(propId,date){ const m=(date||today()).slice(0,7); return D.contracts.find(c=>c.propertyId===propId && contractActiveIn(c,m)); }
@@ -375,7 +417,6 @@ function mountAttach(form,name){
 async function collectAttach(form,name){
   const kept=fv(form,name+'_keep')?fv(form,name+'_keep').split(','):[];
   const added=await storeUploads(readAsFiles(form.elements[name]));
-  for(const id of (form._removed||[])) await delFile(id).catch(()=>{});
   return kept.concat(added);
 }
 
@@ -506,8 +547,8 @@ function paymentForm(p,preset){
     </div>`;
   const md=modal({title:isNew?'记一笔收款':'修改收款',wide:true,body,
     buttons:[
-      ...(isNew?[]:[{t:'删除',cls:'danger',fn:()=>{ if(!confirm('确定删除这笔收款和收据？')) return false; D.bills.forEach(b=>{ if(b.paymentId===p.id) b.paymentId=null; }); D.payments=D.payments.filter(x=>x!==p); save(); rerender(); toast('已删除'); }}]),
-      {t:'取消'},
+      ...(isNew?[]:[{t:'删除',cls:'danger',fn:()=>{ if(!confirm('确定删除这笔收款和收据？')) return false; D.bills.forEach(b=>{ if(b.paymentId===p.id) b.paymentId=null; }); D.payments=D.payments.filter(x=>x!==p); save('删除收款/收据',payDesc(p)); rerender(); toast('已删除'); }}]),
+      {t:'↩ 返回'},
       {t:'保存',cls:'',fn:f=>savePay(f,false)},
       {t:'保存并打印收据',cls:'pri',fn:f=>savePay(f,true)}
     ],
@@ -537,7 +578,7 @@ function paymentForm(p,preset){
       form.elements.period.onchange=()=>{ const per=fv(form,'period'); items.forEach(it=>{ if(/^租金 /.test(it.desc)){ it.desc='租金 '+fmtMonthZh(per); it.descEs='Renta '+fmtMonthEs(per);} }); drawItems(); };
       syncKind(); drawItems(); drawBills();
     }});
-  function savePay(f,print){
+  async function savePay(f,print){
     const kindV=fv(f,'kind'), cidV=fv(f,'contractId'), per=fv(f,'period');
     const cc=contract(cidV); if(!cc){ alert('请选择租客合同'); return false; }
     const clean=items.filter(it=>String(it.desc).trim()||num(it.amount)).map(it=>({...it,amount:r2(num(it.amount))}));
@@ -546,6 +587,15 @@ function paymentForm(p,preset){
     const total=r2(clean.reduce((s,it)=>s+it.amount,0));
     const rno=fv(f,'receiptNo')||nextReceiptNo();
     if(D.payments.some(x=>x!==p && x.receiptNo===rno)){ alert('收据编号 '+rno+' 已存在'); return false; }
+    const paidV=fv(f,'amountPaid')===''?total:r2(num(fv(f,'amountPaid')));
+    const ok=await askConfirm(isNew?'请确认这笔收款':'请确认修改',`
+      <table><tr><th>租客</th><td>${esc(cc.tenant)} · ${esc(propLabel(prop(cc.propertyId)))}</td></tr>
+      <tr><th>类型</th><td>${esc(KINDS[kindV].zh)}${kindV==='rent'?' · '+fmtMonthZh(per):''}</td></tr>
+      ${clean.map(it=>`<tr><th></th><td>${esc(it.desc)} — ${money(it.amount)}</td></tr>`).join('')}
+      <tr><th>合计</th><td><b>${money(total)}</b>${fv(f,'pending')?' <span class="tag pri">预开·未收款</span>':paidV<total?' · 实收 <b>'+money(paidV)+'</b>':''}</td></tr>
+      <tr><th>日期</th><td>${fmtDate(fv(f,'paidDate'))} · ${esc(METHODS[fv(f,'method')]?.zh||'')} · 收据 ${esc(rno)}</td></tr></table>
+      <p class="small muted">确认后会记入操作记录；如果点错了，可以马上点 “撤销”，或在 “操作记录” 页撤销。</p>`,'✔ 确认保存');
+    if(!ok) return false;
     const rec=p||{id:uid(),created:today()};
     Object.assign(rec,{kind:kindV,contractId:cidV,propertyId:cc.propertyId,tenant:cc.tenant,period:kindV==='rent'?per:'',paidDate:fv(f,'paidDate')||today(),method:fv(f,'method'),
       items:clean,total,amountPaid:fv(f,'amountPaid')===''?total:r2(num(fv(f,'amountPaid'))),note:fv(f,'note'),receiptNo:rno});
@@ -554,10 +604,12 @@ function paymentForm(p,preset){
     if(isNew){ D.payments.push(rec); bumpReceiptNo(rno); }
     D.bills.forEach(b=>{ if(b.paymentId===rec.id) b.paymentId=null; });
     clean.forEach(it=>{ if(it.billId){ const b=D.bills.find(x=>x.id===it.billId); if(b) b.paymentId=rec.id; } });
-    save(); rerender(); toast('已保存');
+    save(isNew?(kindV==='rent'?'收租':'收款'):'修改收款',payDesc(rec)+(rec.pending?'（预开未收）':''));
+    rerender(); toast('已保存');
     if(print) setTimeout(()=>showReceipt(rec.id),50);
   }
 }
+function billDesc(b){ return `${BILL_TYPES[b.type]?.zh||b.type} · ${propLabel(prop(b.propertyId))} · ${money(num(b.amount))}${rangeTxt(b)?' · '+rangeTxt(b):''}`; }
 function billItem(b){ const t=BILL_TYPES[b.type]||BILL_TYPES.other; const per=b.from||b.to?' '+rangeTxt(b):''; const use=b.usage?` (${b.usage} ${t.unit})`:'';
   return {desc:t.zh+per+use, descEs:t.es+per+use, amount:num(b.tenantAmount), billId:b.id}; }
 function nextReceiptNo(peek){ const y=new Date().getFullYear(); const n=(D.seq.receipt||0)+1; return (D.settings.prefix||'')+y+'-'+String(n).padStart(4,'0'); }
@@ -622,7 +674,7 @@ function billForm(b){
   modal({title:isNew?'上传账单':'编辑账单',body,buttons:[
     ...(isNew?[]:[{t:'删除',cls:'danger',fn:async()=>{ if(!confirm('确定删除这条账单记录和附件？')) return false;
       if(b.paymentId){ const p=D.payments.find(x=>x.id===b.paymentId); if(p){ p.items=p.items.filter(it=>it.billId!==b.id); p.total=r2(p.items.reduce((s,it)=>s+num(it.amount),0)); } }
-      for(const id of b.files||[]) await delFile(id).catch(()=>{}); D.bills=D.bills.filter(x=>x!==b); save(); rerender(); toast('已删除'); }}]),
+      D.bills=D.bills.filter(x=>x!==b); save('删除账单',billDesc(b)); rerender(); toast('已删除账单'); }}]),
     {t:'取消'},
     {t:'保存',cls:'pri',fn:async f=>{
       if(fv(f,'amount')===''){ alert('请填写账单金额'); return false; }
@@ -637,7 +689,7 @@ function billForm(b){
       if(isNew) D.bills.push(rec);
       /* sync amount into an already-issued receipt item */
       if(rec.paymentId){ const p=D.payments.find(x=>x.id===rec.paymentId); const it=p&&p.items.find(i=>i.billId===rec.id); if(it){ Object.assign(it,billItem(rec)); p.total=r2(p.items.reduce((s,i)=>s+num(i.amount),0)); } }
-      save(); rerender(); toast('账单已保存');
+      save(isNew?'新增账单':'修改账单',billDesc(rec)); rerender(); toast('账单已保存');
     }}],
     onMount(f){
       mountAttach(f,'files');
@@ -691,12 +743,12 @@ function propForm(p){
     buttons:[...(isNew?[]:[{t:'删除',cls:'danger',fn:async()=>{
         const used=D.contracts.some(c=>c.propertyId===p.id)||D.bills.some(b=>b.propertyId===p.id);
         if(used){ alert('该房产下还有合同或账单记录，不能删除。'); return false; }
-        if(!confirm('确定删除？')) return false; for(const id of p.files||[]) await delFile(id).catch(()=>{});
-        D.properties=D.properties.filter(x=>x!==p); save(); rerender(); }}]),
+        if(!confirm('确定删除？')) return false;
+        D.properties=D.properties.filter(x=>x!==p); save('删除房产',p.name); rerender(); toast('已删除房产'); }}]),
       {t:'取消'},{t:'保存',cls:'pri',fn:async f=>{
         if(!fv(f,'name')){ alert('请填写名称'); return false; }
         const rec=p||{id:uid()}; Object.assign(rec,{name:fv(f,'name'),type:fv(f,'type'),address:fv(f,'address'),ref:fv(f,'ref'),note:fv(f,'note')});
-        rec.files=await collectAttach(f,'files'); if(isNew) D.properties.push(rec); save(); rerender(); toast('已保存'); }}],
+        rec.files=await collectAttach(f,'files'); if(isNew) D.properties.push(rec); save(isNew?'新增房产':'修改房产',rec.name); rerender(); toast('已保存'); }}],
     onMount:f=>mountAttach(f,'files')});
 }
 function contractForm(c,propId){
@@ -723,15 +775,15 @@ function contractForm(c,propId){
     ${attachField('files',c?c.files:[])}`,
     buttons:[...(isNew?[]:[{t:'删除',cls:'danger',fn:async()=>{
         if(D.payments.some(p=>p.contractId===c.id)){ alert('该合同已有收款记录，不能删除。可以勾选“合同已结束”。'); return false; }
-        if(!confirm('确定删除这个合同？')) return false; for(const id of c.files||[]) await delFile(id).catch(()=>{});
-        D.contracts=D.contracts.filter(x=>x!==c); save(); rerender(); }}]),
+        if(!confirm('确定删除这个合同？')) return false;
+        D.contracts=D.contracts.filter(x=>x!==c); save('删除租客合同',c.tenant+' · '+propLabel(prop(c.propertyId))); rerender(); toast('已删除合同'); }}]),
       {t:'取消'},{t:'保存',cls:'pri',fn:async f=>{
         if(!fv(f,'tenant')||fv(f,'rent')===''||!fv(f,'start')){ alert('请填写租客姓名、月租金和合同开始日期'); return false; }
         const rec=c||{id:uid()};
         Object.assign(rec,{propertyId:fv(f,'propertyId'),tenant:fv(f,'tenant'),idno:fv(f,'idno'),phone:fv(f,'phone'),email:fv(f,'email'),method:fv(f,'method'),lang:fv(f,'lang'),
           rent:r2(num(fv(f,'rent'))),deposit:r2(num(fv(f,'deposit'))),payDay:Math.min(31,Math.max(1,parseInt(fv(f,'payDay'))||1)),start:fv(f,'start'),end:fv(f,'end'),closed:fv(f,'closed'),note:fv(f,'note')});
         if(rec.closed && !rec.end) rec.end=today();
-        rec.files=await collectAttach(f,'files'); if(isNew) D.contracts.push(rec); save(); rerender(); toast('已保存'); }}],
+        rec.files=await collectAttach(f,'files'); if(isNew) D.contracts.push(rec); save(isNew?'新增租客合同':'修改租客合同',`${rec.tenant} · ${propLabel(prop(rec.propertyId))} · 月租 ${money(rec.rent)}`); rerender(); toast('已保存'); }}],
     onMount:f=>mountAttach(f,'files')});
 }
 function tenantHistory(c){
@@ -753,7 +805,7 @@ function confirmPaid(p){
     <div class="grid2"><label class="f">实际收款日期<input type="date" name="d" value="${today()}"></label>
     <label class="f">付款方式<select name="method">${opt(METHODS,p.method)}</select></label></div>
     <p class="small muted">收据上印好的日期不变；实际收款日期用于报表统计。</p>`,
-    buttons:[{t:'取消'},{t:'✔ 确认已收',cls:'ok',fn:f=>{ p.pending=false; p.receivedDate=fv(f,'d')||today(); p.method=fv(f,'method'); save(); rerender(); toast('已确认收款'); }}]});
+    buttons:[{t:'↩ 返回'},{t:'✔ 确认已收',cls:'ok',fn:f=>{ p.pending=false; p.receivedDate=fv(f,'d')||today(); p.method=fv(f,'method'); save('确认已收款',payDesc(p)+' · 收款日 '+fmtDate(p.receivedDate)); rerender(); toast('已确认收款'); }}]});
 }
 function yearReceipts(){
   const act=D.contracts.filter(c=>!c.closed);
@@ -782,7 +834,8 @@ function yearReceipts(){
           items:[{desc:'租金 '+fmtMonthZh(m),descEs:'Renta '+fmtMonthEs(m),amount:num(c.rent)}],total:num(c.rent),amountPaid:num(c.rent),note:'',receiptNo:rno,pending:true};
         D.payments.push(rec); ids.push(rec.id);
       });
-      save(); rerender(); toast(`已生成 ${ids.length} 张收据`);
+      const tn=[...new Set(plan.list.map(x=>x.c.tenant))].join('、'); const ms=plan.list.map(x=>x.m).sort();
+      save('批量预开收据',`${ids.length} 张 · ${tn} · ${fmtMonthZh(ms[0])}–${fmtMonthZh(ms[ms.length-1])}`); rerender(); toast(`已生成 ${ids.length} 张收据`);
       if(fv(f,'printNow')) await printReceipts(ids);
     }}],
     onMount(f){ const upd=()=>{ const p=yearPlan(f); f.querySelector('#yr-prev').textContent=`将生成 ${p.list.length} 张收据`+(p.skip?`，跳过 ${p.skip} 个月（已有记录或不在合同期内）`:'')+(p.list.length?`：${fmtMonthZh(p.list[0].m)} 起`:''); };
@@ -813,11 +866,32 @@ views.receipts=function(el){
   el.querySelectorAll('[data-rc]').forEach(b=>b.onclick=()=>showReceipt(b.dataset.rc));
   el.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>paymentForm(D.payments.find(p=>p.id===b.dataset.edit)));
   $('#batch').onclick=()=>{
-    modal({title:'批量打印收据',body:`<label class="f">月份（按收据所属月份 / 收款日期）<input type="month" name="m" value="${thisMonth()}"></label>`,
-      buttons:[{t:'取消'},{t:'打印',cls:'pri',fn:async f=>{ const m=fv(f,'m'); const ps=D.payments.filter(p=>(p.period||p.paidDate.slice(0,7))===m);
-        if(!ps.length){ alert('该月没有收据'); return false; } await printReceipts(ps.map(p=>p.id)); }}]});
+    const y=new Date().getFullYear();
+    const tenants=[...new Map(D.payments.map(p=>[p.contractId,p.tenant])).entries()];
+    modal({title:'批量打印收据',body:`
+      <p class="small muted">按收据 <b>所属月份</b> 选择（押金等其他收款按收款日期）。可以一次打印一整年或任意几个月。</p>
+      <div class="grid2">
+        <label class="f">从<input type="month" name="from" value="${y}-01"></label>
+        <label class="f">到<input type="month" name="to" value="${y}-12"></label>
+        <label class="f">租客<select name="cid"><option value="">全部租客</option>${tenants.map(([id,t])=>`<option value="${id}">${esc(t)}</option>`).join('')}</select></label>
+        <label class="f">状态<select name="st"><option value="">全部</option><option value="pending">只打印预开·待收</option><option value="paid">只打印已收</option></select></label>
+      </div>
+      <div class="row small"><button type="button" class="sm" data-y="${y}">今年</button><button type="button" class="sm" data-y="${y+1}">明年</button><button type="button" class="sm" data-y="${y-1}">去年</button></div>
+      <p id="bp-prev" style="margin-top:10px"></p>`,
+      buttons:[{t:'↩ 返回'},{t:'🖨️ 打印',cls:'pri',fn:async f=>{ const ps=batchList(f);
+        if(!ps.length){ alert('这个范围内没有收据'); return false; } await printReceipts(ps.map(p=>p.id)); }}],
+      onMount(f){ const upd=()=>{ const ps=batchList(f); f.querySelector('#bp-prev').innerHTML=ps.length?`共 <b>${ps.length}</b> 张收据（${ps.length} 页 A4）：${[...new Set(ps.map(p=>p.tenant))].map(esc).join('、')}`:'<span class="muted">这个范围内没有收据</span>'; };
+        f.querySelectorAll('[data-y]').forEach(b=>b.onclick=()=>{ f.elements.from.value=b.dataset.y+'-01'; f.elements.to.value=b.dataset.y+'-12'; upd(); });
+        f.addEventListener('input',upd); f.addEventListener('change',upd); upd(); }});
   };
 };
+function batchList(f){
+  let a=fv(f,'from')||'0000-00', b=fv(f,'to')||'9999-99'; if(a>b) [a,b]=[b,a];
+  const cid=fv(f,'cid'), st=fv(f,'st');
+  return D.payments.filter(p=>{ const m=p.period||(p.paidDate||'').slice(0,7); if(m<a||m>b) return false;
+      if(cid&&p.contractId!==cid) return false; if(st==='pending'&&!p.pending) return false; if(st==='paid'&&p.pending) return false; return true; })
+    .sort((x,y)=>(x.tenant||'').localeCompare(y.tenant||'')||(x.period||x.paidDate||'').localeCompare(y.period||y.paidDate||'')||(x.receiptNo||'').localeCompare(y.receiptNo||'',undefined,{numeric:true}));
+}
 const L={
   title:{zh:'收　据',es:'RECIBO'},
   copyL:{zh:'存根联（房东留存）',es:'Matriz (arrendador)'},
@@ -875,13 +949,14 @@ async function showReceipt(id){
     </div><div class="rc-preview" id="rcp">${html}</div>
     <p class="muted small">提示：打印时选择 A4 纸。想要电子版发给租客，在打印窗口选 “另存为 PDF”。</p>`,
     buttons:[{t:'关闭'},{t:'修改收款',fn:()=>paymentForm(p)},{t:'🖨️ 打印 / 存 PDF',cls:'pri',fn:()=>{ printReceipts([p.id]); return false; }}],
-    onMount(f){ const upd=async()=>{ const cc=contract(p.contractId); if(cc) cc.lang=fv(f,'lang'); D.settings.copies=+fv(f,'copies'); save(); f.querySelector('#rcp').innerHTML=await receiptPage(p); };
+    onMount(f){ const upd=async()=>{ const cc=contract(p.contractId); if(cc) cc.lang=fv(f,'lang'); D.settings.copies=+fv(f,'copies'); save('修改收据语言/份数',`${p.tenant}：${LANGS[fv(f,'lang')]?.zh} · ${fv(f,'copies')} 联`); f.querySelector('#rcp').innerHTML=await receiptPage(p); };
       f.elements.lang.onchange=upd; f.elements.copies.onchange=upd; }});
 }
 async function printReceipts(ids){
   const pages=[]; for(const id of ids){ const p=D.payments.find(x=>x.id===id); if(p) pages.push(await receiptPage(p)); }
   const box=$('#print'); box.innerHTML=pages.join('');
   const imgs=[...box.querySelectorAll('img')]; await Promise.all(imgs.map(i=>i.complete?0:new Promise(r=>{i.onload=i.onerror=r;})));
+  logInfo('打印收据',ids.length===1?payDesc(D.payments.find(x=>x.id===ids[0])):`${ids.length} 张`);
   const prevTitle=document.title; if(ids.length===1){ const p=D.payments.find(x=>x.id===ids[0]); document.title='Recibo '+p.receiptNo+' '+p.tenant; }
   setTimeout(()=>{ window.print(); document.title=prevTitle; },60);
 }
@@ -934,6 +1009,26 @@ views.report=function(el){
 };
 function download(content,name,type){ const b=content instanceof Blob?content:new Blob([content],{type}); const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000); }
 
+/* ---------------- LOG ---------------- */
+views.log=async function(el){
+  el.innerHTML='<div class="empty">加载中…</div>';
+  const logs=await allLogs(); const q=(state.lq||'').toLowerCase();
+  const list=q?logs.filter(e=>(e.action+' '+e.detail+' '+fmtTime(e.t)).toLowerCase().includes(q)):logs;
+  const next=logs.find(e=>!e.undone&&e.type!=='undo'&&e.type!=='info');
+  el.innerHTML=`<div class="row between" style="margin-bottom:12px"><h2 style="margin:0">操作记录</h2>
+    <div class="row"><input id="lq" placeholder="搜索操作 / 租客 / 日期" value="${esc(state.lq||'')}" style="width:200px"><button id="lcsv">导出 CSV</button><button class="pri" id="undo"${next&&next.before?'':' disabled'}>↶ 撤销上一步</button></div></div>
+  <div class="card small">每一次新增、修改、删除、收租、确认收款、打印、备份都会自动记在这里（带时间），不能删除。点错了可以用 <b>“撤销上一步”</b> 一步一步往回退（保留最近 ${KEEP_UNDO} 步），撤销本身也会被记录。
+    ${next?`<div style="margin-top:6px">下一步可撤销：<b>${esc(next.action)}</b> · ${esc(next.detail)}</div>`:''}</div>
+  <div class="card">${list.length?`<div class="tbl-wrap"><table><tr><th style="width:150px">时间</th><th style="width:120px">操作</th><th>详情</th><th style="width:70px"></th></tr>
+    ${list.map(e=>`<tr class="${e.undone?'log-undone':''}"><td class="small">${fmtTime(e.t)}</td><td><b>${esc(e.action)}</b></td><td class="small">${esc(e.detail)}</td>
+    <td>${e.undone?'<span class="tag">已撤销</span>':e.type==='undo'?'<span class="tag warn">撤销</span>':e.type==='info'?'<span class="tag">记录</span>':''}</td></tr>`).join('')}</table></div>`
+    :'<div class="empty">还没有操作记录</div>'}</div>`;
+  const lq=$('#lq'); lq.oninput=()=>{ state.lq=lq.value; const pos=lq.selectionStart; views.log(el).then(()=>{ const n=$('#lq'); n.focus(); n.setSelectionRange(pos,pos); }); };
+  $('#undo').onclick=undoLast;
+  $('#lcsv').onclick=()=>{ const qq=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+    download('﻿'+[['时间','操作','详情','状态'].map(qq).join(','),...logs.slice().reverse().map(e=>[fmtTime(e.t),e.action,e.detail,e.undone?'已撤销':e.type==='undo'?'撤销':''].map(qq).join(','))].join('\r\n'),`操作记录-${today()}.csv`,'text/csv;charset=utf-8'); };
+};
+
 /* ---------------- SETTINGS / BACKUP ---------------- */
 views.settings=function(el){
   const S=D.settings;
@@ -972,12 +1067,12 @@ views.settings=function(el){
   f.onsubmit=async e=>{ e.preventDefault();
     ['name','idno','phone','email','address','iban','currency','currencyWord','prefix','lang'].forEach(k=>S[k]=fv(f,k));
     S.copies=+fv(f,'copies'); S.stamp=fv(f,'stamp'); D.seq.receipt=Math.max(0,parseInt(fv(f,'seq'))||0);
-    const sf=readAsFiles(f.elements.sign); if(sf.length){ if(S.signFile) await delFile(S.signFile).catch(()=>{}); S.signFile=(await storeUploads(sf))[0]; }
-    save(); toast('设置已保存'); route(); };
-  if($('#rmsig')) $('#rmsig').onclick=async()=>{ await delFile(S.signFile).catch(()=>{}); S.signFile=null; save(); route(); };
+    const sf=readAsFiles(f.elements.sign); if(sf.length){ S.signFile=(await storeUploads(sf))[0]; }
+    save('修改设置','房东信息 / 收据设置'); route(); toast('设置已保存'); };
+  if($('#rmsig')) $('#rmsig').onclick=async()=>{ S.signFile=null; save('删除签名图片',''); route(); toast('已删除签名'); };
   $('#bk').onclick=backup;
   $('#rs').onchange=e=>restore(e.target.files[0]);
-  $('#wipe').onclick=async()=>{ if(!confirm('确定清空所有数据？此操作不可恢复（建议先下载备份）。')) return; if(prompt('请输入 “清空” 确认')!=='清空') return; D=blank(); save(); await clearFiles(); route(); toast('已清空'); };
+  $('#wipe').onclick=async()=>{ if(!confirm('确定清空所有房产、租客、账单和收据？（操作记录会保留，必要时可在 “操作记录” 页撤销）')) return; if(prompt('请输入 “清空” 确认')!=='清空') return; const n=`${D.properties.length} 房产 · ${D.contracts.length} 合同 · ${D.bills.length} 账单 · ${D.payments.length} 收据`; D=blank(); save('清空全部数据',n); route(); toast('已清空'); };
   $('#demo').onclick=()=>{ if(D.properties.length && !confirm('已有数据，示例数据会追加进去。继续？')) return; loadDemo(); location.hash='#home'; route(); toast('已载入示例数据'); };
   if(navigator.storage&&navigator.storage.estimate) navigator.storage.estimate().then(e=>{ $('#usage')&&($('#usage').textContent=`已使用存储约 ${(e.usage/1048576).toFixed(1)} MB`); });
 };
@@ -985,17 +1080,18 @@ function blobToDataURL(b){ return new Promise((res,rej)=>{ const r=new FileReade
 async function backup(){
   const files=await allFiles(); const out=[];
   for(const f of files) out.push({id:f.id,name:f.name,type:f.type,added:f.added,data:await blobToDataURL(f.blob)});
-  download(JSON.stringify({app:'zuqi',version:1,exported:new Date().toISOString(),data:D,files:out}),`收租备份-${today()}.json`,'application/json');
-  D.settings.lastBackup=today(); save(); toast('备份已下载');
+  const logs=(await allLogs()).map(({before,...e})=>e);
+  download(JSON.stringify({app:'zuqi',version:2,exported:new Date().toISOString(),data:D,files:out,log:logs}),`收租备份-${today()}.json`,'application/json');
+  D.settings.lastBackup=today(); save('下载备份',`${out.length} 个附件`); toast('备份已下载');
 }
 async function restore(file){
   if(!file) return;
   try{
     const j=JSON.parse(await file.text()); if(j.app!=='zuqi'||!j.data) throw new Error('不是收租管家的备份文件');
     if(!confirm(`备份时间：${(j.exported||'').slice(0,10)}\n恢复会覆盖当前所有数据，确定？`)) return;
-    await clearFiles();
     for(const f of j.files||[]){ const blob=await (await fetch(f.data)).blob(); await putFile({id:f.id,name:f.name,type:f.type,added:f.added,blob}); }
-    D=Object.assign(blank(),j.data); D.settings=Object.assign(blank().settings,j.data.settings||{}); save();
+    for(const e of j.log||[]) await putLog(e).catch(()=>{});
+    D=Object.assign(blank(),j.data); D.settings=Object.assign(blank().settings,j.data.settings||{}); save('恢复备份',`备份时间 ${(j.exported||'').slice(0,10)} · ${file.name}`);
     Object.keys(urlCache).forEach(k=>delete urlCache[k]); route(); toast('恢复完成');
   }catch(e){ alert('恢复失败：'+e.message); }
 }
@@ -1014,7 +1110,7 @@ function loadDemo(){
   D.bills.push({id:uid(),propertyId:h.id,type:'water',from:addMonth(m0,-3)+'-01',to:monthEnd(lm),prev:'512',curr:'538',usage:'26',amount:41.2,date:lm+'-18',supplier:'Canal de Isabel II',payer:'landlord',chargeTenant:true,tenantAmount:41.2,note:'',files:[]});
   D.bills.push({id:uid(),propertyId:h.id,type:'community',from:'',to:'',prev:'',curr:'',usage:'',amount:120,date:lm+'-02',supplier:'Comunidad de propietarios',payer:'landlord',chargeTenant:false,tenantAmount:0,note:'季度物业费',files:[]});
   if(!D.settings.name) Object.assign(D.settings,{name:'王小明 (ejemplo)',idno:'Y0000000T',address:'Calle Ejemplo 1, Madrid',phone:'622 000 000'});
-  save();
+  save('载入示例数据','2 房产 · 2 合同');
 }
 
 /* ---------- start ---------- */
