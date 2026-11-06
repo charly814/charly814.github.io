@@ -449,3 +449,9 @@ tr.voided td:last-child, tr.voided td:nth-child(2) { text-decoration: none; }
 .tbl.stool.jcolor { box-shadow: 0 0 0 3px var(--floor), 0 0 0 6px var(--jc); }
 .tl.jcolor { border: 3px solid var(--jc); }
 .legend .l-joined.j-badge::before, .legend .l-joined.j-color::before { content: '🔗A'; width: auto; height: auto; background: var(--joined); color: #fff; font-size: 10px; font-weight: 800; border-radius: 4px; padding: 0 4px; border: 0; }
+
+/* cuenta impresa (falta cobrar) */
+.tbl .billtag, .tl .billtag { position: absolute; bottom: -10px; right: -8px; font-style: normal; font-size: 15px; background: #fff; border-radius: 50%; width: 24px; height: 24px; line-height: 24px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.tbl.bill, .tl.bill { outline: 3px dashed #f59e0b; outline-offset: 2px; }
+.pay-print { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.act.done b::after { content: '✓'; font-size: 11px; color: var(--ok); margin-left: 2px; }

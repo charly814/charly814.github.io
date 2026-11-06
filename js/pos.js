@@ -235,12 +235,12 @@
       return d;
     } catch (e) { return 'x'; }
   })();
-  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur', 'guests', 'customer', 'tarifa', 'promo'];
+  var TK_FIELDS = ['table', 'openedAt', 'user', 'discountPct', 'discountEur', 'guests', 'customer', 'tarifa', 'promo', 'billAt'];
 
   function toTicket(table, raw) {
     if (!raw) return null;
     var tk = { table: table, discountPct: raw.discountPct || 0, discountEur: raw.discountEur || 0, openedAt: raw.openedAt, user: raw.user,
-      guests: raw.guests || 0, customer: raw.customer || null, tarifa: raw.tarifa || null, promo: raw.promo ? P.promoList(raw.promo) : null };
+      guests: raw.guests || 0, customer: raw.customer || null, tarifa: raw.tarifa || null, promo: raw.promo ? P.promoList(raw.promo) : null, billAt: raw.billAt || null };
     var src = raw.lines || {};
     // Una línea sin nombre es un resto de un cambio llegado tarde a una línea ya cobrada o borrada.
     tk.lines = Object.keys(src).map(function (id) { return Object.assign({}, src[id], { id: id }); })
@@ -525,12 +525,12 @@
       var main = mainOf(id);
       var tk = S.tickets[main];
       return {
-        busy: tk && (tk.lines || []).length, total: tk ? P.ticketTotals(tk).total : 0, qr: orderTables[id] || 0,
+        busy: tk && (tk.lines || []).length, total: tk ? P.ticketTotals(tk).total : 0, qr: orderTables[id] || 0, bill: !!(tk && tk.billAt && (tk.lines || []).length),
         joinedTo: main !== id ? main : null, hasChildren: childrenOf(id).length > 0, group: groups[main] || null
       };
     }
     function classes(base, tb, st) {
-      return base + (st.busy ? ' busy' : '') + (st.qr ? ' qr' : '') + (tb.temp ? ' temp' : '') +
+      return base + (st.busy ? ' busy' : '') + (st.bill ? ' bill' : '') + (st.qr ? ' qr' : '') + (tb.temp ? ' temp' : '') +
         (st.joinedTo && jstyle === 'grey' ? ' joined' : '') + (st.group && jstyle === 'color' ? ' jcolor' : '');
     }
     function gstyle(st) { return st.group && jstyle !== 'grey' ? '--jc:' + st.group.color + ';' : ''; }
@@ -548,6 +548,7 @@
         '<span>' + esc(tb.id) + '</span>' +
         (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy && tb.shape !== 'stool' ? '<small>' + fmt(st.total) + '</small>' : '') +
         gmark(st) +
+        (st.bill ? '<i class="billtag" title="' + esc(t('map.bill')) + '">🧾</i>' : '') +
         (st.qr ? '<i class="alert">QR ' + st.qr + '</i>' : '') + '</button>';
     }).join('');
     // En el móvil, una cuadrícula de botones es más rápida que el plano.
@@ -557,6 +558,7 @@
         '<b>' + esc(tb.id) + '</b>' +
         (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy ? '<small>' + fmt(st.total) + '</small>' : '') +
         gmark(st) +
+        (st.bill ? '<i class="billtag">🧾</i>' : '') +
         (st.qr ? '<i class="alert">QR</i>' : '') + '</button>';
     }).join('');
     var quick = S.tickets[QUICK] && (S.tickets[QUICK].lines || []).length;
@@ -635,7 +637,7 @@
       '<button class="minus-key" data-act="qty-minus">❌ ' + t('act.minus') + '</button>' +
       '</div>' +
       '<nav class="m-ticket-actions">' +
-      act('mods', '✏️', t('act.mod')) +
+      act('print-ticket', '🧾', t('act.print')) + act('mods', '✏️', t('act.mod')) +
       act('del-line', '🗑️', t('act.del')) + act('kitchen', '👨‍🍳', t('act.kitchen')) +
       act('hide-ticket', '↩', t('act.back')) +
       '<button class="act pay" data-act="pay"><b>💶</b>' + t('act.pay') + ' ' + fmt(tot.total) + '</button></nav>' +
@@ -658,8 +660,8 @@
       '<nav class="actions">' +
       (BUFFET_LINK ? act('go', '🍣', t('bf.title'), 'data-v="map"') : act('go', '🪑', t('tb.tables'), 'data-v="map"')) +
       (isAdmin() ? act('go', '⚙️', t('tb.admin'), 'data-v="admin"') : '') +
+      act('print-ticket', '🧾', t('act.print'), '', tk.billAt ? 'done' : '') +
       (pendingOrders().length ? act('orders', '📲', t('tb.orders') + ' (' + pendingOrders().length + ')', '', 'alert-act') : '') +
-      act('print-ticket', '🖨️', t('act.print')) +
       act('drawer', '💶', t('act.drawer')) +
       act('kitchen', '👨‍🍳', t('act.kitchen')) +
       act('voice', '🎤', t('act.voice'), '', 'voice-act') +
@@ -1037,7 +1039,8 @@
     'print-ticket': function () {
       var tk = ticketOf(S.table);
       if (!tk.lines.length) return toast(t('msg.empty'));
-      printTicket(tk, null);
+      printBill(tk);
+      render();
     },
     kitchen: function () {
       var tk = ticketOf(S.table);
@@ -1155,6 +1158,7 @@
   function itemPrice(it, table) { return P.priceWith(S.menu, it, tarifaOf(table)); }
 
   function mergeLines(tk, add) {
+    if (add.length) tk.billAt = null;   // la cuenta impresa ya no vale
     var tf = P.tarifaFor(S.tarifas, tk.table, new Date(), tk.tarifa);
     add.forEach(function (a) {
       // precio según la tarifa de la mesa en este momento (happy hour, terraza…)
@@ -1900,7 +1904,7 @@
   // Se puede pagar en varias partes (a partes iguales o con varias formas de pago).
   function openPay(tk, opts) {
     opts = opts || {};
-    var st = { method: opts.account ? 'cuenta' : 'efectivo', given: '', print: true, busy: false, multi: false, parts: [], part: '', gift: '', usePts: false };
+    var st = { method: opts.account ? 'cuenta' : 'efectivo', given: '', print: !(tk.billAt && directPrinter()), busy: false, multi: false, parts: [], part: '', gift: '', usePts: false };
     var LC = P.loyaltyCfg(S.settings);
     var lcust = LC.on && tk.customer && S.customers[tk.customer.id];
     var redeem = lcust ? P.loyaltyRedeem(LC, lcust.points, P.ticketTotals(Object.assign({}, tk, { loyalty: null })).total) : null;
@@ -1951,7 +1955,9 @@
       modalBox.className = 'modal-box';
       modalBox.innerHTML = '<h2>' + t('pay.title', { t: esc(tableLabel(tk.table)) }) + '</h2>' +
         '<div class="pay-total">' + fmt(tot.total) + '</div>' + body +
-        '<label style="display:block;margin-bottom:14px"><input type="checkbox" data-k="print" ' + (st.print ? 'checked' : '') + '> ' + t('pay.print') + '</label>' +
+        '<div class="pay-print"><label><input type="checkbox" data-k="print" ' + (st.print ? 'checked' : '') + '> ' + t('pay.print') + '</label>' +
+        '<button class="btn" data-k="bill">' + (tk.billAt ? '🧾 ' + t('pay.billAgain') : '🧾 ' + t('pay.bill')) + '</button></div>' +
+        (tk.billAt ? '<p class="muted" style="margin:-6px 0 12px">' + t('pay.billDone') + '</p>' : '') +
         '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1"' +
         (st.busy || (st.multi && left() !== 0) ? ' disabled' : '') + '>' + t('pay.confirm') + '</button></div>';
       var inp = document.getElementById('pay-given');
@@ -1969,6 +1975,11 @@
       if (st.busy) return;
       if (k === 'X') return closeModal();
       if (k === 'print') { st.print = !st.print; return; }
+      if (k === 'bill') {
+        printBill(Object.assign(tk, { loyalty: st.usePts ? redeem : tk.loyalty }));
+        if (directPrinter()) st.print = false;
+        return draw();
+      }
       if (k.indexOf('m:') === 0) { st.method = k.slice(2); return draw(); }
       if (k.indexOf('g:') === 0) { st.given = k.slice(2).replace('.', ','); return draw(); }
       if (k === 'multi') { st.multi = true; return draw(); }
@@ -2120,7 +2131,7 @@
       var full = P.ticketTotals(tk);
       var pct = full.subtotal ? full.discount / full.subtotal * 100 : 0;
       var sub = { table: tk.table, lines: lines, discountPct: round2(pct), discountEur: 0, guests: 0, user: tk.user, openedAt: tk.openedAt, customer: tk.customer };
-      var rem = Object.assign({}, tk, { lines: rest });
+      var rem = Object.assign({}, tk, { lines: rest, billAt: null });
       return { sub: sub, rest: rem };
     }
     function draw() {
@@ -2637,6 +2648,18 @@
 
   // El diseño del ticket (logo, líneas, qué se muestra) es el mismo que se ve
   // en la vista previa de Gestión → Diseño del ticket.
+  // Cuenta (sin cobrar): se imprime y la mesa queda marcada con 🧾 hasta que se cobra
+  // o se añade algo. Al cobrar después ya no hace falta otro papel.
+  function printBill(tk) {
+    tk.billAt = Date.now();
+    if (S.tickets[tk.table] === tk) saveTicket(tk);
+    printTicket(tk, null);
+    toast(t('msg.billPrinted'));
+  }
+  // ¿Se puede abrir el cajón sin imprimir? Solo con la impresora conectada directamente
+  // (red o USB); imprimiendo desde el navegador lo abre el driver al imprimir.
+  function directPrinter() { return Devices.cfg().receipt.mode !== 'browser'; }
+
   function printTicket(tk, sale, opts) {
     var doc = P.receiptDoc(tk, sale, S.settings, { table: tableLabelEs(tk.table), user: S.user.name, logo: S.logo });
     var big = !!(S.settings.ticket && S.settings.ticket.big);
