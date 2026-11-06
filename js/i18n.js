@@ -41,7 +41,7 @@
     'tb.orders': ['Pedidos QR', 'QR orders', '扫码订单'],
     'tb.tables': ['Mesas', 'Tables', '桌位'],
     'tb.caja': ['Caja', 'Till', '收银'],
-    'tb.admin': ['Ajustes', 'Settings', '设置'],
+    'tb.admin': ['Gestión', 'Back office', '后台'],
     'tb.logout': ['Salir', 'Log out', '退出'],
     'map.title': ['Seleccionar Mesa', 'Select table', '选择桌位'],
     'map.move': ['Elige la mesa de destino para {t} (si está ocupada, se juntan los tickets).', 'Choose the destination table for {t} (if it is busy, the tickets are merged).', '请选择 {t} 要换到的桌子（如果已有账单，会合并）。'],

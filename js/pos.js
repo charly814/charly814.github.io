@@ -657,6 +657,7 @@
       }).join('') + '</div>' +
       '<nav class="actions">' +
       (BUFFET_LINK ? act('go', '🍣', t('bf.title'), 'data-v="map"') : act('go', '🪑', t('tb.tables'), 'data-v="map"')) +
+      (isAdmin() ? act('go', '⚙️', t('tb.admin'), 'data-v="admin"') : '') +
       (pendingOrders().length ? act('orders', '📲', t('tb.orders') + ' (' + pendingOrders().length + ')', '', 'alert-act') : '') +
       act('print-ticket', '🖨️', t('act.print')) +
       act('drawer', '💶', t('act.drawer')) +
