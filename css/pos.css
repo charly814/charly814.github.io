@@ -125,6 +125,7 @@ input, select, textarea { font: inherit; }
 .tk-lines { flex: 1; overflow: auto; min-height: 120px; }
 .tk-line { border-bottom: 1px solid #f0f0f0; cursor: pointer; }
 .tk-line.sel { background: #dbeafe; }
+.tk-line.next { box-shadow: inset 4px 0 0 #fca5a5; }
 .tk-line em { display: block; font-size: 12px; color: var(--muted); font-style: normal; }
 .tag { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
 .tag.qr { background: #fde2e1; color: var(--alert); }

@@ -596,9 +596,10 @@
     var cat = S.menu.filter(function (c) { return c.id === S.cat; })[0];
     var count = tk.lines.reduce(function (s, l) { return s + l.qty; }, 0);
 
+    var autoL = targetLine(tk);   // la que borra «🗑️» o «❌» si no se elige ninguna
     var lines = tk.lines.map(function (l, i) {
       var sub = [comboText(l, I.lang), P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
-      return '<div class="tk-line' + (i === S.sel ? ' sel' : '') + '" data-act="sel-line" data-i="' + i + '">' +
+      return '<div class="tk-line' + (i === S.sel ? ' sel' : S.sel < 0 && l === autoL ? ' next' : '') + '" data-act="sel-line" data-i="' + i + '">' +
         '<span>' + fmtQty(l.qty) + '</span>' +
         '<span>' + esc(lineName(l)) + (l.part ? '<i class="tag part">÷ ' + esc(l.part) + '</i>' : '') + (l.src === 'qr' ? '<i class="tag qr">QR</i>' : '') + (l.src === 'voice' ? '<i class="tag voice">🎤</i>' : '') + (l.free ? '<i class="tag free">✎</i>' : '') +
         (l.src === 'buffet' ? '<i class="tag">🍣</i>' : l.sent ? '<i class="tag sent">✓ ' + t('tk.kitchen') + '</i>' : '') +
@@ -989,8 +990,8 @@
     'qty-minus': function () { changeQty(-1); },
     'del-line': function () {
       var tk = ticketOf(S.table);
-      var l = tk.lines[S.sel];
-      if (!l) return toast(t('msg.selectLine'));
+      var l = targetLine(tk);
+      if (!l) return toast(t('msg.empty'));
       var go = function () {
         if (l.sent) audit('delSent', fmtQty(l.qty) + '× ' + l.name);
         tk.lines.splice(tk.lines.indexOf(l), 1); S.sel = -1; saveTicket(tk); render();
@@ -1170,22 +1171,37 @@
         return l.pid === a.pid && l.name === a.name && l.price === price && !l.sent && (l.note || '') === (a.note || '') &&
           sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV && !a.combo && !l.combo && !l.part;
       })[0];
-      if (same) same.qty = round2(same.qty + a.qty);
+      if (same) { same.qty = round2(same.qty + a.qty); S.lastAdded = { table: tk.table, line: same }; }
       else {
         tk.lines.push({
           pid: a.pid, name: a.name, base: a.base, price: price, qty: a.qty, mods: mods,
           note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV, at: Date.now(),
           combo: a.combo || null
         });
+        S.lastAdded = { table: tk.table, line: tk.lines[tk.lines.length - 1] };
       }
     });
     return tk;
   }
 
+  // Sin línea elegida, «borrar» y «quitar 1» van a la última que se ha marcado
+  // (también si se ha pulsado otra vez un producto que ya estaba).
+  function targetLine(tk) {
+    if (tk.lines[S.sel]) return tk.lines[S.sel];
+    var la = S.lastAdded && S.lastAdded.table === tk.table && S.lastAdded.line;
+    if (la) {
+      var m = tk.lines.filter(function (l) { return l === la || (la.id && l.id === la.id); })[0];
+      if (m) return m;
+    }
+    var best = null;
+    tk.lines.forEach(function (l) { if (!best || (l.at || 0) >= (best.at || 0)) best = l; });
+    return best;
+  }
+
   function changeQty(delta) {
     var tk = ticketOf(S.table);
-    var l = tk.lines[S.sel];
-    if (!l) return toast(t('msg.selectLine'));
+    var l = delta < 0 ? targetLine(tk) : tk.lines[S.sel];
+    if (!l) return toast(t(delta < 0 ? 'msg.empty' : 'msg.selectLine'));
     var go = function () {
       if (delta < 0 && l.sent) audit('delSent', '1× ' + l.name);
       l.qty = round2(l.qty + delta);
