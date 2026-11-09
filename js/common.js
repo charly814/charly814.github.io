@@ -228,12 +228,25 @@
     })[0] || null;
   }
   // Precio de un producto con una tarifa (o el de la carta)
-  function priceWith(menu, item, tarifa) {
+  // sz: índice del formato elegido (lata, botella…); la tarifa en % también se aplica a los formatos
+  function priceWith(menu, item, tarifa, sz) {
     if (!item) return 0;
-    if (!tarifa) return item.price;
-    if (tarifa.prices && tarifa.prices[item.id] != null && tarifa.prices[item.id] !== '') return round2(tarifa.prices[item.id]);
-    if (tarifa.cats && tarifa.cats.length && tarifa.cats.indexOf(catOfItem(menu, item.id)) < 0) return item.price;
-    return round2(item.price * (1 + (Number(tarifa.pct) || 0) / 100));
+    var size = sz != null && item.sizes && item.sizes[sz];
+    var base = size ? Number(size.price) || 0 : item.price;
+    if (!tarifa) return base;
+    if (!size && tarifa.prices && tarifa.prices[item.id] != null && tarifa.prices[item.id] !== '') return round2(tarifa.prices[item.id]);
+    if (tarifa.cats && tarifa.cats.length && tarifa.cats.indexOf(catOfItem(menu, item.id)) < 0) return base;
+    return round2(base * (1 + (Number(tarifa.pct) || 0) / 100));
+  }
+  // Formatos de un producto (Coca-Cola: lata / botella / 1 L), cada uno con su precio.
+  // Se pueden desactivar para todo el local en Gestión → Negocio (settings.useSizes = false).
+  function sizesOf(item, settings) {
+    if (!item || (settings && settings.useSizes === false) || item.combo) return [];
+    return (item.sizes || []).filter(function (x) { return x && x.name; });
+  }
+  function itemName(item, sz, lang) {
+    var size = sz != null && item.sizes && item.sizes[sz];
+    return tr(item, lang) + (size ? ' (' + tr(size, lang) + ')' : '');
   }
 
   // Siguiente 06:00 (fin de la "jornada" para "cerrar cocina hoy")
@@ -590,6 +603,8 @@
     validRanges: validRanges,
     tarifaFor: tarifaFor,
     priceWith: priceWith,
+    sizesOf: sizesOf,
+    itemName: itemName,
     qrStatus: qrStatus,
     endOfService: endOfService,
     catOfItem: catOfItem,

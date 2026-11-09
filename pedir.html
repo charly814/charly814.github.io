@@ -70,6 +70,11 @@
     .sheet input[type=text] { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 10px; font: inherit; }
     .qty-row { display: flex; align-items: center; justify-content: center; gap: 16px; margin: 16px 0; }
     .qty-row b { font-size: 20px; }
+    .sz-sel { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+    .sz-sel button { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid var(--line); background: #fff; border-radius: 12px; padding: 12px 8px; font-size: 15px; }
+    .sz-sel button b { color: var(--price); }
+    .sz-sel button.on { border-color: var(--accent); background: #eef4fa; box-shadow: 0 0 0 1px var(--accent); }
+    .item .price small { font-weight: 400; color: var(--muted); font-size: 11px; }
     /* plato con vista animada (hamburguesa por capas) */
     .sheet.vis { max-height: 96vh; padding-top: 0; background: #fff7ed; }
     .vis-stage { position: sticky; top: 0; z-index: 3; margin: 0 -16px; padding: 6px 12px 8px; background: #fff7ed; box-shadow: 0 10px 12px -10px rgba(120,60,0,.25); }
@@ -244,7 +249,7 @@
                 '<span class="name"' + (off ? '' : ' data-a="custom" data-id="' + esc(it.id) + '"') + '>' + esc(P.tr(it, I.lang)) + (off ? '' : ' <u>✏️</u>') + es +
                 (desc ? '<small class="desc">' + esc(desc) + '</small>' : '') +
                 (al ? '<small class="alg" aria-label="' + esc(t('c.allergens2')) + '">' + al + '</small>' : '') + '</span>' +
-                '<span class="price">' + fmt(priceOf(it)) + '</span>' +
+                '<span class="price">' + (hasSizes(it) ? '<small>' + esc(t('c.from')) + '</small> ' + fmt(Math.min.apply(null, sizes(it).map(function (x) { return szPrice(it, it.sizes.indexOf(x)); }))) : fmt(priceOf(it))) + '</span>' +
                 (off ? '' : '<span class="stepper">' + (q ? '<button data-a="minus" data-key="' + esc(it.id) + '" aria-label="−">−</button><b>' + q + '</b>' : '') +
                 '<button class="add" data-a="plus" data-id="' + esc(it.id) + '" aria-label="+">+</button></span>') + '</div>';
             }).join('') + '</section>';
@@ -263,10 +268,14 @@
     }
 
     function modObjs(ids) { return (ids || []).map(function (id) { return P.findMod(mods, id); }).filter(Boolean); }
+    // formatos (lata, botella…): el interruptor general llega en public/qr
+    function sizes(it) { return P.sizesOf(it, { useSizes: qrCfg.useSizes }); }
+    function hasSizes(it) { return sizes(it).length > 0; }
+    function szPrice(it, sz) { return P.priceWith(menu, it, P.tarifaFor(tarifas, table, new Date()), sz); }
     function unitPrice(l) {
       var it = P.findItem(menu, l.pid);
       if (!it) return 0;
-      return priceOf(it) + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0) +
+      return (l.sz != null && it.sizes && it.sizes[l.sz] ? szPrice(it, l.sz) : priceOf(it)) + modObjs(l.mods).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0) +
         P.comboChoices(menu, it, l.combo || []).reduce(function (s, c) { return s + c.extra; }, 0);
     }
     function isCombo(it) { return !!(it && it.combo && (it.combo.courses || []).length); }
@@ -290,7 +299,7 @@
           var it = P.findItem(menu, l.pid);
           var sub = [l.combo ? P.comboChoices(menu, it, l.combo).map(function (c) { var x = c.pid && P.findItem(menu, c.pid); return x ? P.tr(x, I.lang) : c.choice; }).join(' · ') : '',
             P.modsText(modObjs(l.mods), I.lang), l.note].filter(Boolean).join(' · ');
-          return '<div class="item cart-line"><span class="name">' + esc(P.tr(it, I.lang)) + (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
+          return '<div class="item cart-line"><span class="name">' + esc(P.itemName(it, l.sz, I.lang)) + (sub ? '<em>' + esc(sub) + '</em>' : '') + '</span>' +
             '<span class="price">' + fmt(unitPrice(l) * l.qty) + '</span>' +
             '<span class="stepper"><button data-a="minus" data-key="' + esc(l.key) + '">−</button><b>' + l.qty + '</b><button class="add" data-a="inc" data-key="' + esc(l.key) + '">+</button></span></div>';
         }).join('') +
@@ -303,6 +312,14 @@
       sheetBg.classList.remove('hidden');
     }
 
+    // formato elegido (lata / botella…): botones grandes con su precio
+    function sizeChips(it, st) {
+      if (!hasSizes(it)) return '';
+      return '<h4 class="mod-h">' + t('c.size') + '</h4><div class="sz-sel">' + (it.sizes || []).map(function (x, i) {
+        if (!x || !x.name) return '';
+        return '<button class="' + (st.sz === i ? 'on' : '') + '" data-a="szp" data-i="' + i + '"><span>' + esc(P.tr(x, I.lang)) + '</span><b>' + fmt(szPrice(it, i)) + '</b></button>';
+      }).join('') + '</div>';
+    }
     function chipsFor(type, st) {
       return '<div class="chips-sel">' + mods.filter(function (m) { return m.type === type; }).map(function (m) {
         return '<button class="' + (st.sel[m.id] ? 'on' : '') + '" data-a="mod" data-id="' + esc(m.id) + '">' + esc(P.tr(m, I.lang)) + (m.price ? ' +' + fmt(m.price) : '') + '</button>';
@@ -313,11 +330,12 @@
       var it = P.findItem(menu, pid);
       if (!it) return;
       sheetMode = sheetMode && sheetMode.pid === pid ? sheetMode : { pid: pid, sel: {}, note: '', qty: 1, picks: ((it.combo && it.combo.courses) || []).map(function () { return []; }) };
+      if (hasSizes(it) && sheetMode.sz == null) sheetMode.sz = it.sizes.indexOf(sizes(it)[0]);
       if (it.visual && window.PlatetVisual && PlatetVisual.RECIPES[it.visual] && !isCombo(it)) return openVisual(it);
       dropVis();
       var st = sheetMode;
       var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
-      var price = unitPrice({ pid: pid, mods: ids, combo: st.picks }) * st.qty;
+      var price = unitPrice({ pid: pid, mods: ids, combo: st.picks, sz: st.sz }) * st.qty;
       // menú del día: primero elegir los platos
       var courses = isCombo(it) ? it.combo.courses.map(function (c, ci) {
         return '<h4 class="mod-h">' + esc(P.tr(c, I.lang)) + ((Number(c.pick) || 1) > 1 ? ' (' + c.pick + ')' : '') + '</h4><div class="chips-sel">' +
@@ -327,7 +345,7 @@
           }).join('') + '</div>';
       }).join('') : '';
       var ready = !isCombo(it) || P.comboComplete(it, st.picks);
-      sheet.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + '</h2>' + courses +
+      sheet.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + '</h2>' + sizeChips(it, st) + courses +
         (isCombo(it) ? '' : '<h4 class="mod-h sin">' + t('mod.sin') + '</h4>' + chipsFor('sin', st)) +
         (isCombo(it) ? '' : '<h4 class="mod-h extra">' + t('mod.extra') + '</h4>' + chipsFor('extra', st) +
         '<h4 class="mod-h">' + t('mod.prep') + '</h4>' + chipsFor('prep', st)) +
@@ -379,7 +397,7 @@
       document.getElementById('vis-reset').textContent = t('c.vis.reset');
       var km = visKeys(kind);
       var ids = Object.keys(st.sel).filter(function (k) { return st.sel[k]; });
-      var price = unitPrice({ pid: it.id, mods: ids }) * st.qty;
+      var price = unitPrice({ pid: it.id, mods: ids, sz: st.sz }) * st.qty;
       var card = function (m) {
         var on = !!st.sel[m.id];
         return '<button class="vcard ' + m.type + (on ? ' on' : '') + '" data-a="mod" data-id="' + esc(m.id) + '"><i>' + PlatetVisual.thumb(kind, km[m.id]) + '</i>' + esc(P.tr(m, I.lang)) +
@@ -394,7 +412,7 @@
       };
       var sinC = mapped('sin'), exC = mapped('extra');
       document.getElementById('vis-body').innerHTML =
-        '<div class="vis-head"><h2>' + esc(P.tr(it, I.lang)) + '</h2><b>' + fmt(price) + '</b></div>' +
+        '<div class="vis-head"><h2>' + esc(P.tr(it, I.lang)) + '</h2><b>' + fmt(price) + '</b></div>' + sizeChips(it, st) +
         (sinC.length ? '<h4 class="mod-h sin">' + t('c.vis.no') + '</h4><div class="vcards">' + sinC.map(card).join('') + '</div>' : '') +
         (exC.length ? '<h4 class="mod-h extra">' + t('c.vis.yes') + '</h4><div class="vcards">' + exC.map(card).join('') + '</div>' : '') +
         '<h4 class="mod-h">' + t('c.vis.more') + '</h4>' + rest('sin') + rest('extra') + rest('prep') +
@@ -482,7 +500,7 @@
         case 'lang': I.set(b.dataset.l); drawLang(); render(); return refreshSheet();
         case 'plus':
           if (!canOrder(b.dataset.id)) return render();
-          if (isCombo(P.findItem(menu, b.dataset.id))) { sheetMode = null; return openCustom(b.dataset.id); }
+          if (isCombo(P.findItem(menu, b.dataset.id)) || hasSizes(P.findItem(menu, b.dataset.id))) { sheetMode = null; return openCustom(b.dataset.id); }
           l = lineByKey(b.dataset.id);
           if (l) l.qty = Math.min(20, l.qty + 1);
           else cart.push({ key: b.dataset.id, pid: b.dataset.id, qty: 1, mods: [], note: '' });
@@ -503,6 +521,7 @@
         case 'vreset':
           if (vis) { sheetMode.sel = {}; vis.v.set({}, { origin: visOrigin(vis.kind) }); openCustom(sheetMode.pid); }
           return;
+        case 'szp': sheetMode.sz = Number(b.dataset.i); return openCustom(sheetMode.pid);
         case 'cqty': sheetMode.qty = Math.min(20, Math.max(1, sheetMode.qty + Number(b.dataset.d))); return openCustom(sheetMode.pid);
         case 'pick':
           var pk = sheetMode.picks[+b.dataset.c], oi = +b.dataset.o;
@@ -518,11 +537,13 @@
             if (!P.comboComplete(cit, st.picks)) return;
             cart.push({ key: st.pid + '~' + Store.newId(), pid: st.pid, qty: st.qty, mods: [], note: n, combo: st.picks });
           } else if (!ids.length && !n) {
-            l = lineByKey(st.pid);
+            // sin cambios: se suma a la línea del mismo producto (y mismo formato)
+            var pk = st.sz != null ? st.pid + '#' + st.sz : st.pid;
+            l = lineByKey(pk);
             if (l) l.qty = Math.min(20, l.qty + st.qty);
-            else cart.push({ key: st.pid, pid: st.pid, qty: st.qty, mods: [], note: '' });
+            else cart.push({ key: pk, pid: st.pid, qty: st.qty, mods: [], note: '', sz: st.sz });
           } else {
-            cart.push({ key: st.pid + '~' + Store.newId(), pid: st.pid, qty: st.qty, mods: ids, note: n });
+            cart.push({ key: st.pid + '~' + Store.newId(), pid: st.pid, qty: st.qty, mods: ids, note: n, sz: st.sz });
           }
           closeSheet(); render(); return;
         case 'close': return closeSheet();
@@ -531,7 +552,7 @@
           b.disabled = true;
           b.textContent = t('c.sending');
           send('order', validLines().map(function (x) {
-            return { pid: x.pid, name: P.findItem(menu, x.pid).name, qty: x.qty, mods: x.mods, note: x.note, combo: x.combo || null };
+            return { pid: x.pid, name: P.itemName(P.findItem(menu, x.pid), x.sz, 'es'), qty: x.qty, mods: x.mods, note: x.note, combo: x.combo || null, sz: x.sz == null ? null : x.sz };
           })).then(function (ok) {
             if (!ok) { b.disabled = false; b.textContent = t('c.send'); return; }
             cart = []; note = ''; closeSheet(); render();

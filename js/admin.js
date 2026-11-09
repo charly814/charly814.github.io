@@ -187,7 +187,7 @@
         var it = r.it, id = esc(it.id);
         return '<tr class="' + (it.available === false ? 'off-row' : '') + '">' +
           '<td>' + imgTag('p-' + it.id, it.img, r.c.icon) + '</td>' +
-          '<td><b>' + esc(it.name) + '</b>' + (it.combo ? ' <span class="chip">📋 ' + t('adm.comboBadge') + ' · ' + it.combo.courses.length + '</span>' : '') + ((it.en || it.zh) ? '<small>' + esc([it.en, it.zh].filter(Boolean).join(' · ')) + '</small>' : '') + '</td>' +
+          '<td><b>' + esc(it.name) + '</b>' + (it.combo ? ' <span class="chip">📋 ' + t('adm.comboBadge') + ' · ' + it.combo.courses.length + '</span>' : '') + (it.sizes && it.sizes.length ? ' <span class="chip">📏 ' + it.sizes.map(function (x) { return esc(x.name) + ' ' + fmt(x.price); }).join(' / ') + '</span>' : '') + ((it.en || it.zh) ? '<small>' + esc([it.en, it.zh].filter(Boolean).join(' · ')) + '</small>' : '') + '</td>' +
           '<td class="hide-sm">' + esc(r.c.icon || '') + ' ' + esc(P.tr(r.c, I.lang)) + '</td>' +
           '<td class="num">' + fmt(it.price) + '</td>' +
           '<td><label class="switch"><input type="checkbox" data-edit="avail" data-pid="' + id + '"' + (it.available !== false ? ' checked' : '') + '><span></span></label></td>' +
@@ -215,6 +215,7 @@
     st.cat = loc ? A.menu[loc.ci].id : (catId || A.catF || (A.menu[0] && A.menu[0].id));
     st.allergens = st.allergens || [];
     st.combo = st.combo ? clone(st.combo) : null;
+    st.sizes = (st.sizes || []).filter(Boolean).map(function (x) { return { name: x.name || '', en: x.en || '', zh: x.zh || '', price: x.price == null ? '' : String(x.price).replace('.', ',') }; });
     var photo = { data: null, removed: false };     // foto nueva sin guardar
 
     function field(k, label, type, extra) {
@@ -248,6 +249,7 @@
         '<p class="muted">' + t('adm.photoHelp') + '</p></div></div></div>' +
         field('desc', t('adm.descEs'), 'textarea', 'full') + field('desc_en', t('adm.descEn'), 'textarea') + field('desc_zh', t('adm.descZh'), 'textarea') +
         '<p class="muted full">' + t('adm.descHelp') + '</p>' +
+        sizesEditor() +
         comboEditor() +
         '<div class="field full"><label>' + t('adm.col.allergens') + '</label><div class="allergen-pick">' + P.ALLERGENS.map(function (al) {
           return '<button class="' + (st.allergens.indexOf(al.id) >= 0 ? 'on' : '') + '" data-k="al:' + al.id + '">' + al.icon + ' ' + esc(P.tr(al, I.lang)) + '</button>';
@@ -262,12 +264,31 @@
         if (!f) return;
         compress(f).then(function (d) { photo.data = d; photo.removed = false; draw(); }).catch(function () { toast(t('adm.photoErr')); });
       };
+      modalBox.querySelectorAll('[data-sf]').forEach(function (el) {
+        el.addEventListener('input', function () { st.sizes[+el.dataset.si][el.dataset.sf] = el.value; });
+      });
       modalBox.querySelectorAll('[data-cf]').forEach(function (el) {
         el.addEventListener('input', function () { var c = st.combo.courses[+el.dataset.ci]; c[el.dataset.cf] = el.dataset.cf === 'pick' ? Math.max(1, Number(el.value) || 1) : el.value; });
       });
       modalBox.querySelectorAll('[data-of]').forEach(function (el) {
         el.addEventListener('input', function () { st.combo.courses[+el.dataset.ci].options[+el.dataset.oi].extra = round2(String(el.value).replace(',', '.')) || 0; });
       });
+    }
+    // Formatos (lata, botella, 1 L…): cada uno con su precio. Al marcar el producto en el TPV o en el QR se elige el formato.
+    function sizesEditor() {
+      if (st.combo) return '';
+      return '<div class="field full sizes-ed"><label>' + t('adm.sizes') + '</label>' +
+        (A.settings.useSizes === false ? '<p class="warn-txt">' + t('adm.sizesOff') + '</p>' : '') +
+        st.sizes.map(function (x, i) {
+          var d = 'data-si="' + i + '"';
+          return '<div class="size-row">' +
+            '<input type="text" data-sf="name" ' + d + ' value="' + esc(x.name) + '" placeholder="' + esc(t('adm.sizeName')) + '">' +
+            '<input type="text" data-sf="en" ' + d + ' value="' + esc(x.en) + '" placeholder="EN">' +
+            '<input type="text" data-sf="zh" ' + d + ' value="' + esc(x.zh) + '" placeholder="中文">' +
+            '<input type="text" inputmode="decimal" data-sf="price" ' + d + ' value="' + esc(x.price) + '" placeholder="€" class="sz-price">' +
+            '<button class="icon-btn danger" data-k="sdel:' + i + '">🗑️</button></div>';
+        }).join('') +
+        '<button class="btn" data-k="sadd">' + t('adm.sizeAdd') + '</button> <span class="muted">' + t('adm.sizesHelp') + '</span></div>';
     }
     // Menú con platos a elegir: platos (primero, segundo…) y sus opciones
     function comboEditor() {
@@ -294,6 +315,11 @@
       if (k === 'X') return closeModal();
       if (k === 'combo-toggle') { st.combo = st.combo ? null : { courses: [{ name: 'Primero', pick: 1, options: [] }] }; return draw(); }
       if (k === 'cadd') { st.combo.courses.push({ name: '', pick: 1, options: [] }); return draw(); }
+      if (k === 'sadd') {
+        st.sizes.push(st.sizes.length ? { name: '', en: '', zh: '', price: '' } : { name: '', en: '', zh: '', price: String(st.price || '').replace('.', ',') });
+        return draw();
+      }
+      if (k.indexOf('sdel:') === 0) { st.sizes.splice(+k.slice(5), 1); return draw(); }
       if (k.indexOf('cdel:') === 0) { st.combo.courses.splice(+k.slice(5), 1); return draw(); }
       if (k.indexOf('odel:') === 0) { var od = k.split(':'); st.combo.courses[+od[1]].options.splice(+od[2], 1); return draw(); }
       if (k.indexOf('oadd:') === 0) {
@@ -319,6 +345,12 @@
         price: price, available: st.available !== false, allergens: st.allergens.slice(), img: cur && !photo.removed ? (cur.img || 0) : 0,
         barcode: String(st.barcode || '').trim()
       };
+      // formatos: los que tienen nombre y precio
+      if (!st.combo) {
+        var sizes = st.sizes.filter(function (x) { return String(x.name).trim() && String(x.price).trim() !== '' && !isNaN(round2(String(x.price).replace(',', '.'))); })
+          .map(function (x) { return { name: String(x.name).trim(), en: String(x.en || '').trim(), zh: String(x.zh || '').trim(), price: round2(String(x.price).replace(',', '.')) }; });
+        if (sizes.length) item.sizes = sizes;
+      }
       // vista animada en el pedido QR (no vale para menús con platos a elegir)
       if (st.visual && !st.combo) item.visual = st.visual;
       if (st.combo) {
@@ -1140,6 +1172,7 @@
       return '<div class="field"><label>' + t('admin.f.' + k) + '</label><input type="text" value="' + esc(st[k]) + '" data-edit="set" data-k="' + k + '"></div>';
     };
     var html = '<div class="card"><h3>' + t('admin.ticketData') + '</h3><div class="form-grid">' + f('name') + f('address') + f('nif') + f('vat') + f('series') + '</div>' +
+      '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="set" data-k="useSizes"' + (st.useSizes !== false ? ' checked' : '') + '> ' + t('admin.f.useSizes') + '</label>' +
       '<label style="display:block;margin:8px 0"><input type="checkbox" data-edit="set" data-k="askGuests"' + (st.askGuests === true ? ' checked' : '') + '> ' + t('admin.f.askGuests') + '</label>' +
       '<p class="muted">' + t('admin.seriesNote') + '</p></div>' +
       '<div class="card"><h3>🔗 ' + t('join.title') + '</h3><p class="muted">' + t('join.help') + '</p><div class="join-opts">' + ['badge', 'color', 'grey'].map(function (k) {
@@ -1711,6 +1744,8 @@
         if (d.k === 'vat') st.vat = Number(String(val).replace(',', '.')) || 0;
         else if (d.k === 'series') st.series = String(val).toUpperCase().replace(/[^A-Z0-9_-]/g, '') || P.DEFAULT_SETTINGS.series;
         else st[d.k] = val;
+        // la carta QR no puede leer los ajustes: el interruptor de formatos se copia a lo público
+        if (d.k === 'useSizes') Store.update('public/qr', { useSizes: !!val });
         return Store.set('settings', st);
     }
   });

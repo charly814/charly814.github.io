@@ -641,6 +641,14 @@
     'adm.visualNone': ['No (normal)', 'No (normal)', '不使用（普通）'],
     'adm.visualBurger': ['🍔 Hamburguesa por capas', '🍔 Layered burger', '🍔 分层汉堡'],
     'adm.visualHelp': ['El cliente ve la hamburguesa montarse y los ingredientes volar al quitar o añadir. Usa los modificadores «Sin cebolla / tomate / lechuga / queso» y «Extra queso / bacon / huevo / doble carne» (con esos nombres en español). El pedido llega igual que siempre.', 'The customer sees the burger being built and ingredients flying in and out. It uses the modifiers "Sin cebolla / tomate / lechuga / queso" and "Extra queso / bacon / huevo / doble carne" (with those Spanish names). The order arrives as usual.', '顾客会看到汉堡一层层叠起来，加料、去料时配料会飞进飞出。用的是收银系统里的修改项「不要 洋葱/番茄/生菜/奶酪」和「加料 奶酪/培根/鸡蛋/双份肉」（西语名字要一致）。订单和平常一样到厨房。'],
+    'adm.sizes': ['Formatos (lata, botella, caña / jarra…)', 'Formats (can, bottle, small / large…)', '规格（罐装、瓶装、小杯/大杯…）'],
+    'adm.sizeName': ['Formato (p. ej. Lata)', 'Format (e.g. Can)', '规格（西语，如 Lata）'],
+    'adm.sizeAdd': ['＋ Añadir formato', '＋ Add format', '＋ 添加规格'],
+    'adm.sizesHelp': ['Si pones formatos, al marcar el producto se elige uno y se cobra su precio. Sin formatos, funciona como siempre.', 'With formats, tapping the product asks which one and charges its price. Without formats, it works as usual.', '设了规格，点这个产品时会让你选规格，按规格的价格收钱；不设规格就和平常一样。'],
+    'adm.sizesOff': ['Los formatos están desactivados en Negocio y ticket: ahora no se preguntan.', 'Formats are turned off in Business & receipt: they are not asked now.', '规格选择在「Negocio y ticket」里关掉了，现在不会询问。'],
+    'admin.f.useSizes': ['Usar formatos (lata / botella…): al marcar un producto con formatos, preguntar cuál', 'Use formats (can / bottle…): ask which one when a product has formats', '使用规格选择（罐装/瓶装…）：点有规格的产品时让你选规格'],
+    'sz.count': ['{n} formatos', '{n} formats', '{n} 种规格'],
+    'sz.pick': ['Elige el formato', 'Choose the format', '选择规格'],
     'adm.combo': ['Es un menú con platos a elegir (menú del día, combos)', 'It is a menu with dishes to choose (set menu, combos)', '这是可以选菜的套餐（今日套餐、组合）'],
     'adm.coursePh': ['Primero, Segundo, Postre…', 'Starter, Main, Dessert…', '头盘、主菜、甜品……'],
     'adm.pick': ['Elige', 'Choose', '选'],
@@ -1033,6 +1041,8 @@
     'c.vis.incl': ['incluido', 'included', '已包含'],
     'c.vis.without': ['sin', 'no', '不要'],
     'c.vis.more': ['MÁS OPCIONES', 'MORE OPTIONS', '更多选项'],
+    'c.size': ['FORMATO', 'FORMAT', '规格'],
+    'c.from': ['desde', 'from', '起'],
     'c.other': ['¿Quieres algo que no está en la carta? Escríbelo en la nota o pídelo al camarero.', 'Want something not on the menu? Write it in the note or ask the waiter.', '想要菜单上没有的？写在备注里或者问服务员。']
   };
 

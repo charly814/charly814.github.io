@@ -143,3 +143,8 @@ ul.plain-list { margin: 0; padding-left: 18px; columns: 2; font-size: 14px; }
 .join-demo.j-color > i { box-shadow: 0 0 0 3px #fff, 0 0 0 6px #0d9488; }
 .join-demo.j-grey .jt { display: none; }
 .join-demo.j-grey .d2 { background: #94a3b8; box-shadow: 0 0 0 3px #fff, 0 0 0 6px #64748b; }
+/* formatos del producto */
+.size-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr 90px auto; gap: 6px; align-items: center; margin-bottom: 6px; }
+.size-row input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.warn-txt { color: #b45309; font-size: 13px; margin: 4px 0 8px; }
+@media (max-width: 600px) { .size-row { grid-template-columns: 1fr 1fr 70px auto; } .size-row input[data-sf="en"] { display: none; } }

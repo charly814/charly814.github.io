@@ -435,7 +435,7 @@
   // Nombre de una línea en el idioma del TPV (las líneas guardan el nombre en español).
   function lineName(l) {
     var it = l.pid && P.findItem(S.menu, l.pid);
-    return it ? P.tr(it, I.lang) : l.name;
+    return it ? P.itemName(it, l.sz, I.lang) : l.name;
   }
   function extrasOf(mods) {
     return round2((mods || []).reduce(function (s, m) { return s + (m.type === 'extra' ? (m.price || 0) : 0); }, 0));
@@ -733,7 +733,7 @@
         // foto del producto (subida en el back-office), como en los TPV de toda la vida
         var pu = it.img ? Store.imageURL('p-' + it.id, it.img, later) : '';
         return '<button class="prod' + (it.available === false ? ' off' : '') + (pu ? ' has-img' : '') + '" data-act="add" data-id="' + esc(it.id) + '">' +
-          (pu ? '<img src="' + pu + '" alt="">' : '') + '<span>' + esc(P.tr(it, I.lang)) + '</span><b>' + fmt(itemPrice(it, S.table)) + '</b></button>';
+          (pu ? '<img src="' + pu + '" alt="">' : '') + '<span>' + esc(P.tr(it, I.lang)) + '</span>' + prodPrice(it) + '</button>';
       }).join('') + '</div>' +
       '<nav class="actions">' +
       (BUFFET_LINK ? act('go', '🍣', t('bf.title'), 'data-v="map"') : act('go', '🪑', t('tb.tables'), 'data-v="map"')) +
@@ -1052,6 +1052,7 @@
       if (!it) return;
       var qty = takeNumber() || 1;
       if (it.combo && (it.combo.courses || []).length) return openCombo(it, qty);
+      if (P.sizesOf(it, S.settings).length) return openSizes(it, qty);
       addLines(S.table, [{ pid: it.id, name: it.name, base: it.price, qty: qty }]);
       if (mobile()) {
         toast(t('msg.added', { q: fmtQty(qty), n: P.tr(it, I.lang) }));
@@ -1243,7 +1244,7 @@
     add.forEach(function (a) {
       // precio según la tarifa de la mesa en este momento (happy hour, terraza…)
       var it = a.pid && !a.free && P.findItem(S.menu, a.pid);
-      if (it) a.base = P.priceWith(S.menu, it, tf);
+      if (it) a.base = P.priceWith(S.menu, it, tf, a.sz);
       var mods = a.mods || [];
       var price = round2(a.base + extrasOf(mods) + comboExtra(a.combo));
       var same = tk.lines.filter(function (l) {
@@ -1255,7 +1256,7 @@
         tk.lines.push({
           pid: a.pid, name: a.name, base: a.base, price: price, qty: a.qty, mods: mods,
           note: a.note || '', src: a.src || 'pos', sent: false, free: !!a.free, dev: DEV, at: Date.now(),
-          combo: a.combo || null
+          combo: a.combo || null, sz: a.sz == null ? null : a.sz
         });
         S.lastAdded = { table: tk.table, line: tk.lines[tk.lines.length - 1] };
       }
@@ -2397,6 +2398,35 @@
     });
   }
 
+  // ---------------------------------------------------------------- formatos (lata, botella…)
+  function prodPrice(it) {
+    var sz = P.sizesOf(it, S.settings);
+    if (!sz.length) return '<b>' + fmt(itemPrice(it, S.table)) + '</b>';
+    var tf = tarifaOf(S.table);
+    var min = Math.min.apply(null, sz.map(function (x, i) { return P.priceWith(S.menu, it, tf, it.sizes.indexOf(x)); }));
+    return '<b><small class="sz-n">' + t('sz.count', { n: sz.length }) + '</small> ' + fmt(min) + '</b>';
+  }
+  function openSizes(it, qty) {
+    var tf = tarifaOf(S.table);
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + esc(P.tr(it, I.lang)) + (qty > 1 ? ' × ' + fmtQty(qty) : '') + '</h2>' +
+        '<div class="sz-grid">' + (it.sizes || []).map(function (x, i) {
+          if (!x || !x.name) return '';
+          return '<button class="btn" data-k="s:' + i + '"><span>' + esc(P.tr(x, I.lang)) + '</span><b>' + fmt(P.priceWith(S.menu, it, tf, i)) + '</b></button>';
+        }).join('') + '</div>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button></div>';
+    }
+    openModal('sizes', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('s:') !== 0) return;
+      var i = Number(k.slice(2));
+      closeModal();
+      addLines(S.table, [{ pid: it.id, name: P.itemName(it, i, 'es'), base: it.sizes[i].price, qty: qty, sz: i }]);
+      if (mobile()) toast(t('msg.added', { q: fmtQty(qty), n: P.itemName(it, i, I.lang) }));
+    });
+  }
+
   // ---------------------------------------------------------------- menú del día
   function comboExtra(combo) { return round2((combo || []).reduce(function (a, c) { return a + (Number(c.extra) || 0); }, 0)); }
   function comboText(l, lang) {
@@ -2463,7 +2493,7 @@
       tk.lines.forEach(function (l) {
         var it = l.pid && !l.free && !l.manual && P.findItem(S.menu, l.pid);
         if (!it) return;
-        l.base = P.priceWith(S.menu, it, tf);
+        l.base = P.priceWith(S.menu, it, tf, l.sz);
         l.price = round2(l.base + extrasOf(l.mods) + comboExtra(l.combo));
       });
       audit('price', tableLabel(tk.table) + ' · ' + t('tar.badge') + ': ' + (tf ? tf.name : t('tar.none')));
@@ -2763,7 +2793,7 @@
           var total = lines.reduce(function (s, l) { return s + (l.item ? l.price * l.qty : 0); }, 0);
           return '<div class="order-card">' + head + '<ul>' + lines.map(function (l) {
             var sub = [comboText(l, I.lang), P.modsText(l.mods, I.lang), l.note].filter(Boolean).join(' · ');
-            return '<li>' + l.qty + ' × ' + esc(l.item ? P.tr(l.item, I.lang) : l.name) +
+            return '<li>' + l.qty + ' × ' + esc(l.item ? P.itemName(l.item, l.sz, I.lang) : l.name) +
               (l.item ? ' — ' + fmt(l.price * l.qty) : ' <span class="warn">(' + t('orders.notFound') + ')</span>') +
               (l.item && l.item.available === false ? ' <span class="warn">(' + t('orders.soldOut') + ')</span>' : '') +
               (l.item && !at.kitchen && at.kitchenCats.indexOf(P.catOfItem(S.menu, l.item.id)) >= 0 ? ' <span class="warn">(' + t('orders.kitchenClosed') + ')</span>' : '') +
@@ -2808,17 +2838,18 @@
         .map(function (m) { return { id: m.id, type: m.type, name: m.name, en: m.en || '', zh: m.zh || '', price: m.price || 0 }; });
       // menú del día: índices de los platos elegidos -> platos y suplementos según la carta del TPV
       var combo = item && item.combo && Array.isArray(l.combo) && P.comboComplete(item, l.combo) ? P.comboChoices(S.menu, item, l.combo) : null;
+      var sz = item && l.sz != null && item.sizes && item.sizes[l.sz] ? Number(l.sz) : null;
       return {
-        item: item, name: String(l.name || '?'), qty: qty, mods: mods, combo: combo,
+        item: item, name: item ? P.itemName(item, sz, 'es') : String(l.name || '?'), qty: qty, mods: mods, combo: combo, sz: sz,
         note: String(l.note || '').slice(0, 120),
-        price: item ? round2(item.price + extrasOf(mods) + comboExtra(combo)) : 0
+        price: item ? round2(P.priceWith(S.menu, item, null, sz) + extrasOf(mods) + comboExtra(combo)) : 0
       };
     });
   }
 
   function acceptOrder(o, kitchen) {
     var add = priceOrder(o).filter(function (l) { return l.item; }).map(function (l) {
-      return { pid: l.item.id, name: l.item.name, base: l.item.price, qty: l.qty, mods: l.mods, combo: l.combo, note: l.note, src: 'qr' };
+      return { pid: l.item.id, name: l.name, base: l.price, qty: l.qty, mods: l.mods, combo: l.combo, note: l.note, src: 'qr', sz: l.sz };
     });
     if (o.note && add.length) {
       var last = add[add.length - 1];
