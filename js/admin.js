@@ -1175,7 +1175,7 @@
 
   // ---------------------------------------------------------------- copias de seguridad
 
-  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'promos', 'layout', 'customers', 'custlog', 'giftcards'];
+  var BACKUP_PATHS = ['menu', 'mods', 'users', 'settings', 'public/qr', 'public/tarifas', 'promos', 'layout', 'floorplan', 'customers', 'custlog', 'giftcards'];
 
   function secBackup() {
     var html = '<div class="card"><h3>' + t('adm.backupTitle') + '</h3><p class="muted">' + t('adm.backupHelp') + '</p>' +

@@ -14,6 +14,43 @@
   // Mesas juntadas: colores de grupo distintos de los de estado (libre, ocupada, QR, temporal).
   // Va aquí arriba porque el plano se pinta ya mientras se cargan los datos.
   var JOIN_COLORS = ['#0d9488', '#db2777', '#2563eb', '#65a30d', '#0891b2', '#a16207', '#be123c', '#4f46e5'];
+  // Plano: decoración que el administrador pone a su gusto (barra, paredes, plantas…).
+  // Se guarda en «floorplan» = { v: 1, bg, decor: [{ id, k, x, y, w, h, r, t }] }; x/y = centro en %,
+  // w = % del ancho, h = % del alto, r = grados. Las mesas siguen en «layout» como siempre.
+  // box: cómo se dibuja; emoji: elemento cuadrado con un dibujo; txt: lleva texto por defecto.
+  var DECOR = {
+    bar: { box: 'bar', w: 14, h: 3.5, n: ['Barra', 'Bar counter', '吧台'], i: '🟫' },
+    wall: { box: 'wall', w: 22, h: 1.2, n: ['Pared', 'Wall', '墙'], i: '⬛' },
+    window: { box: 'window', w: 12, h: 1.2, n: ['Ventana', 'Window', '窗户'], i: '🪟' },
+    column: { box: 'column', w: 2.4, h: 3.5, n: ['Columna', 'Column', '柱子'], i: '◼️' },
+    zone: { box: 'zone', w: 30, h: 30, n: ['Zona', 'Area', '区域'], i: '⬚', txt: ['Terraza', 'Terrace', '露台'] },
+    kitchen: { box: 'room', w: 18, h: 22, n: ['Cocina', 'Kitchen', '厨房'], i: '🍳', txt: ['🍳 Cocina', '🍳 Kitchen', '🍳 厨房'] },
+    wc: { box: 'room', w: 10, h: 15, n: ['Aseos', 'Toilets', '厕所'], i: '🚻', txt: ['🚻 Aseos', '🚻 WC', '🚻 厕所'] },
+    text: { box: 'text', w: 14, h: 5, n: ['Texto', 'Text', '文字'], i: '🔤', txt: ['Texto', 'Text', '文字'] },
+    door: { emoji: '🚪', w: 4, n: ['Puerta', 'Door', '门'] },
+    plant: { emoji: '🌳', w: 4, n: ['Árbol', 'Tree', '树'] },
+    palm: { emoji: '🌴', w: 4, n: ['Palmera', 'Palm', '棕榈树'] },
+    pot: { emoji: '🪴', w: 3, n: ['Maceta', 'Pot plant', '盆栽'] },
+    flowers: { emoji: '💐', w: 3, n: ['Flores', 'Flowers', '花'] },
+    umbrella: { emoji: '⛱️', w: 5, n: ['Sombrilla', 'Umbrella', '太阳伞'] },
+    chair: { emoji: '🪑', w: 2.6, n: ['Silla', 'Chair', '椅子'] },
+    sofa: { emoji: '🛋️', w: 5, n: ['Sofá', 'Sofa', '沙发'] },
+    stairs: { emoji: '🪜', w: 4, n: ['Escalera', 'Stairs', '楼梯'] },
+    till: { emoji: '💶', w: 3.5, n: ['Caja', 'Till', '收银台'] },
+    coffee: { emoji: '☕', w: 3.5, n: ['Cafetera', 'Coffee machine', '咖啡机'] },
+    beer: { emoji: '🍺', w: 3.5, n: ['Grifo cerveza', 'Beer tap', '啤酒机'] },
+    tv: { emoji: '📺', w: 4, n: ['Tele', 'TV', '电视'] },
+    music: { emoji: '🎵', w: 3.5, n: ['Música', 'Music', '音响'] },
+    kids: { emoji: '🧸', w: 3.5, n: ['Zona niños', 'Kids area', '儿童区'] }
+  };
+  // el plano de siempre: la barra en L y dos árboles
+  var DEFAULT_DECOR = [
+    { id: 'd1', k: 'bar', x: 32.5, y: 66, w: 9, h: 2, r: 0 },
+    { id: 'd2', k: 'bar', x: 36.7, y: 81.5, w: 1.4, h: 33, r: 0 },
+    { id: 'd3', k: 'plant', x: 89, y: 19, w: 3, r: 0 },
+    { id: 'd4', k: 'plant', x: 17, y: 70, w: 3, r: 0 }
+  ];
+  var FLOOR_BG = ['grid', 'wood', 'tiles', 'stone', 'plain'];
 
   var S = {
     view: 'login',
@@ -39,6 +76,8 @@
     joinPick: false,
     joinFrom: null,
     editLayout: false,
+    fp: null,          // plano: decoración y suelo (null = el de siempre)
+    fpPreview: null,   // cambios sin guardar mientras se edita un elemento
     orders: {},
     sales: {},
     closures: {},
@@ -144,6 +183,7 @@
   Store.on('public/tarifas', function (v) { S.tarifas = v || []; render(); });
   Store.on('promos', function (v) { S.promos = P.promoList(v); render(); });
   Store.on('layout', function (v) { S.layout = (v && v.length) ? v : P.LAYOUT; render(); });
+  Store.on('floorplan', function (v) { S.fp = v || null; render(); });
   Store.on('temp', function (v) { S.temp = v || {}; render(); });
   Store.on('joins', function (v) { S.joins = v || {}; render(); });
   Store.on('public/qr', function (v) { S.qr = Object.assign({}, P.DEFAULT_QR, v || {}); render(); });
@@ -512,6 +552,42 @@
           : t('login.cloud')) + '</p></section>';
   }
 
+  // ---------------------------------------------------------------- plano: decoración
+  function plan() {
+    var v = (S.fpPreview && modal.dataset.kind === 'decor') ? S.fpPreview : S.fp;
+    if (!v || !v.v) return { bg: (v && v.bg) || 'grid', decor: DEFAULT_DECOR.slice() };
+    var d = !v.decor ? [] : Array.isArray(v.decor) ? v.decor.filter(Boolean) : Object.keys(v.decor).map(function (k) { return v.decor[k]; });
+    return { bg: v.bg || 'grid', decor: d };
+  }
+  function savePlan(p) {
+    S.fp = { v: 1, bg: p.bg, decor: p.decor };
+    return Store.set('floorplan', S.fp);
+  }
+  function decName(k) { var K = DECOR[k] || DECOR.text; return K.n[{ es: 0, en: 1, zh: 2 }[I.lang] || 0]; }
+  function decStyle(d) {
+    var K = DECOR[d.k] || DECOR.text, w = Number(d.w) || K.w;
+    var st = 'left:' + d.x + '%;top:' + d.y + '%;width:' + w + '%;transform:translate(-50%,-50%) rotate(' + (Number(d.r) || 0) + 'deg);';
+    if (K.emoji) return st + 'font-size:' + (w * 0.8).toFixed(2) + 'cqw;';
+    var h = Number(d.h) || K.h;
+    // el texto se ajusta al alto de la caja (el plano mide 1,45 veces más de ancho que de alto)
+    return st + 'height:' + h + '%;font-size:' + Math.min(h * 0.42, 2.2, w * 0.25).toFixed(2) + 'cqw;';
+  }
+  function decorHtml(d, editing) {
+    var K = DECOR[d.k] || DECOR.text;
+    var inner = K.emoji ? K.emoji : (d.t != null ? '<span>' + esc(d.t) + '</span>' : '');
+    return '<div class="dec dec-' + (K.emoji ? 'emoji' : K.box) + '" style="' + decStyle(d) + '"' + (editing ? ' data-dragd="' + esc(d.id) + '"' : '') + '>' + inner +
+      (editing ? '<i class="rs" data-rs="' + esc(d.id) + '" title="↘"></i>' : '') + '</div>';
+  }
+  // tamaño y giro de la mesa (opcionales: las mesas de antes siguen igual)
+  function tableStyle(tb) {
+    var base = tb.shape === 'stool' ? 3.6 : 6.2, size = Number(tb.size) || 1;
+    var w = base * size * (tb.shape === 'rect' ? 1.8 : 1);
+    var st = 'left:' + tb.x + '%;top:' + tb.y + '%;';
+    if (size !== 1 || tb.shape === 'rect') st += 'width:' + w.toFixed(2) + '%;';
+    if (tb.r) st += 'transform:translate(-50%,-50%) rotate(' + tb.r + 'deg);--r:' + tb.r + 'deg;';
+    return st;
+  }
+
   function viewMap() {
     var orderTables = {};
     pendingOrders().forEach(function (o) { orderTables[o.table] = (orderTables[o.table] || 0) + 1; });
@@ -540,11 +616,12 @@
       return '<i class="jtag">🔗' + st.group.letter + '</i>';
     }
     var editing = S.editLayout;
+    var fpl = plan();
     var tables = editing ? S.layout : allTables();
     var floor = tables.map(function (tb) {
       var st = state(tb.id);
       var attrs = editing ? 'data-drag="' + esc(tb.id) + '"' : 'data-act="open-table" data-id="' + esc(tb.id) + '"';
-      return '<button class="' + classes('tbl ' + tb.shape, tb, st) + '" style="left:' + tb.x + '%;top:' + tb.y + '%;' + gstyle(st) + '" ' + attrs + '>' +
+      return '<button class="' + classes('tbl ' + tb.shape, tb, st) + '" style="' + tableStyle(tb) + gstyle(st) + '" ' + attrs + '>' +
         '<span>' + esc(tb.id) + '</span>' +
         (st.joinedTo ? '<small>→' + esc(st.joinedTo) + '</small>' : st.busy && tb.shape !== 'stool' ? '<small>' + fmt(st.total) + '</small>' : '') +
         gmark(st) +
@@ -565,6 +642,7 @@
     var tools = editing
       ? '<div class="map-tools"><span class="muted">' + t('map.editHint') + '</span>' +
         '<button class="btn primary" data-act="layout-add">' + t('map.addTable') + '</button>' +
+        '<button class="btn primary" data-act="decor-add">' + t('map.addDecor') + '</button>' +
         '<button class="btn" data-act="layout-reset">' + t('map.resetLayout') + '</button>' +
         '<button class="btn ok" data-act="layout-edit">' + t('map.editDone') + '</button></div>'
       : '<div class="map-tools">' +
@@ -580,9 +658,8 @@
       (S.joinPick ? '<div class="banner"><span>' + t('map.joinPick') + '</span><button class="btn" data-act="join-done">' + t('cancel') + '</button></div>' : '') +
       (S.joinInto ? '<div class="banner"><span>' + t('map.joinBanner', { t: '<b>' + esc(S.joinInto) + '</b>' }) + '</span><button class="btn ok" data-act="join-done">' + t('done') + '</button></div>' : '') +
       (quick ? '<div class="banner"><span>' + t('map.quickOpen', { n: fmt(P.ticketTotals(S.tickets[QUICK]).total) }) + '</span><button class="btn" data-act="open-table" data-id="' + QUICK + '">' + t('open') + '</button></div>' : '') +
-      '<div class="map-view' + (editing ? ' map-edit' : '') + '"><div class="floor-wrap"><div class="floor' + (editing ? ' editing' : '') + '">' +
-      '<div class="bar-h"></div><div class="bar-v"></div>' +
-      '<span class="plant" style="left:89%;top:19%">🌳</span><span class="plant" style="left:17%;top:70%">🌳</span>' +
+      '<div class="map-view' + (editing ? ' map-edit' : '') + '"><div class="floor-wrap"><div class="floor bg-' + esc(fpl.bg) + (editing ? ' editing' : '') + '">' +
+      fpl.decor.map(function (d) { return decorHtml(d, editing); }).join('') +
       floor + '</div></div>' +
       '<div class="tbl-list">' + list + '</div></div>' +
       '<div class="legend"><span class="l-free">' + t('legend.free') + '</span><span class="l-busy">' + t('legend.busy') + '</span><span class="l-qr">' + t('legend.qr') + '</span>' +
@@ -957,7 +1034,9 @@
     'layout-reset': function () {
       if (!confirm(t('lay.resetConfirm'))) return;
       Store.remove('layout');
+      Store.remove('floorplan'); S.fp = null;
     },
+    'decor-add': function () { openDecorAdd(); },
     'move-cancel': function () { S.moveFrom = null; render(); },
     'show-ticket': function () { S.showTicket = true; render(); },
     'hide-ticket': function () { S.showTicket = false; render(); },
@@ -1344,14 +1423,20 @@
   function openLayoutEdit(id) {
     var cur = id ? S.layout.filter(function (tb) { return tb.id === id; })[0] : null;
     if (id && !cur) return;
-    var st = { id: cur ? cur.id : suggestNewTable(), shape: cur ? cur.shape : 'square' };
+    var st = { id: cur ? cur.id : suggestNewTable(), shape: cur ? cur.shape : 'square', size: (cur && cur.size) || 1, r: (cur && cur.r) || 0 };
     function busy(x) { var tk = S.tickets[x]; return !!(tk && tk.lines.length) || childrenOf(x).length > 0 || !!S.joins[x]; }
     function draw() {
       modalBox.className = 'modal-box';
       modalBox.innerHTML = '<h2>' + (cur ? t('lay.title', { t: esc(cur.id) }) : t('lay.newTitle')) + '</h2>' +
         '<div class="field"><label>' + t('lay.id') + '</label><input id="lay-id" type="text" maxlength="10" value="' + esc(st.id) + '" autocapitalize="characters"></div>' +
-        '<div class="field"><label>' + t('lay.shape') + '</label><div class="chips-sel">' + ['round', 'square', 'stool'].map(function (sh) {
+        '<div class="field"><label>' + t('lay.shape') + '</label><div class="chips-sel">' + ['round', 'square', 'rect', 'stool'].map(function (sh) {
           return '<button class="' + (st.shape === sh ? 'on' : '') + '" data-k="sh:' + sh + '">' + t('lay.' + sh) + '</button>';
+        }).join('') + '</div></div>' +
+        '<div class="field"><label>' + t('lay.size') + '</label><div class="chips-sel">' + [[0.75, 'S'], [1, 'M'], [1.3, 'L'], [1.6, 'XL']].map(function (z) {
+          return '<button class="' + (st.size === z[0] ? 'on' : '') + '" data-k="sz:' + z[0] + '">' + z[1] + '</button>';
+        }).join('') + '</div></div>' +
+        '<div class="field"><label>' + t('dec.rotate') + '</label><div class="chips-sel">' + [0, 45, 90, 135].map(function (r) {
+          return '<button class="' + (st.r === r ? 'on' : '') + '" data-k="rt:' + r + '">' + r + '°</button>';
         }).join('') + '</div></div>' +
         '<div class="btn-row">' + (cur ? '<button class="btn danger" data-k="DEL">' + t('lay.delete') + '</button>' : '') +
         '<button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('save') + '</button></div>';
@@ -1360,6 +1445,8 @@
     openModal('layout', draw, function (k) {
       if (k === 'X') return closeModal();
       if (k.indexOf('sh:') === 0) { st.shape = k.slice(3); return draw(); }
+      if (k.indexOf('sz:') === 0) { st.size = Number(k.slice(3)); return draw(); }
+      if (k.indexOf('rt:') === 0) { st.r = Number(k.slice(3)); return draw(); }
       var layout = clone(S.layout);
       if (k === 'DEL') {
         if (busy(cur.id)) return toast(t('lay.busy'));
@@ -1369,8 +1456,13 @@
         var nid = String(st.id).trim().toUpperCase();
         if (!P.TABLE_ID_RE.test(nid) || (nid !== (cur && cur.id) && tableExists(nid))) return toast(t('temp.badName'));
         if (cur && nid !== cur.id && busy(cur.id)) return toast(t('lay.busy'));
-        if (cur) layout.forEach(function (tb) { if (tb.id === cur.id) { tb.id = nid; tb.shape = st.shape; } });
-        else layout.push({ id: nid, x: 50, y: 50, shape: st.shape });
+        var extra = function (tb) {
+          if (st.size !== 1) tb.size = st.size; else delete tb.size;
+          if (st.r) tb.r = st.r; else delete tb.r;
+          return tb;
+        };
+        if (cur) layout.forEach(function (tb) { if (tb.id === cur.id) { tb.id = nid; tb.shape = st.shape; extra(tb); } });
+        else layout.push(extra({ id: nid, x: 50, y: 50, shape: st.shape }));
       } else return;
       S.layout = layout;
       Store.set('layout', layout);
@@ -1379,22 +1471,40 @@
     });
   }
 
-  // Arrastrar mesas en el modo "Editar plano"
+  // Arrastrar mesas y decoración en el modo "Editar plano"; la esquina ↘ cambia el tamaño
   var drag = null;
   app.addEventListener('pointerdown', function (e) {
-    var el = e.target.closest('[data-drag]');
-    if (!el || !S.editLayout) return;
-    var floor = el.closest('.floor');
-    drag = { id: el.dataset.drag, el: el, rect: floor.getBoundingClientRect(), sx: e.clientX, sy: e.clientY, moved: false };
+    if (!S.editLayout) return;
+    var rs = e.target.closest('[data-rs]');
+    var el = rs || e.target.closest('[data-drag],[data-dragd]');
+    if (!el) return;
+    var box = rs ? rs.parentNode : el;
+    var floor = box.closest('.floor');
+    drag = { el: box, rect: floor.getBoundingClientRect(), sx: e.clientX, sy: e.clientY, moved: false,
+      kind: rs ? 'size' : el.dataset.drag ? 'table' : 'decor', id: rs ? rs.dataset.rs : (el.dataset.drag || el.dataset.dragd) };
+    if (drag.kind !== 'table') drag.item = plan().decor.filter(function (d) { return d.id === drag.id; })[0];
     try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignorar */ }
     e.preventDefault();
+    e.stopPropagation();
   });
   app.addEventListener('pointermove', function (e) {
     if (!drag) return;
     if (!drag.moved && Math.abs(e.clientX - drag.sx) + Math.abs(e.clientY - drag.sy) < 6) return;
     drag.moved = true;
-    drag.x = clamp((e.clientX - drag.rect.left) / drag.rect.width * 100, 2, 98);
-    drag.y = clamp((e.clientY - drag.rect.top) / drag.rect.height * 100, 2, 98);
+    var px = (e.clientX - drag.rect.left) / drag.rect.width * 100, py = (e.clientY - drag.rect.top) / drag.rect.height * 100;
+    if (drag.kind === 'size') {
+      var it = drag.item, K = DECOR[it.k] || DECOR.text;
+      var dx = Math.abs(px - it.x) * 2, dy = Math.abs(py - it.y) * 2;
+      if ((Math.abs(Number(it.r) || 0) % 180) === 90) { var tmp = dx; dx = dy / 1.45; dy = tmp * 1.45; }
+      var c = Object.assign({}, it);
+      if (K.emoji) c.w = clamp(Math.max(dx, dy / 1.45), 1, 40);
+      else { c.w = clamp(dx, 0.6, 100); c.h = clamp(dy, 0.6, 100); }
+      drag.w = Math.round(c.w * 10) / 10; drag.h = c.h != null ? Math.round(c.h * 10) / 10 : null;
+      drag.el.setAttribute('style', decStyle(c));
+      return;
+    }
+    drag.x = clamp(px, 1, 99);
+    drag.y = clamp(py, 1, 99);
     drag.el.style.left = drag.x + '%';
     drag.el.style.top = drag.y + '%';
   });
@@ -1402,12 +1512,98 @@
     if (!drag) return;
     var d = drag;
     drag = null;
-    if (!d.moved) return openLayoutEdit(d.id);
-    var layout = clone(S.layout);
-    layout.forEach(function (tb) { if (tb.id === d.id) { tb.x = Math.round(d.x * 10) / 10; tb.y = Math.round(d.y * 10) / 10; } });
-    S.layout = layout;
-    Store.set('layout', layout);
+    if (!d.moved) return d.kind === 'table' ? openLayoutEdit(d.id) : openDecorEdit(d.id);
+    if (d.kind === 'table') {
+      var layout = clone(S.layout);
+      layout.forEach(function (tb) { if (tb.id === d.id) { tb.x = Math.round(d.x * 10) / 10; tb.y = Math.round(d.y * 10) / 10; } });
+      S.layout = layout;
+      Store.set('layout', layout);
+      return;
+    }
+    var p = plan();
+    p.decor = p.decor.map(function (x) {
+      if (x.id !== d.id) return x;
+      x = Object.assign({}, x);
+      if (d.kind === 'size') { x.w = d.w; if (d.h != null) x.h = d.h; }
+      else { x.x = Math.round(d.x * 10) / 10; x.y = Math.round(d.y * 10) / 10; }
+      return x;
+    });
+    savePlan(p); render();
   });
+
+  // Añadir decoración: se elige el tipo y aparece en el centro; luego se arrastra.
+  function openDecorAdd() {
+    var p = plan();
+    function draw() {
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>' + t('dec.addTitle') + '</h2><p class="muted">' + t('dec.addHelp') + '</p>' +
+        '<div class="dec-pick">' + Object.keys(DECOR).map(function (k) {
+          var K = DECOR[k];
+          return '<button class="btn" data-k="add:' + k + '"><b>' + (K.emoji || K.i) + '</b>' + esc(decName(k)) + '</button>';
+        }).join('') + '</div>' +
+        '<h3 style="margin:16px 0 8px">' + t('dec.floor') + '</h3><div class="dec-bg">' + FLOOR_BG.map(function (b) {
+          return '<button class="floor bg-' + b + (p.bg === b ? ' on' : '') + '" data-k="bg:' + b + '"><span>' + t('dec.bg.' + b) + '</span></button>';
+        }).join('') + '</div>' +
+        '<div class="btn-row"><button class="btn ok" data-k="X" style="flex:1">' + t('done') + '</button></div>';
+    }
+    openModal('decor-add', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('bg:') === 0) { p.bg = k.slice(3); savePlan(p); render(); return draw(); }
+      if (k.indexOf('add:') === 0) {
+        var kind = k.slice(4), K = DECOR[kind];
+        var item = { id: Store.newId(), k: kind, x: 50, y: 50, w: K.w, r: 0 };
+        if (!K.emoji) item.h = K.h;
+        if (K.txt) item.t = K.txt[{ es: 0, en: 1, zh: 2 }[I.lang] || 0];
+        p.decor.push(item);
+        savePlan(p); closeModal(); render();
+        toast(t('dec.added', { n: decName(kind) }));
+      }
+    });
+  }
+
+  // Tocar un elemento: texto, tamaño, giro, duplicar o borrar (se ve en el plano mientras se cambia)
+  function openDecorEdit(id) {
+    var p0 = plan();
+    var cur = p0.decor.filter(function (d) { return d.id === id; })[0];
+    if (!cur) return;
+    var st = clone(cur), K = DECOR[st.k] || DECOR.text;
+    function preview() {
+      S.fpPreview = { v: 1, bg: p0.bg, decor: p0.decor.map(function (d) { return d.id === id ? st : d; }) };
+      render();
+    }
+    function slider(key, label, min, max) {
+      return '<div class="field"><label>' + label + ' <b id="v-' + key + '">' + st[key] + '</b></label>' +
+        '<input type="range" min="' + min + '" max="' + max + '" step="0.5" value="' + st[key] + '" data-sl="' + key + '" style="width:100%"></div>';
+    }
+    function draw() {
+      if (st.h == null && !K.emoji) st.h = K.h;
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + (K.emoji || K.i) + ' ' + esc(decName(st.k)) + '</h2>' +
+        (!K.emoji ? '<div class="field"><label>' + t('dec.text') + '</label><input type="text" id="dec-t" maxlength="30" value="' + esc(st.t || '') + '" placeholder="' + esc(t('dec.textPh')) + '"></div>' : '') +
+        (K.emoji ? slider('w', t('dec.size'), 1, 30) : slider('w', t('dec.width'), 0.5, 100) + slider('h', t('dec.height'), 0.5, 100)) +
+        '<div class="field"><label>' + t('dec.rotate') + ' <b>' + (st.r || 0) + '°</b></label><div class="chips-sel">' +
+        '<button data-k="r:-15">↺ 15°</button><button data-k="r:15">↻ 15°</button><button data-k="r=0">0°</button><button data-k="r=90">90°</button></div></div>' +
+        '<div class="btn-row"><button class="btn danger" data-k="DEL">' + t('dec.del') + '</button><button class="btn" data-k="DUP">' + t('dec.dup') + '</button></div>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('save') + '</button></div>';
+      var ti = document.getElementById('dec-t');
+      if (ti) ti.oninput = function () { st.t = ti.value; preview(); };
+      modalBox.querySelectorAll('[data-sl]').forEach(function (el) {
+        el.oninput = function () { st[el.dataset.sl] = Number(el.value); document.getElementById('v-' + el.dataset.sl).textContent = el.value; preview(); };
+      });
+    }
+    openModal('decor', draw, function (k) {
+      if (k === 'X') { S.fpPreview = null; closeModal(); return render(); }
+      if (k.indexOf('r:') === 0) { st.r = ((Number(st.r) || 0) + Number(k.slice(2)) + 360) % 360; preview(); return draw(); }
+      if (k.indexOf('r=') === 0) { st.r = Number(k.slice(2)); preview(); return draw(); }
+      var p = plan();   // con la vista previa
+      if (k === 'DEL') p.decor = p0.decor.filter(function (d) { return d.id !== id; });
+      else if (k === 'DUP') p.decor = p0.decor.concat([Object.assign({}, st, { id: Store.newId(), x: Math.min(97, st.x + 4), y: Math.min(97, st.y + 4) })]);
+      else if (k === 'OK') p.decor = p0.decor.map(function (d) { return d.id === id ? st : d; });
+      else return;
+      S.fpPreview = null;
+      savePlan(p); closeModal(); render();
+    });
+  }
 
   // ---------------------------------------------------------------- modificadores
 
