@@ -5,10 +5,11 @@ const TYPES = { sale: ['Venta', '销售'], return: ['Devolución', '退货'], to
 const dayStart = d => new Date(d + 'T00:00:00').getTime(), dayEnd = d => new Date(d + 'T23:59:59.999').getTime();
 
 V.sales = () => {
-  const q = SF.q.toLowerCase().trim();
+  const q = SF.q.toLowerCase().trim(), hist = can('history'), t0 = dayStart(dstr(Date.now()));
+  if (!hist) SF.from = SF.to = dstr(Date.now());
   let body;
   if (SF.tab === 'tickets') {
-    const list = S.sales.filter(s => q ? (s.no + ' ' + s.memberName).toLowerCase().includes(q) : s.ts >= dayStart(SF.from) && s.ts <= dayEnd(SF.to)).reverse().slice(0, 500);
+    const list = S.sales.filter(s => (hist || s.ts >= t0) && (q ? (s.no + ' ' + s.memberName).toLowerCase().includes(q) : s.ts >= dayStart(SF.from) && s.ts <= dayEnd(SF.to))).reverse().slice(0, 500);
     body = `<table class="t"><tr><th>Nº</th><th>${L('Fecha', '时间')}</th><th>${L('Tipo', '类型')}</th><th>${L('Cliente', '会员')}</th><th>${L('Pago', '付款')}</th><th>${L('Usuario', '员工')}</th><th class="r">${L('Total', '金额')}</th></tr>
       ${list.map(s => `<tr class="click" onclick="A.saleView('${s.id}')"><td>${s.no}${s.invoice ? ' <span class="tag">' + s.invoice + '</span>' : ''}</td><td>${fdt(s.ts)}</td>
       <td><span class="tag ${s.type === 'return' ? 'bad' : s.type === 'sale' ? 'ok' : 'gold'}">${L(...TYPES[s.type])}</span></td><td>${esc(s.memberName || '')}</td>
@@ -21,7 +22,7 @@ V.sales = () => {
       ${list.length ? '' : `<div class="empty">${L('Aún no hay facturas. Se crean desde un ticket.', '还没有发票。在单据里点「开发票」生成。')}</div>`}`;
   }
   $('#main').innerHTML = `<div class="page"><div class="tabs"><button class="${SF.tab === 'tickets' ? 'on' : ''}" onclick="SF.tab='tickets';V.sales()">🧾 Tickets</button><button class="${SF.tab === 'inv' ? 'on' : ''}" onclick="SF.tab='inv';V.sales()">📄 ${L('Facturas', '发票')}</button></div>
-    <div class="card"><div class="row" style="margin-bottom:10px"><input type="date" style="width:150px" value="${SF.from}" onchange="SF.from=this.value;V.sales()"><input type="date" style="width:150px" value="${SF.to}" onchange="SF.to=this.value;V.sales()">
+    <div class="card"><div class="row" style="margin-bottom:10px"><input type="date" style="width:150px" value="${SF.from}" ${hist ? '' : 'disabled'} onchange="SF.from=this.value;V.sales()"><input type="date" style="width:150px" value="${SF.to}" ${hist ? '' : 'disabled'} onchange="SF.to=this.value;V.sales()">
     <input class="grow" placeholder="${L('Buscar nº de ticket o cliente (todas las fechas)', '搜索单号或会员(所有日期)')}" value="${esc(SF.q)}" onchange="SF.q=this.value;V.sales()"></div><div class="tablewrap">${body}</div></div></div>`;
 };
 const saleDoc = s => s.type === 'topup' ? topupHtml(s) : s.type === 'giftcard' ? voucherHtml(voucher(s.vcode)) : ticketHtml(s);
@@ -58,7 +59,6 @@ A.invoicePrint = no => printDoc(invoiceHtml(S.invoices.find(i => i.no === no)), 
 
 // Devolución total o parcial
 A.returnForm = id => {
-  if (!isAdmin() && !S.cfg.empReturn) return toast(L('Solo el administrador puede hacer devoluciones', '只有管理员可以退货'), true);
   if (!needSession(() => A.returnForm(id))) return;
   const s = S.sales.find(x => x.id === id), late = Date.now() > s.ts + S.cfg.returnDays * 864e5;
   const def = s.pays.length === 1 && ['cash', 'card', 'bizum', 'saldo'].includes(s.pays[0].m) ? s.pays[0].m : 'vale';
@@ -82,9 +82,10 @@ A.doReturn = id => {
   const m = s.member && member(s.member);
   const r = {
     id: uid(), no: nextNo('D'), type: 'return', ts: now, user: USER.id, userName: USER.name, session: curSession().id, ref: s.no, refId: s.id,
-    member: s.member, memberName: s.memberName, total: -refund, pays: [{ m: mth, amount: -refund }], ptsEarned: 0,
-    lines: items.map(x => ({ pid: x.l.pid, name: x.l.name, sku: x.l.sku, qty: -x.q, price: r2(x.amt / x.q), iva: x.l.iva, cost: x.l.cost, total: -x.amt }))
+    member: s.member, memberName: s.memberName, seller: s.seller || s.user, sellerName: s.sellerName || s.userName, total: -refund, pays: [{ m: mth, amount: -refund }], ptsEarned: 0,
+    lines: items.map(x => ({ pid: x.l.pid, name: x.l.name, sku: x.l.sku, cat: x.l.cat, qty: -x.q, price: r2(x.amt / x.q), iva: x.l.iva, cost: x.l.cost, total: -x.amt, comm: -r2((x.l.comm || 0) / x.l.qty * x.q) }))
   };
+  r.comm = r2(sum(r.lines, 'comm'));
   items.forEach(x => { x.l.returned = (x.l.returned || 0) + x.q; const p = x.l.pid && prod(x.l.pid); if (p && restock) stockMove(p, x.q, 'return', r.no); });
   if (mth === 'vale') {
     const v = { code: 'V' + String(Math.floor(1e7 + Math.random() * 9e7)), type: 'vale', amount: refund, balance: refund, ts: now, expires: now + S.cfg.valeMonths * 30.5 * 864e5, member: s.member, log: [{ ts: now, amount: refund, ref: r.no }] };

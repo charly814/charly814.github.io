@@ -20,11 +20,10 @@ const chk = (label, id, on) => `<label class="ck"><input type="checkbox" id="${i
 
 let LANG = 'zh', USER = null, VIEW = 'pos';
 const L = (es, zh) => LANG === 'zh' ? zh : es;
-const isAdmin = () => USER && USER.role === 'admin';
 
 // ───────── Datos ─────────
-const S = { cfg: null, users: [], cats: [], products: [], members: [], promos: [], vouchers: [], sessions: [], invoices: [], parked: [], sales: [], mlog: [], stocklog: [] };
-const SHARDED = ['sales', 'mlog', 'stocklog']; // se guardan por meses para que no crezcan sin límite
+const S = { cfg: null, users: [], cats: [], products: [], members: [], promos: [], vouchers: [], sessions: [], invoices: [], parked: [], sales: [], mlog: [], stocklog: [], att: [] };
+const SHARDED = ['sales', 'mlog', 'stocklog', 'att']; // se guardan por meses para que no crezcan sin límite
 const DEF_CFG = () => ({
   lang: 'zh',
   shop: { name: 'Mi Bisutería', nif: '', address: '', city: '', phone: '', email: '' },
@@ -36,6 +35,7 @@ const DEF_CFG = () => ({
   levels: [{ id: 'l0', name: 'Normal', min: 0, disc: 0, mult: 1 }, { id: 'l1', name: 'Plata', min: 300, disc: 5, mult: 1.5 }, { id: 'l2', name: 'Oro', min: 1000, disc: 10, mult: 2 }],
   valeMonths: 12, empMaxDisc: 10, empReturn: true, blockNoStock: false,
   label: { mode: 'a4', w: 40, h: 30, cols: 5 },
+  comm: { basis: 'base' }, askClock: true,
   seq: {}, lastBackup: 0
 });
 
@@ -99,13 +99,13 @@ async function loadAll() {
   });
   SHARDED.forEach(c => S[c].sort((a, b) => a.ts - b.ts));
   const d = DEF_CFG(), c = S.cfg || {};
-  S.cfg = Object.assign(d, c, { shop: Object.assign(d.shop, c.shop), points: Object.assign(d.points, c.points), label: Object.assign(d.label, c.label) });
+  S.cfg = Object.assign(d, c, { shop: Object.assign(d.shop, c.shop), points: Object.assign(d.points, c.points), label: Object.assign(d.label, c.label), comm: Object.assign(d.comm, c.comm) });
   if (!S.users.length) seed();
   LANG = S.cfg.lang;
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 }
 function seed() {
-  S.users = [{ id: uid(), name: 'ADMIN', pin: '1111', role: 'admin' }, { id: uid(), name: 'EMPLEADO', pin: '0000', role: 'emp' }];
+  S.users = [{ id: uid(), name: 'ADMIN', pin: '1111', role: 'admin', perms: defPerms(), maxDisc: 100, comm: 0 }, { id: uid(), name: 'EMPLEADO', pin: '0000', role: 'emp', perms: defPerms(), maxDisc: 10, comm: 0 }];
   const cats = [['Pendientes', '耳环'], ['Collares', '项链'], ['Pulseras', '手链'], ['Anillos', '戒指'], ['Pelo', '发饰'], ['Relojes', '手表'], ['Bolsos', '包包'], ['Otros', '其他']];
   S.cats = cats.map(c => ({ id: uid(), name: c[0], zh: c[1] }));
   const P = [[0, 'Pendientes aro dorado', '金色圈形耳环', 4.95, 1.2, 30], [0, 'Pendientes perla', '珍珠耳环', 3.5, 0.8, 40], [0, 'Pendientes acero estrella', '不锈钢星星耳环', 6.95, 1.9, 25],
@@ -210,10 +210,11 @@ async function openDrawer(silent) {
 // ───────── Arranque, login y navegación ─────────
 const V = {}, A = {};
 const NAV = [['pos', '🛒', 'Venta', '收银'], ['sales', '🧾', 'Tickets', '单据'], ['members', '👥', 'Clientes', '会员'], ['vouchers', '🎁', 'Vales', '礼品卡/代金券'],
-  ['products', '💍', 'Productos', '商品'], ['cash', '💶', 'Caja', '钱箱'], ['reports', '📊', 'Informes', '报表', 1], ['settings', '⚙️', 'Ajustes', '设置', 1]];
+  ['products', '💍', 'Productos', '商品'], ['cash', '💶', 'Caja', '钱箱'], ['team', '⏱', 'Equipo', '员工'], ['reports', '📊', 'Informes', '报表', 'reports'], ['settings', '⚙️', 'Ajustes', '设置', 'settings']];
+let CLOCKMODE = false;
 let pinBuf = '';
 async function boot() {
-  try { await loadAll(); } catch (e) { document.body.innerHTML = '<p style="padding:20px">No se puede abrir la base de datos de este navegador (¿modo privado?).<br>无法打开浏览器数据库(是否处于无痕模式?)</p>'; return; }
+  try { await loadAll(); migrateUsers(); } catch (e) { document.body.innerHTML = '<p style="padding:20px">No se puede abrir la base de datos de este navegador (¿modo privado?).<br>无法打开浏览器数据库(是否处于无痕模式?)</p>'; return; }
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   document.addEventListener('keydown', onKey);
   $('#modal').addEventListener('mousedown', e => { if (e.target.id === 'modal' && !$('#modal-box [data-lock]')) closeModal(); });
@@ -236,28 +237,30 @@ A.pin = k => {
   if (k === '<') pinBuf = pinBuf.slice(0, -1); else if (pinBuf.length < 4) pinBuf += k;
   if (pinBuf.length === 4) {
     const u = S.users.find(u => u.pin === pinBuf); pinBuf = '';
-    if (u) { USER = u; VIEW = 'pos'; return render(); }
+    if (u && CLOCKMODE) { CLOCKMODE = false; render(); A.doClock(u.id); return; }
+    if (u) { USER = u; VIEW = 'pos'; OVR = null; render(); if (S.cfg.askClock && !isIn(u.id)) A.clockMe(); return; }
     toast(L('PIN incorrecto', 'PIN 错误'), true);
   }
   $$('.dots i').forEach((d, i) => d.classList.toggle('on', i < pinBuf.length));
 };
 A.lang = () => { LANG = LANG === 'zh' ? 'es' : 'zh'; S.cfg.lang = LANG; dirty('cfg'); render(); };
-A.lock = () => { USER = null; pinBuf = ''; closeModal(); render(); };
+A.lock = () => { USER = null; OVR = null; CLOCKMODE = false; pinBuf = ''; closeModal(); render(); };
 A.go = v => { VIEW = v; render(); };
 function render() {
   document.documentElement.lang = LANG === 'zh' ? 'zh-CN' : 'es';
   const app = $('#app');
   if (!USER) {
-    app.innerHTML = `<div class="login"><div style="font-size:44px">💍</div><h1>${esc(S.cfg.shop.name)}</h1><div class="muted">${L('Introduzca su PIN', '请输入 PIN')}</div>
+    app.innerHTML = `<div class="login"><div style="font-size:44px">💍</div><h1>${esc(S.cfg.shop.name)}</h1><div class="muted">${CLOCKMODE ? '⏱ ' + L('PIN para fichar', '输入 PIN 打卡') : L('Introduzca su PIN', '请输入 PIN')}</div>
       <div class="dots"><i></i><i></i><i></i><i></i></div>
       <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button onclick="A.pin('${n}')">${n}</button>`).join('')}<button onclick="A.lang()" style="font-size:15px">${LANG === 'zh' ? 'ES' : '中文'}</button><button onclick="A.pin('0')">0</button><button onclick="A.pin('<')">⌫</button></div>
+      <button class="${CLOCKMODE ? 'gold' : ''}" style="width:100%;margin-top:10px;padding:12px" onclick="CLOCKMODE=!CLOCKMODE;pinBuf='';render()">⏱ ${CLOCKMODE ? L('FICHAR: introduzca su PIN (toque para cancelar)', '打卡模式:请输入 PIN(点此取消)') : L('Fichar entrada / salida', '上班 / 下班打卡')}</button>
       ${S.cfg.demo ? `<p class="muted small">${L('PIN inicial: admin 1111 · empleado 0000 (cámbielos en Ajustes)', '初始 PIN:管理员 1111 · 员工 0000(请在设置里修改)')}</p>` : ''}</div>`;
     return;
   }
-  if (!isAdmin() && NAV.find(n => n[0] === VIEW)[4]) VIEW = 'pos';
+  const nv = NAV.find(n => n[0] === VIEW); if (nv[4] && !can(nv[4])) VIEW = 'pos';
   app.innerHTML = `<header class="top"><div class="brand">💍 ${esc(S.cfg.shop.name)}</div>
-    <nav>${NAV.filter(n => !n[4] || isAdmin()).map(n => `<a class="${VIEW === n[0] ? 'on' : ''}" onclick="A.go('${n[0]}')">${n[1]} ${L(n[2], n[3])}</a>`).join('')}</nav>
-    <div class="who"><span>${esc(USER.name)}</span><button onclick="A.lang()">${LANG === 'zh' ? 'ES' : '中文'}</button><button onclick="A.lock()">🔒</button></div></header>
+    <nav>${NAV.filter(n => !n[4] || can(n[4])).map(n => `<a class="${VIEW === n[0] ? 'on' : ''}" onclick="A.go('${n[0]}')">${n[1]} ${L(n[2], n[3])}</a>`).join('')}</nav>
+    <div class="who"><button onclick="A.clockMe()" title="Fichar">${isIn(USER.id) ? '🟢' : '⚪'} ⏱</button><span>${esc(USER.name)}</span><button onclick="A.lang()">${LANG === 'zh' ? 'ES' : '中文'}</button><button onclick="A.lock()">🔒</button></div></header>
     <main id="main"></main>`;
   V[VIEW]();
 }

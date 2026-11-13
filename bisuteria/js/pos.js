@@ -1,6 +1,6 @@
 'use strict';
 // ───────── Pantalla de venta ─────────
-const newCart = () => ({ lines: [], member: null, disc: 0, pts: 0 });
+const newCart = () => ({ lines: [], member: null, disc: 0, pts: 0, seller: null });
 let CART = newCart(), POSF = { q: '', cat: '' }, PAY = null;
 try { const c = JSON.parse(localStorage.getItem('bis-cart')); if (c && c.lines) CART = c; } catch (e) {}
 const saveCart = () => localStorage.setItem('bis-cart', JSON.stringify(CART));
@@ -86,6 +86,7 @@ function drawCart() {
       <div class="b num r" style="min-width:70px">${eur(l.total)}</div>
       ${l.dto ? `<div class="sub">${l.promoName ? '🏷️ ' + esc(l.promoName) + ' ' : ''}${L('Descuento', '优惠')} -${eur(l.dto)}</div>` : ''}</div>`).join('')
     : `<div class="empty">${L('Escanee o toque un producto para empezar', '扫码或点击商品开始收银')}</div>`) + '</div>';
+  if (S.users.length > 1) h += `<div class="seller" onclick="A.pickSeller()">🧑 ${L('Vendedor', '销售员')}: <b>${esc(sellerOf().name)}</b> ▾</div>`;
   h += `<div class="tot">${c.discount ? `<div class="lr"><span>${L('Importe', '原价')}</span><span>${eur(c.gross)}</span></div><div class="lr" style="color:var(--ok)"><span>${L('Descuentos', '优惠')}${c.g ? ' (' + c.g + '%)' : ''}${c.pts ? ' · ' + c.pts + L(' pts', ' 积分') : ''}</span><span>-${eur(c.discount)}</span></div>` : ''}
     <div class="lr g"><span>${L('TOTAL', '合计')} <span class="small muted" style="font-weight:400">${nItems} ${L('art.', '件')}</span></span><span class="num">${eur(c.total)}</span></div></div>
     <div class="acts"><button onclick="A.discount()">％ ${L('Dto.', '折扣')}</button><button onclick="A.usePoints()" ${m && S.cfg.points.on ? '' : 'disabled'}>⭐ ${L('Puntos', '积分')}</button>
@@ -129,12 +130,21 @@ A.editLine = i => {
   modal(`<h3>${esc(l.name)}</h3><div class="grid3">${fld(L('Cantidad', '数量'), 'e-q', l.qty, 'inputmode="decimal" autofocus')}${fld(L('Precio', '单价'), 'e-p', l.price, 'inputmode="decimal"')}${fld(L('Dto. %', '折扣 %'), 'e-d', l.disc || '', 'inputmode="decimal"')}</div>
     ${mfoot(`<button class="bad" onclick="A.qty(${i},-1e9);closeModal()">${L('Quitar', '删除')}</button>`, btnClose(), `<button class="pri" data-enter onclick="A.saveLine(${i})">OK</button>`)}`);
 };
-const discAllowed = d => { if (!isAdmin() && d > S.cfg.empMaxDisc) { toast(L('Descuento máximo permitido: ', '员工最大折扣:') + S.cfg.empMaxDisc + '%', true); return false; } return d >= 0 && d <= 100; };
-A.saveLine = i => {
-  const l = CART.lines[i], q = num(fv('e-q')), p = num(fv('e-p')), d = num(fv('e-d'));
-  if (q <= 0 || p < 0 || !discAllowed(d)) return;
-  if (p !== l.price && !isAdmin() && l.pid) return toast(L('Solo el administrador cambia precios', '只有管理员可以改价'), true);
-  l.qty = q; l.price = r2(p); l.disc = d; closeModal(); drawCart();
+// Comprueba permisos; si falta alguno pide autorización y vuelve a intentarlo.
+function discOk(d, retry) {
+  if (d < 0 || d > 100) return false;
+  if (d > 0 && !needPerm('disc', retry)) return false;
+  if (d > maxDisc() && !needPerm('discMax', retry)) return false;
+  return true;
+}
+A.saveLine = (i, v) => {
+  const l = CART.lines[i]; if (!l) return;
+  v = v || { q: num(fv('e-q')), p: r2(num(fv('e-p'))), d: num(fv('e-d')) };
+  const retry = () => A.saveLine(i, v);
+  if (v.q <= 0 || v.p < 0) return;
+  if (v.d !== (l.disc || 0) && !discOk(v.d, retry)) return;
+  if (v.p !== l.price && l.pid && !needPerm('price', retry)) return;
+  l.qty = v.q; l.price = v.p; l.disc = v.d; closeModal(); drawCart();
 };
 A.freeItem = () => modal(`<h3>✎ ${L('Artículo libre', '手输商品')}</h3>${fld(L('Descripción', '名称'), 'f-n', 'Artículo', 'autofocus')}
   <div class="grid2">${fld(L('Precio (IVA incl.)', '价格(含税)'), 'f-p', '', 'inputmode="decimal"')}${fld('IVA %', 'f-i', S.cfg.iva, 'inputmode="decimal"')}</div>
@@ -144,7 +154,7 @@ A.discount = () => modal(`<h3>％ ${L('Descuento general', '整单折扣')}</h3>
   <div class="row">${[5, 10, 15, 20, 30, 50].map(n => `<button onclick="$('#d-g').value=${n}">${n}%</button>`).join('')}</div>
   <p class="small muted">${L('No se suma a promociones ni a descuentos de línea. Si el cliente tiene descuento de nivel se aplica el mayor.', '不与促销、单品折扣叠加。会员有等级折扣时取较大者。')}</p>
   ${mfoot(btnClose(), `<button class="pri" data-enter onclick="A.setDisc()">OK</button>`)}`);
-A.setDisc = () => { const d = num(fv('d-g')); if (!discAllowed(d)) return; CART.disc = d; closeModal(); drawCart(); };
+A.setDisc = d => { d = d ?? num(fv('d-g')); if (d && !discOk(d, () => A.setDisc(d))) return; CART.disc = d; closeModal(); drawCart(); };
 A.usePoints = () => {
   const m = member(CART.member), P = S.cfg.points;
   if (m.points < P.min) return toast(L(`Mínimo ${P.min} puntos para canjear`, `满 ${P.min} 积分才能抵扣`), true);
@@ -233,12 +243,12 @@ A.payWith = (mth, code) => {
   if (r2(c.total - sum(PAY.pays, 'amount')) <= 0) finishSale(); else payModal();
 };
 function finishSale() {
-  const c = calcCart(CART), m = c.member, now = Date.now();
+  const c = calcCart(CART), m = c.member, now = Date.now(), seller = sellerOf();
   if (r2(c.total - sum(PAY.pays, 'amount')) > 0) return;
   const s = {
     id: uid(), no: nextNo('T'), type: 'sale', ts: now, user: USER.id, userName: USER.name, session: curSession().id,
-    member: m ? m.id : null, memberName: m ? m.name : '',
-    lines: c.lines.map(l => ({ pid: l.pid, name: l.name, sku: l.sku, qty: l.qty, price: l.price, iva: l.iva, cost: l.cost, total: l.total, dto: l.dto, promoName: l.promoName, returned: 0 })),
+    member: m ? m.id : null, memberName: m ? m.name : '', seller: seller.id, sellerName: seller.name,
+    lines: c.lines.map(l => { const x = { pid: l.pid, name: l.name, sku: l.sku, cat: (l.pid && prod(l.pid) || {}).cat || '', qty: l.qty, price: l.price, iva: l.iva, cost: l.cost, total: l.total, dto: l.dto, promoName: l.promoName, returned: 0 }; x.comm = commFor(seller, x); return x; }),
     gross: c.gross, discount: c.discount, ptsUsed: c.pts, ptsValue: c.ptsValue, total: c.total,
     pays: PAY.pays, given: PAY.given, change: PAY.change, ptsEarned: 0
   };
@@ -252,8 +262,9 @@ function finishSale() {
     m.spent = r2((m.spent || 0) + c.total); m.visits = (m.visits || 0) + 1; m.lastVisit = now;
     s.ptsAfter = m.points; s.balAfter = m.balance; dirty('members');
   }
+  s.comm = r2(sum(s.lines, 'comm'));
   S.sales.push(s); dirty('sales', s);
-  CART = newCart(); saveCart();
+  CART = newCart(); saveCart(); OVR = null;
   if (s.pays.some(p => p.m === 'cash')) openDrawer(true);
   afterSale(s);
   if (S.cfg.autoPrint) printDoc(ticketHtml(s));

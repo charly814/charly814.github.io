@@ -12,7 +12,7 @@ V.members = () => {
     <div class="stat"><div class="k">${L('Puntos en circulación', '未用积分')}</div><div class="v">${sum(S.members, 'points')}</div></div>
     <div class="stat"><div class="k">🎂 ${L('Cumpleaños este mes', '本月生日')}</div><div class="v">${S.members.filter(m => m.birthday && m.birthday.slice(5, 7) === mon).length}</div></div></div>
     <div class="card"><div class="row" style="margin-bottom:10px"><input class="grow" placeholder="${L('Buscar nombre, teléfono, tarjeta…', '搜索姓名、电话、卡号…')}" value="${esc(MF.q)}" oninput="MF.q=this.value;A.mList()">
-    <button class="pri" onclick="A.memberEdit('')">＋ ${L('Nuevo cliente', '新会员')}</button>${isAdmin() ? `<button onclick="A.membersCsv()">⬇ CSV</button>` : ''}</div><div class="tablewrap" id="m-list"></div></div></div>`;
+    <button class="pri" onclick="A.memberEdit('')">＋ ${L('Nuevo cliente', '新会员')}</button>${can('mExport') ? `<button onclick="A.membersCsv()">⬇ CSV</button>` : ''}</div><div class="tablewrap" id="m-list"></div></div></div>`;
   A.mList();
 };
 A.mList = () => {
@@ -30,7 +30,7 @@ A.memberEdit = (id, toCart) => {
     ${sel(L('Nivel', '等级'), 'm-l', [['', L('Automático según gasto', '按累计消费自动')], ...S.cfg.levels.map(l => [l.id, l.name + (l.disc ? ' -' + l.disc + '%' : '')])], m.level || '')}</div>
     ${fld(L('Dirección (para facturas)', '地址(开发票用)'), 'm-a', m.address)}${fld(L('Notas (gustos, alergias al níquel…)', '备注(喜好、镍过敏…)'), 'm-o', m.notes)}
     ${chk(L('Acepta recibir promociones (RGPD)', '同意接收促销信息(RGPD)'), 'm-g', m.marketing)}
-    ${mfoot(id && isAdmin() ? `<button class="bad" onclick="A.memberDel('${id}')">${L('Eliminar', '删除')}</button>` : '', btnClose(), `<button class="pri" data-enter onclick="A.memberSave('${id}',${toCart ? 1 : 0})">${L('Guardar', '保存')}</button>`)}`);
+    ${mfoot(id && can('mDel') ? `<button class="bad" onclick="A.memberDel('${id}')">${L('Eliminar', '删除')}</button>` : '', btnClose(), `<button class="pri" data-enter onclick="A.memberSave('${id}',${toCart ? 1 : 0})">${L('Guardar', '保存')}</button>`)}`);
 };
 A.memberSave = (id, toCart) => {
   const name = fv('m-n'), phone = fv('m-p'); if (!name) return toast(L('El nombre es obligatorio', '姓名必填'), true);
@@ -58,7 +58,7 @@ A.memberView = id => {
     <div class="stat"><div class="k">${L('Gastado', '累计消费')} · ${m.visits || 0} ${L('visitas', '次')}</div><div class="v">${eur(m.spent)}</div></div></div>
     <div class="row" style="margin-bottom:12px"><button class="ok" onclick="A.topupForm('${id}')">💶 ${L('Recargar saldo', '充值')}</button><button class="pri" onclick="closeModal();A.setMember('${id}')">🛒 ${L('Vender a este cliente', '选入收银')}</button>
     <button onclick="A.memberEdit('${id}')">✏️ ${L('Editar', '编辑')}</button><button onclick="printDoc(memberCardHtml(member('${id}')),'a4')">🪪 ${L('Tarjeta', '打印会员卡')}</button>
-    ${isAdmin() ? `<button onclick="A.adjustForm('${id}')">± ${L('Ajustar', '调整')}</button>` : ''}</div>
+    <button onclick="A.adjustForm('${id}')">± ${L('Ajustar', '调整')}</button></div>
     <div class="tabs"><button class="on" id="mv-t1" onclick="$('#mv-1').classList.remove('hidden');$('#mv-2').classList.add('hidden');this.classList.add('on');$('#mv-t2').classList.remove('on')">${L('Movimientos', '余额/积分记录')}</button>
     <button id="mv-t2" onclick="$('#mv-2').classList.remove('hidden');$('#mv-1').classList.add('hidden');this.classList.add('on');$('#mv-t1').classList.remove('on')">${L('Compras', '消费记录')}</button></div>
     <div id="mv-1" style="max-height:34vh;overflow:auto"><table class="t"><tr><th>${L('Fecha', '时间')}</th><th>${L('Concepto', '类型')}</th><th class="r">€</th><th class="r">${L('Saldo', '余额')}</th><th class="r">${L('Pts', '积分')}</th><th class="r">${L('Total pts', '积分余额')}</th></tr>

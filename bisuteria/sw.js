@@ -1,8 +1,8 @@
 // Copia la aplicación en el dispositivo para que la caja arranque sin internet.
 // Red primero (para recibir actualizaciones); si no responde, copia guardada.
-var CACHE = 'bisuteria-v1';
+var CACHE = 'bisuteria-v2';
 var FILES = ['./', 'index.html', 'app.css', 'icon.svg', 'manifest.webmanifest',
-  'js/core.js', 'js/docs.js', 'js/pos.js', 'js/sales.js', 'js/members.js', 'js/products.js', 'js/admin.js'];
+  'js/core.js', 'js/docs.js', 'js/pos.js', 'js/sales.js', 'js/members.js', 'js/products.js', 'js/admin.js', 'js/team.js'];
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(FILES); }).then(function () { return self.skipWaiting(); }));
 });

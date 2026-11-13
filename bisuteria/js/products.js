@@ -4,17 +4,17 @@ let PF = { q: '', cat: '', low: false, tab: 'list', sel: {} };
 const lowStock = p => p.active !== false && p.stock <= (p.min || 0);
 
 V.products = () => {
-  const adm = isAdmin();
+  const adm = can('prodEdit');
   $('#main').innerHTML = `<div class="page"><div class="tabs"><button class="${PF.tab === 'list' ? 'on' : ''}" onclick="PF.tab='list';V.products()">💍 ${L('Productos', '商品')}</button>
     ${adm ? `<button class="${PF.tab === 'cats' ? 'on' : ''}" onclick="PF.tab='cats';V.products()">🗂 ${L('Categorías', '分类')}</button><button class="${PF.tab === 'promos' ? 'on' : ''}" onclick="PF.tab='promos';V.products()">🏷️ ${L('Promociones', '促销')}</button>
     <button class="${PF.tab === 'log' ? 'on' : ''}" onclick="PF.tab='log';V.products()">📦 ${L('Movimientos de stock', '库存记录')}</button>` : ''}</div><div id="p-body"></div></div>`;
   ({ list: pList, cats: pCats, promos: pPromos, log: pLog })[adm ? PF.tab : 'list']();
 };
 function pList() {
-  const adm = isAdmin(), act = S.products.filter(p => p.active !== false);
+  const adm = can('prodEdit'), cv = can('cost'), act = S.products.filter(p => p.active !== false);
   $('#p-body').innerHTML = `<div class="stats"><div class="stat"><div class="k">${L('Productos activos', '在售商品')}</div><div class="v">${act.length}</div></div>
     <div class="stat"><div class="k">${L('Unidades en stock', '库存件数')}</div><div class="v">${sum(act, p => Math.max(p.stock, 0))}</div></div>
-    ${adm ? `<div class="stat"><div class="k">${L('Valor stock (coste)', '库存成本')}</div><div class="v">${eur(sum(act, p => Math.max(p.stock, 0) * (p.cost || 0)))}</div></div>
+    ${cv ? `<div class="stat"><div class="k">${L('Valor stock (coste)', '库存成本')}</div><div class="v">${eur(sum(act, p => Math.max(p.stock, 0) * (p.cost || 0)))}</div></div>
     <div class="stat"><div class="k">${L('Valor stock (PVP)', '库存售价')}</div><div class="v">${eur(sum(act, p => Math.max(p.stock, 0) * p.price))}</div></div>` : ''}
     <div class="stat"><div class="k">⚠️ ${L('Stock bajo', '库存不足')}</div><div class="v" style="color:var(--bad)">${act.filter(lowStock).length}</div></div></div>
     <div class="card"><div class="row" style="margin-bottom:10px"><input class="grow" style="min-width:160px" placeholder="${L('Buscar nombre, referencia o código de barras', '搜索名称、货号或条码')}" value="${esc(PF.q)}" oninput="PF.q=this.value;A.pRows()">
@@ -26,13 +26,13 @@ function pList() {
   A.pRows();
 }
 A.pRows = () => {
-  const q = PF.q.toLowerCase().trim(), adm = isAdmin();
+  const q = PF.q.toLowerCase().trim(), adm = can('prodEdit'), cv = can('cost'), st = can('stock');
   const list = S.products.filter(p => (!PF.cat || p.cat === PF.cat) && (!PF.low || lowStock(p)) && (!q || (p.name + ' ' + (p.zh || '') + ' ' + p.sku + ' ' + (p.barcode || '') + ' ' + (p.supplier || '')).toLowerCase().includes(q))).slice(0, 400);
-  $('#p-rows').innerHTML = `<table class="t"><tr><th><input type="checkbox" onchange="A.pSelAll(this.checked)"></th><th>${L('Ref.', '货号')}</th><th>${L('Producto', '商品')}</th><th>${L('Categoría', '分类')}</th><th class="r">${L('PVP', '售价')}</th>${adm ? `<th class="r">${L('Coste', '成本')}</th>` : ''}<th class="r">${L('Stock', '库存')}</th><th></th></tr>
+  $('#p-rows').innerHTML = `<table class="t"><tr><th><input type="checkbox" onchange="A.pSelAll(this.checked)"></th><th>${L('Ref.', '货号')}</th><th>${L('Producto', '商品')}</th><th>${L('Categoría', '分类')}</th><th class="r">${L('PVP', '售价')}</th>${cv ? `<th class="r">${L('Coste', '成本')}</th>` : ''}<th class="r">${L('Stock', '库存')}</th><th></th></tr>
     ${list.map(p => `<tr><td><input type="checkbox" class="p-sel" value="${p.id}" ${PF.sel[p.id] ? 'checked' : ''} onchange="PF.sel['${p.id}']=this.checked"></td><td class="small">${esc(p.sku)}<br><span class="muted">${esc(p.barcode || '')}</span></td>
     <td class="${adm ? 'click' : ''}" ${adm ? `onclick="A.prodEdit('${p.id}')" style="cursor:pointer"` : ''}><b>${esc(p.name)}</b>${p.zh ? '<br><span class="small muted">' + esc(p.zh) + '</span>' : ''} ${p.active === false ? `<span class="tag bad">${L('Inactivo', '停售')}</span>` : ''}</td>
-    <td class="small">${esc(catName(p.cat))}</td><td class="r b">${eur(p.price)}</td>${adm ? `<td class="r small">${eur(p.cost)}</td>` : ''}
-    <td class="r"><span class="tag ${lowStock(p) ? 'bad' : 'ok'}">${p.stock}</span></td><td class="r">${adm ? `<button class="sm" onclick="A.stockForm('${p.id}')">📦 ±</button>` : ''}</td></tr>`).join('')}</table>
+    <td class="small">${esc(catName(p.cat))}</td><td class="r b">${eur(p.price)}</td>${cv ? `<td class="r small">${eur(p.cost)}</td>` : ''}
+    <td class="r"><span class="tag ${lowStock(p) ? 'bad' : 'ok'}">${p.stock}</span></td><td class="r">${st ? `<button class="sm" onclick="A.stockForm('${p.id}')">📦 ±</button>` : ''}</td></tr>`).join('')}</table>
     ${list.length ? '' : `<div class="empty">${L('Sin productos', '没有商品')}</div>`}`;
 };
 A.pSelAll = on => $$('.p-sel').forEach(c => { c.checked = on; PF.sel[c.value] = on; });
@@ -134,8 +134,8 @@ A.labelsPrint = () => {
 
 // Categorías
 function pCats() {
-  $('#p-body').innerHTML = `<div class="card"><table class="t"><tr><th>${L('Nombre', '西语名称')}</th><th>${L('Chino', '中文名称')}</th><th class="r">${L('Productos', '商品数')}</th><th></th></tr>
-    ${S.cats.map((c, i) => `<tr><td><input value="${esc(c.name)}" onchange="S.cats[${i}].name=this.value;dirty('cats')"></td><td><input value="${esc(c.zh || '')}" onchange="S.cats[${i}].zh=this.value;dirty('cats')"></td>
+  $('#p-body').innerHTML = `<div class="card"><table class="t"><tr><th>${L('Nombre', '西语名称')}</th><th>${L('Chino', '中文名称')}</th><th title="vacío = la del vendedor">${L('Comisión % (vacío = la del vendedor)', '提成 %(留空 = 按员工比例)')}</th><th class="r">${L('Productos', '商品数')}</th><th></th></tr>
+    ${S.cats.map((c, i) => `<tr><td><input value="${esc(c.name)}" onchange="S.cats[${i}].name=this.value;dirty('cats')"></td><td><input value="${esc(c.zh || '')}" onchange="S.cats[${i}].zh=this.value;dirty('cats')"></td><td style="width:120px"><input value="${c.comm ?? ''}" inputmode="decimal" onchange="S.cats[${i}].comm=this.value.trim()===''?'':num(this.value);dirty('cats')"></td>
     <td class="r">${S.products.filter(p => p.cat === c.id).length}</td><td class="r"><button class="sm" onclick="A.catMove(${i},-1)">↑</button> <button class="sm" onclick="A.catMove(${i},1)">↓</button> <button class="sm bad" onclick="A.catDel(${i})">✕</button></td></tr>`).join('')}</table>
     <button class="pri" style="margin-top:10px" onclick="S.cats.push({id:uid(),name:'Nueva',zh:''});dirty('cats');V.products()">＋ ${L('Añadir categoría', '添加分类')}</button></div>`;
 }

@@ -30,7 +30,7 @@ A.move = type => {
 };
 A.closeForm = () => {
   const ss = curSession(), t = sessionTotals(ss);
-  modal(`<h3>🔒 ${L('Cerrar caja', '日结关班')}</h3>${S.parked.length ? `<div class="banner">${L('Hay tickets aparcados sin cobrar', '还有未结的挂单')}: ${S.parked.length}</div>` : ''}
+  modal(`<h3>🔒 ${L('Cerrar caja', '日结关班')}</h3>${S.users.filter(u => isIn(u.id)).length ? `<div class="banner">⏱ ${L('Siguen fichados (sin salida)', '还没下班打卡')}: ${esc(S.users.filter(u => isIn(u.id)).map(u => u.name).join(', '))}</div>` : ''}${S.parked.length ? `<div class="banner">${L('Hay tickets aparcados sin cobrar', '还有未结的挂单')}: ${S.parked.length}</div>` : ''}
     <table class="t"><tr><td>${L('Venta neta', '净销售额')}</td><td class="r b">${eur(t.sales + t.returns)}</td></tr><tr><td>${L('Efectivo esperado', '应有现金')}</td><td class="r b">${eur(t.expected)}</td></tr></table>
     <div style="margin-top:12px">${fld(L('Efectivo contado en el cajón *', '实际清点的现金 *'), 'cl-c', '', 'inputmode="decimal" autofocus oninput="A.closeCalc()"')}</div>
     <div class="change" id="cl-d" style="font-size:18px">—</div>${fld(L('Efectivo que dejas como fondo para mañana', '留作明天备用金'), 'cl-f', ss.float, 'inputmode="decimal"')}
@@ -62,7 +62,7 @@ function repData() {
   const base = sum(lines, l => l.total / (1 + l.iva / 100)), cost = sum(lines, l => (l.cost || 0) * l.qty);
   const by = {}; ops.forEach(o => o.pays.forEach(p => by[p.m] = r2((by[p.m] || 0) + p.amount)));
   const days = {}; sr.forEach(o => { const k = dstr(o.ts); (days[k] = days[k] || { k, n: 0, total: 0 }); if (o.type === 'sale') days[k].n++; days[k].total = r2(days[k].total + o.total); });
-  const users = {}; sr.forEach(o => { (users[o.userName] = users[o.userName] || { k: o.userName, n: 0, total: 0 }); if (o.type === 'sale') users[o.userName].n++; users[o.userName].total = r2(users[o.userName].total + o.total); });
+  const users = {}; sr.forEach(o => { const un = o.sellerName || o.userName; (users[un] = users[un] || { k: un, n: 0, total: 0 }); if (o.type === 'sale') users[un].n++; users[un].total = r2(users[un].total + o.total); });
   const nS = sr.filter(o => o.type === 'sale').length;
   return { ops, sr, lines, net, nS, base, cost, by, days: Object.values(days).sort((a, b) => a.k < b.k ? -1 : 1), users: Object.values(users),
     prods: agg(l => l.name), cats: agg(l => { const p = l.pid && prod(l.pid); return p ? (S.cats.find(c => c.id === p.cat) || {}).name || '—' : '—'; }),
@@ -116,14 +116,10 @@ V.settings = () => {
     ${c.bonus.map((b, i) => `<tr><td><input class="bn-m" value="${b.min}"></td><td><input class="bn-b" value="${b.bonus}"></td><td><button class="sm bad" onclick="A.cfgSave(1);S.cfg.bonus.splice(${i},1);dirty('cfg');V.settings()">✕</button></td></tr>`).join('')}</table>
     <button class="sm" style="margin-top:8px" onclick="A.cfgSave(1);S.cfg.bonus.push({min:300,bonus:70});dirty('cfg');V.settings()">＋ ${L('Tramo', '添加档位')}</button></div>
     <div class="card"><h3>🖨 ${L('Impresión y permisos', '打印和权限')}</h3><div class="grid3">${sel(L('Papel del ticket', '小票纸宽'), 'c-pa', [[80, '80 mm'], [58, '58 mm']], c.paper)}
-    ${sel(L('Cajón portamonedas', '钱箱'), 'c-dr', [['none', L('Lo abre la impresora al imprimir', '由打印机在打印时弹开')], ['serial', 'Web Serial (ESC/POS)']], c.drawer)}${fld(L('Baudios (serie)', '波特率(串口)'), 'c-bd', c.baud, 'inputmode="numeric"')}
-    ${fld(L('Dto. máximo de empleados %', '员工最大折扣 %'), 'c-md', c.empMaxDisc, 'inputmode="decimal"')}</div>
-    ${chk(L('Imprimir el ticket automáticamente al cobrar', '收款后自动打印小票'), 'c-ap', c.autoPrint)}${chk(L('Los empleados pueden hacer devoluciones', '员工可以办理退货'), 'c-er', c.empReturn)}${chk(L('No permitir vender sin stock', '库存不足时禁止销售'), 'c-bs', c.blockNoStock)}</div>
+    ${sel(L('Cajón portamonedas', '钱箱'), 'c-dr', [['none', L('Lo abre la impresora al imprimir', '由打印机在打印时弹开')], ['serial', 'Web Serial (ESC/POS)']], c.drawer)}${fld(L('Baudios (serie)', '波特率(串口)'), 'c-bd', c.baud, 'inputmode="numeric"')}</div>
+    ${chk(L('Imprimir el ticket automáticamente al cobrar', '收款后自动打印小票'), 'c-ap', c.autoPrint)}${chk(L('No permitir vender sin stock', '库存不足时禁止销售'), 'c-bs', c.blockNoStock)}</div>
     <button class="pri big" style="width:100%;margin-bottom:14px" onclick="A.cfgSave()">💾 ${L('Guardar ajustes', '保存设置')}</button>
-    <div class="card"><h3>👥 ${L('Usuarios', '员工账号')}</h3><table class="t"><tr><th>${L('Nombre', '姓名')}</th><th>PIN (4)</th><th>${L('Rol', '角色')}</th><th></th></tr>
-    ${S.users.map((u, i) => `<tr><td><input class="u-n" value="${esc(u.name)}"></td><td><input class="u-p" value="${esc(u.pin)}" maxlength="4" inputmode="numeric"></td><td><select class="u-r"><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>${L('Administrador', '管理员')}</option><option value="emp" ${u.role !== 'admin' ? 'selected' : ''}>${L('Empleado', '员工')}</option></select></td>
-    <td><button class="sm bad" onclick="A.userDel(${i})">✕</button></td></tr>`).join('')}</table>
-    <div class="row" style="margin-top:8px"><button class="sm" onclick="A.usersSave(1)">＋ ${L('Usuario', '添加员工')}</button><button class="pri sm" onclick="A.usersSave()">${L('Guardar usuarios', '保存员工')}</button></div></div>
+    <p class="small muted">👥 ${L('Usuarios, permisos, fichajes y comisiones: menú ⏱ Equipo.', '员工账号、权限、考勤和提成:在「⏱ 员工」菜单里。')}</p>
     <div class="card"><h3>💾 ${L('Copia de seguridad', '数据备份')}</h3><p class="small muted">${L('Última copia', '上次备份')}: ${c.lastBackup ? fdt(c.lastBackup) : L('nunca', '从未')}. ${L('Guarde el archivo en un USB o en la nube. Si se borra el navegador o se rompe el ordenador, es la única forma de recuperar los datos.', '请把文件存到 U 盘或网盘。浏览器数据被清除或电脑损坏时,只能靠它恢复。')}</p>
     <div class="row"><button class="pri" onclick="A.backup()">⬇ ${L('Descargar copia', '下载备份')}</button><button onclick="$('#bk-f').click()">⬆ ${L('Restaurar copia', '恢复备份')}</button><input type="file" id="bk-f" accept=".json" class="hidden" onchange="A.restore(this)">
     <span class="grow"></span><button class="bad" onclick="A.wipe()">${L('Borrar productos de ejemplo', '删除示例商品')}</button></div></div></div>`;
@@ -131,7 +127,7 @@ V.settings = () => {
 A.cfgSave = quiet => {
   const c = S.cfg, n = id => num(fv(id));
   Object.assign(c.shop, { name: fv('c-n') || 'Mi Bisutería', nif: fv('c-f').toUpperCase(), address: fv('c-a'), city: fv('c-c'), phone: fv('c-p'), email: fv('c-e') });
-  Object.assign(c, { footer: fv('c-ft'), returnText: fv('c-rt'), returnDays: n('c-rd'), iva: n('c-iva'), valeMonths: n('c-vm') || 12, paper: Number(fv('c-pa')), drawer: fv('c-dr'), baud: n('c-bd') || 9600, empMaxDisc: n('c-md'), autoPrint: fv('c-ap'), empReturn: fv('c-er'), blockNoStock: fv('c-bs') });
+  Object.assign(c, { footer: fv('c-ft'), returnText: fv('c-rt'), returnDays: n('c-rd'), iva: n('c-iva'), valeMonths: n('c-vm') || 12, paper: Number(fv('c-pa')), drawer: fv('c-dr'), baud: n('c-bd') || 9600, autoPrint: fv('c-ap'), blockNoStock: fv('c-bs') });
   Object.assign(c.points, { on: fv('c-pon'), earn: n('c-pe'), value: n('c-pv') || 0.01, min: n('c-pm') });
   const g = cls => $$('.' + cls).map(e => e.value.trim());
   const ln = g('lv-n'), lm = g('lv-m'), ld = g('lv-d'), lx = g('lv-x');
@@ -139,16 +135,6 @@ A.cfgSave = quiet => {
   const bm = g('bn-m'), bb = g('bn-b'); c.bonus = c.bonus.map((b, i) => ({ min: num(bm[i]), bonus: num(bb[i]) })).filter(b => b.min > 0).sort((a, b) => a.min - b.min);
   dirty('cfg'); if (!quiet) { toast(L('Ajustes guardados', '设置已保存')); render(); }
 };
-A.usersSave = add => {
-  const ns = $$('.u-n').map(e => e.value.trim().toUpperCase()), ps = $$('.u-p').map(e => e.value.trim()), rs = $$('.u-r').map(e => e.value);
-  if (ps.some(p => !/^\d{4}$/.test(p)) || new Set(ps).size !== ps.length) return toast(L('Cada PIN debe tener 4 cifras y ser distinto', '每个 PIN 必须是 4 位数字且不能重复'), true);
-  if (!rs.includes('admin')) return toast(L('Debe quedar al menos un administrador', '至少保留一个管理员'), true);
-  S.users.forEach((u, i) => Object.assign(u, { name: ns[i] || u.name, pin: ps[i], role: rs[i] }));
-  if (add) { let p; do { p = String(Math.floor(1000 + Math.random() * 9000)); } while (ps.includes(p)); S.users.push({ id: uid(), name: 'NUEVO', pin: p, role: 'emp' }); }
-  if (S.cfg.demo && !ps.includes('1111')) { S.cfg.demo = false; dirty('cfg'); }
-  dirty('users'); toast(L('Usuarios guardados', '员工已保存')); V.settings();
-};
-A.userDel = i => { if (S.users[i].id === USER.id) return toast(L('No puede eliminarse a sí mismo', '不能删除自己'), true); if (!confirm(L('¿Eliminar usuario?', '删除该员工?'))) return; S.users.splice(i, 1); dirty('users'); V.settings(); };
 A.backup = () => {
   S.cfg.lastBackup = Date.now(); dirty('cfg');
   download(`bisuteria-copia-${dstr(Date.now())}.json`, JSON.stringify({ app: 'bisuteria-pos', v: 1, ts: Date.now(), data: S }), 'application/json');
