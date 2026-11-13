@@ -7,8 +7,11 @@ V.products = () => {
   const adm = can('prodEdit');
   $('#main').innerHTML = `<div class="page"><div class="tabs"><button class="${PF.tab === 'list' ? 'on' : ''}" onclick="PF.tab='list';V.products()">💍 ${L('Productos', '商品')}</button>
     ${adm ? `<button class="${PF.tab === 'cats' ? 'on' : ''}" onclick="PF.tab='cats';V.products()">🗂 ${L('Categorías', '分类')}</button><button class="${PF.tab === 'promos' ? 'on' : ''}" onclick="PF.tab='promos';V.products()">🏷️ ${L('Promociones', '促销')}</button>
+    ` : ''}${can('stock') ? `<button class="${PF.tab === 'in' ? 'on' : ''}" onclick="PF.tab='in';V.products()">📥 ${L('Entrada por escáner', '扫码入库')}</button><button class="${PF.tab === 'count' ? 'on' : ''}" onclick="PF.tab='count';V.products()">📋 ${L('Inventario por escáner', '扫码盘点')}</button>
     <button class="${PF.tab === 'log' ? 'on' : ''}" onclick="PF.tab='log';V.products()">📦 ${L('Movimientos de stock', '库存记录')}</button>` : ''}</div><div id="p-body"></div></div>`;
-  ({ list: pList, cats: pCats, promos: pPromos, log: pLog })[adm ? PF.tab : 'list']();
+  const ok = { list: 1, cats: adm, promos: adm, log: can('stock'), in: can('stock'), count: can('stock') };
+  if (!ok[PF.tab]) PF.tab = 'list';
+  ({ list: pList, cats: pCats, promos: pPromos, log: pLog, in: pIn, count: pCount })[PF.tab]();
 };
 function pList() {
   const adm = can('prodEdit'), cv = can('cost'), act = S.products.filter(p => p.active !== false);
@@ -17,7 +20,7 @@ function pList() {
     ${cv ? `<div class="stat"><div class="k">${L('Valor stock (coste)', '库存成本')}</div><div class="v">${eur(sum(act, p => Math.max(p.stock, 0) * (p.cost || 0)))}</div></div>
     <div class="stat"><div class="k">${L('Valor stock (PVP)', '库存售价')}</div><div class="v">${eur(sum(act, p => Math.max(p.stock, 0) * p.price))}</div></div>` : ''}
     <div class="stat"><div class="k">⚠️ ${L('Stock bajo', '库存不足')}</div><div class="v" style="color:var(--bad)">${act.filter(lowStock).length}</div></div></div>
-    <div class="card"><div class="row" style="margin-bottom:10px"><input class="grow" style="min-width:160px" placeholder="${L('Buscar nombre, referencia o código de barras', '搜索名称、货号或条码')}" value="${esc(PF.q)}" oninput="PF.q=this.value;A.pRows()">
+    <div class="card"><div class="row" style="margin-bottom:10px"><input class="grow" style="min-width:160px" placeholder="${L('Buscar nombre, referencia o código de barras', '搜索名称、货号或条码')}" value="${esc(PF.q)}" data-scan oninput="PF.q=this.value;A.pRows()" onkeydown="if(event.key==='Enter'){const p=findByCode(this.value);if(p){beep();this.value='';PF.q='';A.pRows();${adm ? 'A.prodEdit(p.id)' : can('stock') ? 'A.stockForm(p.id)' : ''}}}">
     <select style="width:150px" onchange="PF.cat=this.value;A.pRows()"><option value="">${L('Todas las categorías', '全部分类')}</option>${S.cats.map(c => `<option value="${c.id}" ${PF.cat === c.id ? 'selected' : ''}>${esc(catName(c.id))}</option>`).join('')}</select>
     <label class="ck" style="margin:0"><input type="checkbox" ${PF.low ? 'checked' : ''} onchange="PF.low=this.checked;A.pRows()"> ${L('Stock bajo', '只看库存不足')}</label>
     ${adm ? `<button class="pri" onclick="A.prodEdit('')">＋ ${L('Nuevo', '新商品')}</button>` : ''}<button onclick="A.labels()">🏷 ${L('Etiquetas', '打印标签')}</button>
@@ -41,13 +44,13 @@ A.prodEdit = id => {
   const p = id ? prod(id) : { sku: '', barcode: '', name: '', zh: '', cat: PF.cat || (S.cats[0] || {}).id, price: '', cost: '', stock: 0, min: 3, iva: S.cfg.iva, img: '', active: true, noDisc: false, supplier: '' };
   pImg = p.img || '';
   modal(`<h3>${id ? L('Editar producto', '编辑商品') : L('Nuevo producto', '新商品')}</h3><div class="grid2">${fld(L('Nombre (ticket) *', '西语名称(小票)*'), 'p-n', p.name, 'autofocus')}${fld(L('Nombre en chino', '中文名称'), 'p-z', p.zh)}</div>
-    <div class="grid3">${fld(L('Referencia', '货号'), 'p-s', p.sku, `placeholder="${L('automática', '自动生成')}"`)}${fld(L('Código de barras', '条码'), 'p-b', p.barcode, `placeholder="${L('escanear o automático', '扫码或自动生成')}"`)}
+    <div class="grid3">${fld(L('Referencia', '货号'), 'p-s', p.sku, `placeholder="${L('automática', '自动生成')}"`)}${fld(L('Código de barras', '条码'), 'p-b', p.barcode, `placeholder="${L('escanear o automático', '扫码或自动生成')}" data-next="p-p"`)}
     ${sel(L('Categoría', '分类'), 'p-c', S.cats.map(c => [c.id, catName(c.id)]), p.cat)}
     ${fld(L('PVP (IVA incl.) *', '售价(含税)*'), 'p-p', p.price, 'inputmode="decimal"')}${fld(L('Coste', '成本'), 'p-o', p.cost, 'inputmode="decimal"')}${fld('IVA %', 'p-i', p.iva, 'inputmode="decimal"')}
     ${id ? '' : fld(L('Stock inicial', '初始库存'), 'p-k', p.stock, 'inputmode="numeric"')}${fld(L('Aviso stock mínimo', '最低库存提醒'), 'p-m', p.min, 'inputmode="numeric"')}${fld(L('Proveedor', '供应商'), 'p-v', p.supplier)}</div>
     <div class="row" style="margin-bottom:10px"><div id="p-im" style="width:64px;height:64px;border-radius:8px;background:var(--pri-soft) center/cover no-repeat;${pImg ? `background-image:url(${pImg})` : ''}"></div>
     <button onclick="$('#p-f').click()">📷 ${L('Foto', '照片')}</button><button class="sm" onclick="pImg='';$('#p-im').style.backgroundImage=''">✕</button><input type="file" id="p-f" accept="image/*" capture="environment" class="hidden" onchange="A.prodImg(this)"></div>
-    ${chk(L('Activo (se puede vender)', '在售'), 'p-a', p.active !== false)}${chk(L('Excluir de descuentos y promociones', '不参加折扣和促销'), 'p-x', p.noDisc)}
+    ${chk(L('Activo (se puede vender)', '在售'), 'p-a', p.active !== false)}${chk(L('Botón rápido en la venta (para artículos sin código, ej. bolsa de regalo)', '收银界面快捷按钮(用于没有条码的商品,如礼品袋)'), 'p-fv', p.fav)}${chk(L('Excluir de descuentos y promociones', '不参加折扣和促销'), 'p-x', p.noDisc)}
     ${mfoot(id ? `<button class="bad" onclick="A.prodDel('${id}')">${L('Eliminar', '删除')}</button><button onclick="A.prodDup('${id}')">${L('Duplicar', '复制')}</button>` : '', btnClose(), `<button class="pri" data-enter onclick="A.prodSave('${id}')">${L('Guardar', '保存')}</button>`)}`, true);
 };
 A.prodImg = inp => {
@@ -64,7 +67,7 @@ A.prodSave = id => {
   if (S.products.some(x => x.id !== id && (x.sku.toLowerCase() === sku.toLowerCase() || (x.barcode && x.barcode === bc)))) return toast(L('Referencia o código de barras repetido', '货号或条码重复'), true);
   let p = id && prod(id);
   if (!p) { p = { id: uid(), stock: 0 }; S.products.push(p); }
-  Object.assign(p, { name, zh: fv('p-z'), sku, barcode: bc, cat: fv('p-c'), price, cost: r2(num(fv('p-o'))), iva: num(fv('p-i')), min: num(fv('p-m')), supplier: fv('p-v'), img: pImg, active: fv('p-a'), noDisc: fv('p-x') });
+  Object.assign(p, { name, zh: fv('p-z'), sku, barcode: bc, cat: fv('p-c'), price, cost: r2(num(fv('p-o'))), iva: num(fv('p-i')), min: num(fv('p-m')), supplier: fv('p-v'), img: pImg, active: fv('p-a'), noDisc: fv('p-x'), fav: fv('p-fv') });
   dirty('products');
   if (!id) { const k = num(fv('p-k')); if (k) stockMove(p, k, 'in', 'Stock inicial'); }
   closeModal(); V.products();

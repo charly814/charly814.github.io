@@ -117,7 +117,7 @@ V.settings = () => {
     <button class="sm" style="margin-top:8px" onclick="A.cfgSave(1);S.cfg.bonus.push({min:300,bonus:70});dirty('cfg');V.settings()">＋ ${L('Tramo', '添加档位')}</button></div>
     <div class="card"><h3>🖨 ${L('Impresión y permisos', '打印和权限')}</h3><div class="grid3">${sel(L('Papel del ticket', '小票纸宽'), 'c-pa', [[80, '80 mm'], [58, '58 mm']], c.paper)}
     ${sel(L('Cajón portamonedas', '钱箱'), 'c-dr', [['none', L('Lo abre la impresora al imprimir', '由打印机在打印时弹开')], ['serial', 'Web Serial (ESC/POS)']], c.drawer)}${fld(L('Baudios (serie)', '波特率(串口)'), 'c-bd', c.baud, 'inputmode="numeric"')}</div>
-    ${chk(L('Imprimir el ticket automáticamente al cobrar', '收款后自动打印小票'), 'c-ap', c.autoPrint)}${chk(L('No permitir vender sin stock', '库存不足时禁止销售'), 'c-bs', c.blockNoStock)}</div>
+    ${chk(L('Imprimir el ticket automáticamente al cobrar', '收款后自动打印小票'), 'c-ap', c.autoPrint)}${chk(L('Pitido al escanear', '扫码提示音'), 'c-bp', c.beep)}${chk(L('No permitir vender sin stock', '库存不足时禁止销售'), 'c-bs', c.blockNoStock)}</div>
     <button class="pri big" style="width:100%;margin-bottom:14px" onclick="A.cfgSave()">💾 ${L('Guardar ajustes', '保存设置')}</button>
     <p class="small muted">👥 ${L('Usuarios, permisos, fichajes y comisiones: menú ⏱ Equipo.', '员工账号、权限、考勤和提成:在「⏱ 员工」菜单里。')}</p>
     <div class="card"><h3>💾 ${L('Copia de seguridad', '数据备份')}</h3><p class="small muted">${L('Última copia', '上次备份')}: ${c.lastBackup ? fdt(c.lastBackup) : L('nunca', '从未')}. ${L('Guarde el archivo en un USB o en la nube. Si se borra el navegador o se rompe el ordenador, es la única forma de recuperar los datos.', '请把文件存到 U 盘或网盘。浏览器数据被清除或电脑损坏时,只能靠它恢复。')}</p>
@@ -127,7 +127,7 @@ V.settings = () => {
 A.cfgSave = quiet => {
   const c = S.cfg, n = id => num(fv(id));
   Object.assign(c.shop, { name: fv('c-n') || 'Mi Bisutería', nif: fv('c-f').toUpperCase(), address: fv('c-a'), city: fv('c-c'), phone: fv('c-p'), email: fv('c-e') });
-  Object.assign(c, { footer: fv('c-ft'), returnText: fv('c-rt'), returnDays: n('c-rd'), iva: n('c-iva'), valeMonths: n('c-vm') || 12, paper: Number(fv('c-pa')), drawer: fv('c-dr'), baud: n('c-bd') || 9600, autoPrint: fv('c-ap'), blockNoStock: fv('c-bs') });
+  Object.assign(c, { footer: fv('c-ft'), returnText: fv('c-rt'), returnDays: n('c-rd'), iva: n('c-iva'), valeMonths: n('c-vm') || 12, paper: Number(fv('c-pa')), drawer: fv('c-dr'), baud: n('c-bd') || 9600, autoPrint: fv('c-ap'), beep: fv('c-bp'), blockNoStock: fv('c-bs') });
   Object.assign(c.points, { on: fv('c-pon'), earn: n('c-pe'), value: n('c-pv') || 0.01, min: n('c-pm') });
   const g = cls => $$('.' + cls).map(e => e.value.trim());
   const ln = g('lv-n'), lm = g('lv-m'), ld = g('lv-d'), lx = g('lv-x');

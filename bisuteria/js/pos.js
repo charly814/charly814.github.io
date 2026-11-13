@@ -1,11 +1,11 @@
 'use strict';
 // ───────── Pantalla de venta ─────────
 const newCart = () => ({ lines: [], member: null, disc: 0, pts: 0, seller: null });
-let CART = newCart(), POSF = { q: '', cat: '' }, PAY = null;
+let CART = newCart(), POSF = { mult: 1 }, PAY = null;
 try { const c = JSON.parse(localStorage.getItem('bis-cart')); if (c && c.lines) CART = c; } catch (e) {}
 const saveCart = () => localStorage.setItem('bis-cart', JSON.stringify(CART));
 const voucher = code => S.vouchers.find(v => v.code === String(code).toUpperCase());
-const focusScan = () => { const q = $('#q'); if (q && matchMedia('(pointer:fine)').matches) q.focus(); };
+const focusScan = () => { const q = $('[data-scan]'); if (q && matchMedia('(pointer:fine)').matches) q.focus(); };
 
 function activePromos() { const d = dstr(Date.now()); return S.promos.filter(p => p.active && (!p.from || p.from <= d) && (!p.to || p.to >= d)); }
 function promoHits(p, l) {
@@ -49,81 +49,126 @@ function calcCart(c) {
 }
 
 V.pos = () => {
+  const favs = S.products.filter(p => p.fav && p.active !== false);
   $('#main').innerHTML = `<div class="pos" id="pos"><div class="pos-l">
-    <div class="row"><input id="q" class="grow" placeholder="${L('🔍 Escanear código o buscar producto / cliente…', '🔍 扫码,或搜索商品 / 会员…')}" value="${esc(POSF.q)}" oninput="A.q(this.value)" onkeydown="if(event.key==='Enter'){A.scan(this.value)}" autocomplete="off">
-    <button onclick="A.freeItem()">✎ ${L('Artículo libre', '手输商品')}</button></div>
-    <div class="cats" id="cats"></div><div class="gridp" id="grid"></div></div>
-    <div class="pos-r" id="cart"></div>
-    <button class="pri cartfab" onclick="$('#pos').classList.add('showcart')" id="fab"></button></div>`;
-  drawCats(); drawGrid(); drawCart(); focusScan();
+    <div class="scanbar"><div class="scanwrap"><span class="mult hidden" id="mult"></span>
+    <input id="q" data-scan class="scan" placeholder="${L('Escanear o buscar…   (3* = 3 uds.)', '扫码或搜索…   (3* = 3 件)')}" oninput="A.q(this.value)" onkeydown="A.qKey(event)" autocomplete="off" spellcheck="false">
+    <div class="sug hidden" id="sug"></div></div>
+    <button onclick="A.browse()">🔍 ${L('Buscar / ver productos', '浏览商品')}</button><button onclick="A.freeItem()">✎ ${L('Artículo libre', '手输商品')}</button></div>
+    ${favs.length ? `<div class="favs">${favs.map(p => `<button onclick="A.add('${p.id}')">${esc(pname(p))} <b>${eur(p.price)}</b></button>`).join('')}</div>` : ''}
+    <div class="ticket" id="lines"></div></div>
+    <div class="pos-r" id="cart"></div></div>`;
+  drawCart(); focusScan();
 };
-function drawCats() {
-  $('#cats').innerHTML = `<button class="${POSF.cat ? '' : 'on'}" onclick="A.cat('')">${L('Todo', '全部')}</button>` +
-    S.cats.map(c => `<button class="${POSF.cat === c.id ? 'on' : ''}" onclick="A.cat('${c.id}')">${esc(catName(c.id))}</button>`).join('');
+function matchProducts(q, cat) {
+  q = (q || '').trim().toLowerCase();
+  return S.products.filter(p => p.active !== false && (!cat || p.cat === cat) &&
+    (!q || (p.name + ' ' + (p.zh || '') + ' ' + p.sku + ' ' + (p.barcode || '') + ' ' + (p.supplier || '')).toLowerCase().includes(q)));
 }
-function matchProducts() {
-  const q = POSF.q.trim().toLowerCase();
-  return S.products.filter(p => p.active !== false && (!POSF.cat || p.cat === POSF.cat) &&
-    (!q || (p.name + ' ' + (p.zh || '') + ' ' + p.sku + ' ' + (p.barcode || '')).toLowerCase().includes(q)));
-}
-function drawGrid() {
-  const ps = matchProducts().slice(0, 150);
-  $('#grid').innerHTML = ps.length ? ps.map(p => `<button class="tile" onclick="A.add('${p.id}')">
-    <div class="im" ${p.img ? `style="background-image:url(${p.img})"` : ''}>${p.img ? '' : esc(pname(p).slice(0, 1).toUpperCase())}</div>
-    <span class="st ${p.stock <= 0 ? 'low' : ''}">${p.stock}</span><div class="nm">${esc(pname(p))}</div><div class="pr">${eur(p.price)}</div></button>`).join('')
-    : `<div class="empty" style="grid-column:1/-1">${L('Sin resultados', '没有找到商品')}</div>`;
-}
+let HL = -1; // última línea añadida (se resalta)
 function drawCart() {
   const c = calcCart(CART), m = c.member; saveCart();
   const nItems = sum(c.lines, 'qty');
+  const lines = $('#lines');
+  if (lines) {
+    lines.innerHTML = c.lines.length ? `<table class="t tk-lines"><tr><th>#</th><th>${L('Artículo', '商品')}</th><th class="r">${L('Precio', '单价')}</th><th class="c">${L('Cant.', '数量')}</th><th class="r">${L('Importe', '金额')}</th><th></th></tr>
+      ${c.lines.map((l, i) => { const p = l.pid && prod(l.pid); return `<tr class="${i === HL ? 'hl' : ''}"><td class="muted small">${i + 1}</td>
+      <td class="click" onclick="A.editLine(${i})"><b>${esc(l.name)}</b><br><span class="small muted">${esc(l.sku || '')}${p ? ' · ' + L('stock', '库存') + ' ' + p.stock : ''}</span>
+      ${l.dto ? `<div class="small" style="color:var(--ok)">${l.promoName ? '🏷️ ' + esc(l.promoName) + ' ' : l.disc ? '-' + l.disc + '% ' : ''}-${eur(l.dto)}</div>` : ''}</td>
+      <td class="r num">${eur(l.price)}</td><td class="c"><div class="qty"><button onclick="A.qty(${i},-1)">−</button><b>${l.qty}</b><button onclick="A.qty(${i},1)">+</button></div></td>
+      <td class="r b num">${eur(l.total)}</td><td class="r"><button class="sm bad" onclick="A.qty(${i},-1e9)">✕</button></td></tr>`; }).join('')}</table>`
+      : `<div class="empty"><div style="font-size:42px">▥</div>${L('Escanee el primer artículo', '请扫描第一件商品')}<br><span class="small">${L('El lector funciona aunque el cursor no esté en la casilla.', '光标不在输入框里也可以直接扫码。')}</span></div>`;
+    const hl = $('#lines tr.hl'); if (hl) hl.scrollIntoView({ block: 'nearest' });
+  }
   let h = m ? `<div class="mbar"><div class="grow"><b>${esc(m.name)}</b> <span class="tag gold">${esc(c.level.name)}${c.level.disc ? ' -' + c.level.disc + '%' : ''}</span>${isBirthday(m) ? ' 🎂' : ''}<br>
       <span class="small">⭐ ${m.points} ${L('pts', '积分')} · 💳 ${eur(m.balance)}</span></div>
       <button class="sm" onclick="A.memberView('${m.id}')">${L('Ficha', '详情')}</button><button class="sm" onclick="A.setMember(null)">✕</button></div>`
-    : `<div class="mbar none"><span class="grow muted">${L('Sin cliente', '未选择会员')}</span><button class="sm" onclick="A.pickMember()">👤 ${L('Cliente', '选择会员')}</button></div>`;
-  h += `<div class="lines">` + (c.lines.length ? c.lines.map((l, i) => `<div class="line">
-      <div class="nm" onclick="A.editLine(${i})">${esc(l.name)}<br><span class="small muted">${eur(l.price)}${l.disc ? ' · -' + l.disc + '%' : ''}</span></div>
-      <div class="qty"><button onclick="A.qty(${i},-1)">−</button><b>${l.qty}</b><button onclick="A.qty(${i},1)">+</button></div>
-      <div class="b num r" style="min-width:70px">${eur(l.total)}</div>
-      ${l.dto ? `<div class="sub">${l.promoName ? '🏷️ ' + esc(l.promoName) + ' ' : ''}${L('Descuento', '优惠')} -${eur(l.dto)}</div>` : ''}</div>`).join('')
-    : `<div class="empty">${L('Escanee o toque un producto para empezar', '扫码或点击商品开始收银')}</div>`) + '</div>';
+    : `<div class="mbar none"><span class="grow muted">${L('Sin cliente (escanee la tarjeta)', '未选会员(可扫会员卡)')}</span><button class="sm" onclick="A.pickMember()">👤 ${L('Cliente', '选择会员')}</button></div>`;
   if (S.users.length > 1) h += `<div class="seller" onclick="A.pickSeller()">🧑 ${L('Vendedor', '销售员')}: <b>${esc(sellerOf().name)}</b> ▾</div>`;
-  h += `<div class="tot">${c.discount ? `<div class="lr"><span>${L('Importe', '原价')}</span><span>${eur(c.gross)}</span></div><div class="lr" style="color:var(--ok)"><span>${L('Descuentos', '优惠')}${c.g ? ' (' + c.g + '%)' : ''}${c.pts ? ' · ' + c.pts + L(' pts', ' 积分') : ''}</span><span>-${eur(c.discount)}</span></div>` : ''}
-    <div class="lr g"><span>${L('TOTAL', '合计')} <span class="small muted" style="font-weight:400">${nItems} ${L('art.', '件')}</span></span><span class="num">${eur(c.total)}</span></div></div>
+  h += `<div class="grow"></div><div class="tot">${c.discount ? `<div class="lr"><span>${L('Importe', '原价')}</span><span>${eur(c.gross)}</span></div><div class="lr" style="color:var(--ok)"><span>${L('Descuentos', '优惠')}${c.g ? ' (' + c.g + '%)' : ''}${c.pts ? ' · ' + c.pts + L(' pts', ' 积分') : ''}</span><span>-${eur(c.discount)}</span></div>` : ''}
+    <div class="lr"><span>${L('Artículos', '件数')}</span><span>${nItems}</span></div>
+    <div class="lr g"><span>${L('TOTAL', '合计')}</span><span class="num">${eur(c.total)}</span></div></div>
     <div class="acts"><button onclick="A.discount()">％ ${L('Dto.', '折扣')}</button><button onclick="A.usePoints()" ${m && S.cfg.points.on ? '' : 'disabled'}>⭐ ${L('Puntos', '积分')}</button>
     <button onclick="A.park()">⏸ ${L('Aparcar', '挂单')}${S.parked.length ? ' (' + S.parked.length + ')' : ''}</button><button class="bad" onclick="A.clearCart()">🗑</button></div>
-    <button class="ok big paybtn" onclick="A.pay()">${L('COBRAR', '收款')} ${eur(c.total)} <span class="small">F9</span></button>
-    <button class="backbtn" onclick="$('#pos').classList.remove('showcart')">← ${L('Productos', '返回商品')}</button>`;
+    <button class="ok big paybtn" onclick="A.pay()">${L('COBRAR', '收款')} ${eur(c.total)} <span class="small">F9</span></button>`;
   $('#cart').innerHTML = h;
-  const fab = $('#fab'); if (fab) fab.textContent = `🛒 ${nItems} · ${eur(c.total)}`;
 }
 const isBirthday = m => { if (!m.birthday) return false; const n = new Date(), b = new Date(n.getFullYear(), Number(m.birthday.slice(5, 7)) - 1, Number(m.birthday.slice(8, 10))); return Math.abs(b - n) < 7 * 864e5; };
 
-A.q = v => { POSF.q = v; drawGrid(); };
-A.cat = c => { POSF.cat = c; drawCats(); drawGrid(); };
+// Casilla de escaneo: multiplicador "3*", sugerencias al escribir, flechas + Enter.
+let SUG = [], SUGI = -1;
+const setMult = n => { POSF.mult = n; const e = $('#mult'); if (e) { e.textContent = '×' + n; e.classList.toggle('hidden', !(n > 1)); } };
+A.q = v => {
+  const mm = v.match(/^(\d{1,3})[*xX]$/);
+  if (mm) { setMult(Number(mm[1])); $('#q').value = ''; v = ''; }
+  const box = $('#sug'); if (!box) return;
+  SUG = v.trim().length >= 2 && !/^\d{6,}$/.test(v.trim()) ? matchProducts(v).slice(0, 8) : []; SUGI = SUG.length ? 0 : -1;
+  drawSug();
+};
+function drawSug() {
+  const box = $('#sug'); if (!box) return;
+  box.classList.toggle('hidden', !SUG.length);
+  box.innerHTML = SUG.map((p, i) => `<div class="${i === SUGI ? 'on' : ''}" onmousedown="event.preventDefault();A.pickSug(${i})"><span class="grow">${esc(pname(p))} <span class="small muted">${esc(p.sku)} · ${L('stock', '库存')} ${p.stock}</span></span><b>${eur(p.price)}</b></div>`).join('');
+}
+A.pickSug = i => { const p = SUG[i]; SUG = []; drawSug(); $('#q').value = ''; A.add(p.id, POSF.mult || 1); setMult(1); beep(); };
+A.qKey = e => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { if (!SUG.length) return; e.preventDefault(); SUGI = (SUGI + (e.key === 'ArrowDown' ? 1 : SUG.length - 1)) % SUG.length; return drawSug(); }
+  if (e.key === 'Escape') { SUG = []; drawSug(); e.target.value = ''; setMult(1); return; }
+  if (e.key !== 'Enter') return;
+  e.preventDefault(); e.stopPropagation(); // que el Enter del lector no pulse botones de ventanas
+  const v = e.target.value.trim();
+  if (!v && CART.lines.length) return A.pay();
+  const exact = findByCode(v);
+  if (!exact && SUG.length && SUGI >= 0) return A.pickSug(SUGI);
+  A.scan(v);
+};
 A.add = (id, qty = 1) => {
   const p = prod(id); if (!p) return;
-  const l = CART.lines.find(l => l.pid === id && !l.disc);
-  if (S.cfg.blockNoStock && p.stock < (l ? l.qty : 0) + qty) return toast(L('Sin stock', '库存不足'), true);
-  if (l) l.qty += qty; else CART.lines.push({ pid: p.id, name: p.name, sku: p.sku, price: p.price, qty, disc: 0, iva: p.iva ?? S.cfg.iva, cost: p.cost || 0 });
-  drawCart(); const li = $('#cart .lines'); if (li) li.scrollTop = li.scrollHeight;
+  const i = CART.lines.findIndex(l => l.pid === id && !l.disc && l.price === p.price), l = CART.lines[i];
+  if (S.cfg.blockNoStock && p.stock < (l ? l.qty : 0) + qty) { beep(false); return toast(L('Sin stock', '库存不足'), true); }
+  if (l) { l.qty += qty; HL = i; } else { CART.lines.push({ pid: p.id, name: p.name, sku: p.sku, price: p.price, qty, disc: 0, iva: p.iva ?? S.cfg.iva, cost: p.cost || 0 }); HL = CART.lines.length - 1; }
+  if (p.stock - (l ? l.qty : qty) < 0) toast(L('⚠️ Stock en negativo: ', '⚠️ 库存将变为负数:') + pname(p));
+  if (VIEW === 'pos') drawCart();
 };
 // Lo que entra por el lector: producto, tarjeta de cliente, vale o número de ticket.
 A.scan = raw => {
-  const code = String(raw).trim(); if (!code) return;
-  const lc = code.toLowerCase(), clear = () => { POSF.q = ''; const q = $('#q'); if (q) q.value = ''; drawGrid(); };
-  const p = S.products.find(p => p.active !== false && ((p.barcode && p.barcode === code) || p.sku.toLowerCase() === lc));
-  if (p) { A.add(p.id); return clear(); }
+  let code = String(raw).trim(); if (!code) return;
+  const mm = code.match(/^(\d{1,3})[*xX](.+)$/); if (mm) { setMult(Number(mm[1])); code = mm[2].trim(); }
+  const lc = code.toLowerCase(), clear = () => { const q = $('#q'); if (q) q.value = ''; SUG = []; drawSug(); };
+  const p = findByCode(code);
+  if (p && p.active !== false) { A.add(p.id, POSF.mult || 1); setMult(1); beep(); return clear(); }
   const m = S.members.find(m => m.code.toLowerCase() === lc || (m.phone && m.phone.replace(/\s/g, '') === code.replace(/\s/g, '')));
-  if (m) { A.setMember(m.id); return clear(); }
+  if (m) { A.setMember(m.id); beep(); return clear(); }
   const v = voucher(code);
-  if (v) { clear(); return A.voucherView(v.code); }
+  if (v) { clear(); beep(); return A.voucherView(v.code); }
   const s = S.sales.find(s => s.no.toLowerCase() === lc);
-  if (s) { clear(); return A.saleView(s.id); }
-  const list = matchProducts();
-  if (list.length === 1) { A.add(list[0].id); return clear(); }
-  if (!list.length) toast(L('Código no encontrado: ', '未找到:') + code, true);
+  if (s) { clear(); beep(); return A.saleView(s.id); }
+  const list = /^\d{6,}$/.test(code) ? [] : matchProducts(code);
+  if (list.length === 1) { A.add(list[0].id, POSF.mult || 1); setMult(1); beep(); return clear(); }
+  if (list.length > 1) return;
+  beep(false); clear();
+  const mult = POSF.mult || 1; setMult(1);
+  modal(`<h3>❓ ${L('Código no encontrado', '找不到这个条码')}</h3><p class="bigamt" style="font-size:22px">${esc(code)}</p>
+    <p class="muted">${p ? L('El producto existe pero está inactivo.', '该商品已停售。') : L('Este código no está en la lista de productos.', '商品资料里没有这个条码。')}</p>
+    <div class="methods">${can('prodEdit') && !p ? `<button class="pri" onclick="A.quickProd('${esc(code)}', p => A.add(p.id, ${mult}))">＋ ${L('Crear producto y vender', '新建商品并加入')}</button>` : ''}
+    <button onclick="closeModal();A.freeItem()">✎ ${L('Vender como artículo libre', '按手输商品卖')}</button></div>${mfoot(btnClose())}`);
 };
-A.qty = (i, d) => { const l = CART.lines[i]; l.qty += d; if (l.qty <= 0) CART.lines.splice(i, 1); drawCart(); };
+// Ventana para buscar con fotos y categorías (cuando no hay código que escanear)
+let BRW = { q: '', cat: '' };
+A.browse = () => {
+  modal(`<h3>🔍 ${L('Productos', '浏览商品')}</h3><input id="br-q" autofocus placeholder="${L('Nombre, referencia, proveedor…', '名称、货号、供应商…')}" value="${esc(BRW.q)}" oninput="BRW.q=this.value;A.brDraw()" onkeydown="if(event.key==='Enter'){event.preventDefault();const t=$('#br-g .tile');if(t)t.click()}">
+    <div class="cats" id="br-c" style="margin:8px 0"></div><div class="gridp" id="br-g" style="max-height:56vh"></div>${mfoot(`<button class="pri" onclick="closeModal()">${L('Listo', '完成')}</button>`)}`, true);
+  A.brDraw();
+};
+A.brDraw = () => {
+  $('#br-c').innerHTML = `<button class="${BRW.cat ? '' : 'on'}" onclick="BRW.cat='';A.brDraw()">${L('Todo', '全部')}</button>` + S.cats.map(c => `<button class="${BRW.cat === c.id ? 'on' : ''}" onclick="BRW.cat='${c.id}';A.brDraw()">${esc(catName(c.id))}</button>`).join('');
+  const ps = matchProducts(BRW.q, BRW.cat).slice(0, 120);
+  $('#br-g').innerHTML = ps.length ? ps.map(p => `<button class="tile" onclick="A.add('${p.id}');beep();toast('＋ ' + ${JSON.stringify(pname(p)).replace(/"/g, '&quot;')})">
+    <div class="im" ${p.img ? `style="background-image:url(${p.img})"` : ''}>${p.img ? '' : esc(pname(p).slice(0, 1).toUpperCase())}</div>
+    <span class="st ${p.stock <= 0 ? 'low' : ''}">${p.stock}</span><div class="nm">${esc(pname(p))}</div><div class="pr">${eur(p.price)}</div></button>`).join('')
+    : `<div class="empty" style="grid-column:1/-1">${L('Sin resultados', '没有找到商品')}</div>`;
+};
+A.qty = (i, d) => { const l = CART.lines[i]; l.qty += d; HL = i; if (l.qty <= 0) { CART.lines.splice(i, 1); HL = -1; } drawCart(); };
 A.clearCart = () => { if (CART.lines.length && !confirm(L('¿Vaciar el ticket?', '清空当前单据?'))) return; CART = newCart(); drawCart(); };
 A.editLine = i => {
   const l = CART.lines[i];
@@ -268,7 +313,7 @@ function finishSale() {
   if (s.pays.some(p => p.m === 'cash')) openDrawer(true);
   afterSale(s);
   if (S.cfg.autoPrint) printDoc(ticketHtml(s));
-  if (VIEW === 'pos') { drawCart(); drawGrid(); }
+  HL = -1; if (VIEW === 'pos') drawCart();
 }
 function afterSale(s) {
   modal(`<h3>✅ ${L('Venta cobrada', '收款成功')} · ${s.no}</h3>

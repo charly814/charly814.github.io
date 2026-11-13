@@ -22,7 +22,7 @@ let LANG = 'zh', USER = null, VIEW = 'pos';
 const L = (es, zh) => LANG === 'zh' ? zh : es;
 
 // ───────── Datos ─────────
-const S = { cfg: null, users: [], cats: [], products: [], members: [], promos: [], vouchers: [], sessions: [], invoices: [], parked: [], sales: [], mlog: [], stocklog: [], att: [] };
+const S = { cfg: null, users: [], cats: [], products: [], members: [], promos: [], vouchers: [], sessions: [], invoices: [], parked: [], sales: [], mlog: [], stocklog: [], att: [], receipts: [] };
 const SHARDED = ['sales', 'mlog', 'stocklog', 'att']; // se guardan por meses para que no crezcan sin límite
 const DEF_CFG = () => ({
   lang: 'zh',
@@ -35,7 +35,7 @@ const DEF_CFG = () => ({
   levels: [{ id: 'l0', name: 'Normal', min: 0, disc: 0, mult: 1 }, { id: 'l1', name: 'Plata', min: 300, disc: 5, mult: 1.5 }, { id: 'l2', name: 'Oro', min: 1000, disc: 10, mult: 2 }],
   valeMonths: 12, empMaxDisc: 10, empReturn: true, blockNoStock: false,
   label: { mode: 'a4', w: 40, h: 30, cols: 5 },
-  comm: { basis: 'base' }, askClock: true,
+  comm: { basis: 'base' }, askClock: true, beep: true,
   seq: {}, lastBackup: 0
 });
 
@@ -123,6 +123,17 @@ function nextNo(prefix, digits = 6) {
   return prefix + '-' + y + '-' + pad(S.cfg.seq[k], digits);
 }
 const prod = id => S.products.find(p => p.id === id);
+// Busca por código de barras exacto o por referencia (sin distinguir mayúsculas).
+const findByCode = code => { code = String(code || '').trim(); if (!code) return null; const lc = code.toLowerCase(); return S.products.find(p => p.barcode === code) || S.products.find(p => p.sku.toLowerCase() === lc) || null; };
+let AC;
+function beep(ok = true) {
+  if (!S.cfg.beep) return;
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+    const o = AC.createOscillator(), g = AC.createGain(); o.type = 'square'; o.frequency.value = ok ? 1800 : 220; g.gain.value = 0.05;
+    o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + (ok ? 0.06 : 0.35));
+  } catch (e) {}
+}
 const member = id => S.members.find(m => m.id === id);
 const catName = id => { const c = S.cats.find(c => c.id === id); return c ? (LANG === 'zh' && c.zh ? c.zh : c.name) : ''; };
 const pname = p => LANG === 'zh' && p.zh ? p.zh : p.name;
@@ -226,11 +237,13 @@ function onKey(e) {
     return;
   }
   if (e.key === 'Escape' && modalOpen() && !$('#modal-box [data-lock]')) return closeModal();
+  if (e.key === 'Enter' && e.target.dataset && e.target.dataset.next) { e.preventDefault(); const n = $('#' + e.target.dataset.next); if (n) { n.focus(); if (n.select) n.select(); } return; }
   if (e.key === 'Enter' && modalOpen() && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON') { const b = $('#modal-box [data-enter]'); if (b) { e.preventDefault(); b.click(); } return; }
-  if (VIEW === 'pos' && !modalOpen()) {
-    if (e.key === 'F9') { e.preventDefault(); return A.pay(); }
+  if (!modalOpen()) {
+    if (VIEW === 'pos' && e.key === 'F9') { e.preventDefault(); return A.pay(); }
+    // El lector escribe como un teclado: si el cursor no está en ninguna casilla, lo mandamos a la de escaneo.
     const tg = e.target.tagName;
-    if (tg !== 'INPUT' && tg !== 'TEXTAREA' && tg !== 'SELECT' && e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const q = $('#q'); if (q) q.focus(); }
+    if (tg !== 'INPUT' && tg !== 'TEXTAREA' && tg !== 'SELECT' && e.key.length === 1 && !e.ctrlKey && !e.metaKey) { const q = $('[data-scan]'); if (q) q.focus(); }
   }
 }
 A.pin = k => {
