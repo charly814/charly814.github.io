@@ -208,6 +208,13 @@
     return { head: head, html: html };
   }
 
+  // Selector de IVA: «general» (o el de la categoría) y los tipos habituales
+  function vatSelect(val, inheritLabel) {
+    var v = val === '' || val == null ? '' : String(Number(val));
+    return '<select data-f="vat"><option value=""' + (v === '' ? ' selected' : '') + '>' + esc(inheritLabel) + '</option>' +
+      P.VAT_RATES.map(function (r) { return '<option value="' + r + '"' + (v === String(r) ? ' selected' : '') + '>' + r + ' %</option>'; }).join('') + '</select>';
+  }
+
   function openProduct(pid, catId) {
     var loc = pid ? locate(pid) : null;
     var cur = loc ? A.menu[loc.ci].items[loc.ii] : null;
@@ -234,7 +241,8 @@
         '<div class="form-grid">' +
         field('name', t('adm.nameEs')) + field('price', t('adm.price'), 'number') +
         field('en', t('adm.nameEn')) + field('zh', t('adm.nameZh')) +
-        field('barcode', t('adm.barcode')) + '<div></div>' +
+        field('barcode', t('adm.barcode')) +
+        '<div class="field"><label>' + t('adm.vat') + '</label>' + vatSelect(st.vat, t('adm.vatInherit', { n: P.vatOf(A.menu.map(function (c) { return c.id === st.cat ? Object.assign({}, c, { items: [{ id: '_' }] }) : c; }), '_', A.settings.vat) })) + '</div>' +
         '<div class="field"><label>' + t('adm.col.cat') + '</label><select data-f="cat">' + A.menu.map(function (c) {
           return '<option value="' + esc(c.id) + '"' + (c.id === st.cat ? ' selected' : '') + '>' + esc(c.icon || '') + ' ' + esc(c.name) + '</option>';
         }).join('') + '</select></div>' +
@@ -345,6 +353,7 @@
         price: price, available: st.available !== false, allergens: st.allergens.slice(), img: cur && !photo.removed ? (cur.img || 0) : 0,
         barcode: String(st.barcode || '').trim()
       };
+      if (st.vat !== '' && st.vat != null && !isNaN(Number(st.vat))) item.vat = Number(st.vat);
       // formatos: los que tienen nombre y precio
       if (!st.combo) {
         var sizes = st.sizes.filter(function (x) { return String(x.name).trim() && String(x.price).trim() !== '' && !isNaN(round2(String(x.price).replace(',', '.'))); })
@@ -404,7 +413,7 @@
   function openCat(cid) {
     var ci = cid ? A.menu.findIndex(function (c) { return c.id === cid; }) : -1;
     var cur = ci >= 0 ? A.menu[ci] : null;
-    var st = cur ? { name: cur.name, en: cur.en || '', zh: cur.zh || '', icon: cur.icon || '' } : { name: '', en: '', zh: '', icon: '🍽️' };
+    var st = cur ? { name: cur.name, en: cur.en || '', zh: cur.zh || '', icon: cur.icon || '', vat: cur.vat == null ? '' : cur.vat } : { name: '', en: '', zh: '', icon: '🍽️', vat: '' };
     var photo = { data: null, removed: false };
     function draw() {
       var prev = photo.data ? '<img src="' + photo.data + '" alt="">'
@@ -416,11 +425,12 @@
           return '<div class="field"><label>' + t(k === 'name' ? 'adm.nameEs' : k === 'en' ? 'adm.nameEn' : 'adm.nameZh') + '</label><input type="text" data-f="' + k + '" value="' + esc(st[k]) + '"></div>';
         }).join('') +
         '<div class="field"><label>' + t('adm.icon') + '</label><input type="text" data-f="icon" maxlength="4" value="' + esc(st.icon) + '" style="width:90px;font-size:22px"></div>' +
+        '<div class="field"><label>' + t('adm.vatCat') + '</label>' + vatSelect(st.vat, t('adm.vatInherit', { n: Number(A.settings.vat) || 0 })) + '</div>' +
         '<div class="field"><label>' + t('adm.photo') + '</label><div class="photo-box"><div class="preview">' + prev + '</div><div>' +
         '<label class="btn primary" style="display:inline-flex;align-items:center;cursor:pointer">' + t('adm.upload') + '<input id="ph-file" type="file" accept="image/*" hidden></label> ' +
         (hasPhoto ? '<button class="btn" data-k="nophoto">' + t('adm.removePhoto') + '</button>' : '') + '</div></div></div>' +
         '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button><button class="btn ok" data-k="OK" style="flex:1">' + t('save') + '</button></div>';
-      modalBox.querySelectorAll('[data-f]').forEach(function (el) { el.addEventListener('input', function () { st[el.dataset.f] = el.value; }); });
+      modalBox.querySelectorAll('[data-f]').forEach(function (el) { el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', function () { st[el.dataset.f] = el.value; }); });
       document.getElementById('ph-file').onchange = function (e) {
         var f = e.target.files[0];
         if (f) compress(f).then(function (d) { photo.data = d; photo.removed = false; draw(); }).catch(function () { toast(t('adm.photoErr')); });
@@ -434,6 +444,7 @@
       var menu = clone(A.menu);
       var c = cur ? menu[ci] : { id: 'c' + Store.newId(), items: [] };
       c.name = String(st.name).trim(); c.en = String(st.en).trim(); c.zh = String(st.zh).trim(); c.icon = String(st.icon).trim() || '🍽️';
+      if (st.vat !== '' && st.vat != null && !isNaN(Number(st.vat))) c.vat = Number(st.vat); else delete c.vat;
       var key = 'c-' + c.id, p = Promise.resolve();
       if (photo.data) { c.img = Date.now(); p = Store.putImage(key, photo.data, c.img); }
       else if (photo.removed && cur && cur.img) { c.img = 0; p = Store.removeImage(key); }
@@ -687,8 +698,10 @@
       if (k === 'X') return closeModal();
       if (k !== 'OK') return;
       if (!String(st.name).trim()) return toast(t('cust.needName'));
+      var nf = P.nifCheck(st.nif);
+      if (String(st.nif || '').trim() && !nf.ok && !confirm(t('cust.badNif', { n: String(st.nif).trim() }))) return;
       var c = Object.assign({}, cur || { id: Store.newId(), balance: 0, createdAt: Date.now() }, st, {
-        name: String(st.name).trim(), nif: String(st.nif || '').trim().toUpperCase()
+        name: String(st.name).trim(), nif: nf.ok ? nf.value : String(st.nif || '').trim().toUpperCase()
       });
       Store.set('customers/' + c.id, c);
       closeModal(); toast(t('adm.saved'));
@@ -1742,6 +1755,11 @@
       case 'set':
         var st = Object.assign({}, A.settings);
         if (d.k === 'vat') st.vat = Number(String(val).replace(',', '.')) || 0;
+        else if (d.k === 'nif') {
+          var own = P.nifCheck(val);
+          st.nif = own.ok ? own.value : String(val).trim().toUpperCase();
+          if (String(val).trim() && !own.ok) toast(t('cust.badNifOwn'));
+        }
         else if (d.k === 'series') st.series = String(val).toUpperCase().replace(/[^A-Z0-9_-]/g, '') || P.DEFAULT_SETTINGS.series;
         else st[d.k] = val;
         // la carta QR no puede leer los ajustes: el interruptor de formatos se copia a lo público

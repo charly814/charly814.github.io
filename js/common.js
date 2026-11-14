@@ -370,6 +370,77 @@
   }
   function fmtQty(q) { return String(round2(q)).replace('.', ','); }
 
+  // ---------------------------------------------------------------- IVA por producto
+  // Tipo de IVA de un producto: el suyo, si no el de su categoría, si no el general.
+  var VAT_RATES = [0, 4, 10, 21];
+  function vatOf(menu, pid, def) {
+    var n = function (v) { return v === '' || v == null || isNaN(Number(v)) ? null : Number(v); };
+    for (var i = 0; i < (menu || []).length; i++) {
+      var c = menu[i];
+      for (var j = 0; j < (c.items || []).length; j++) {
+        if (c.items[j].id === pid) {
+          var a = n(c.items[j].vat), b = n(c.vat);
+          return a != null ? a : b != null ? b : (Number(def) || 0);
+        }
+      }
+    }
+    return Number(def) || 0;
+  }
+  // Desglose por tipo: [{ rate, total, base, tax }]. Las líneas llevan l.vat (si no, el general);
+  // los descuentos se reparten en proporción y los céntimos sueltos van al grupo mayor,
+  // así la suma de los grupos es exactamente el total cobrado.
+  function vatSplit(lines, total, def) {
+    def = Number(def) || 0;
+    var g = {}, sub = 0;
+    (lines || []).forEach(function (l) {
+      var r = l.vat == null || l.vat === '' ? def : Number(l.vat);
+      var amt = l.price * l.qty;
+      g[r] = (g[r] || 0) + amt; sub += amt;
+    });
+    var rates = Object.keys(g).map(Number).sort(function (a, b) { return a - b; });
+    if (!rates.length) rates = [def], g[def] = 0;
+    var out = rates.map(function (r) { return { rate: r, total: sub ? round2(g[r] * total / sub) : 0 }; });
+    var diff = round2(total - out.reduce(function (a, x) { return a + x.total; }, 0));
+    if (diff) {
+      var big = out.slice().sort(function (a, b) { return Math.abs(b.total) - Math.abs(a.total); })[0];
+      big.total = round2(big.total + diff);
+    }
+    out.forEach(function (x) { x.base = round2(x.total / (1 + x.rate / 100)); x.tax = round2(x.total - x.base); });
+    return out;
+  }
+  // Desglose de una venta guardada (las antiguas solo tienen un tipo)
+  function saleVats(sale, def) {
+    if (sale && sale.vats && sale.vats.length) return sale.vats;
+    var vat = sale && sale.vatRate != null ? sale.vatRate : (Number(def) || 0);
+    var total = (sale && sale.total) || 0;
+    var base = sale && sale.base != null ? sale.base : round2(total / (1 + vat / 100));
+    return [{ rate: vat, total: total, base: base, tax: round2(total - base) }];
+  }
+
+  // ---------------------------------------------------------------- NIF / NIE / CIF
+  // Devuelve { ok, type: 'DNI'|'NIE'|'CIF'|'EXT'|'' , value } (value = limpio, en mayúsculas).
+  // Los identificadores extranjeros (IVA intracomunitario: dos letras de país) no se comprueban.
+  function nifCheck(v) {
+    var x = String(v || '').toUpperCase().replace(/[\s.\-_/]/g, '');
+    if (/^ES[A-Z0-9]{9}$/.test(x)) x = x.slice(2);
+    var L = 'TRWAGMYFPDXBNJZSQVHLCKE';
+    if (!x) return { ok: false, type: '', value: '' };
+    if (/^\d{8}[A-Z]$/.test(x)) return { ok: L[Number(x.slice(0, 8)) % 23] === x[8], type: 'DNI', value: x };
+    if (/^[XYZ]\d{7}[A-Z]$/.test(x)) return { ok: L[Number('XYZ'.indexOf(x[0]) + x.slice(1, 8)) % 23] === x[8], type: 'NIE', value: x };
+    if (/^[ABCDEFGHJNPQRSUVW]\d{7}[0-9A-J]$/.test(x)) {
+      var sum = 0;
+      for (var i = 1; i <= 7; i++) {
+        var d = Number(x[i]);
+        if (i % 2) { d *= 2; sum += Math.floor(d / 10) + d % 10; } else sum += d;
+      }
+      var c = (10 - sum % 10) % 10, last = x[8], letter = 'JABCDEFGHI'[c];
+      var ok = 'PQRSNW'.indexOf(x[0]) >= 0 ? last === letter : 'ABEH'.indexOf(x[0]) >= 0 ? last === String(c) : (last === String(c) || last === letter);
+      return { ok: ok, type: 'CIF', value: x };
+    }
+    if (/^[A-Z]{2}[A-Z0-9]{4,13}$/.test(x) && /\d/.test(x)) return { ok: true, type: 'EXT', value: x };
+    return { ok: false, type: '', value: x };
+  }
+
   // Documento de impresión (ver js/devices.js) de un ticket o pre-cuenta.
   // ctx: { table: 'Mesa T5', user: 'ANA', logo: 'data:image/…' }
   function receiptDoc(tk, sale, st, ctx) {
@@ -378,8 +449,8 @@
     var sg = rect ? -1 : 1;      // la rectificativa va en negativo
     var tot = ticketTotals(tk);
     tot = { subtotal: sg * tot.subtotal, discount: sg * tot.discount, total: sale ? sale.total : tot.total };
-    var vat = sale && sale.vatRate != null ? sale.vatRate : (Number(st.vat) || 0);
-    var base = round2(tot.total / (1 + vat / 100));
+    // desglose de IVA: el de la venta, o el que calcula el TPV para la pre-cuenta (ctx.vats)
+    var vats = sale ? saleVats(sale, st.vat) : (ctx.vats || vatSplit(tk.lines, tot.total, st.vat));
     var when = sale ? sale.closedAt : Date.now();
     var lines = function (txt) { return String(txt || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean); };
     var doc = [];
@@ -427,7 +498,11 @@
       if (loy) doc.push(['lr', 'Puntos canjeados (' + tk.loyalty.points + ')', fmt(-sg * loy)]);
     }
     doc.push(['lrb', 'TOTAL', fmt(tot.total)]);
-    if (T.showVat || full) doc.push(['lr', 'Base imponible', fmt(base)], ['lr', 'IVA ' + vat + '%', fmt(tot.total - base)]);
+    if (T.showVat || full) {
+      vats.forEach(function (v) {
+        doc.push(['lr', 'Base imponible' + (vats.length > 1 ? ' ' + v.rate + '%' : ''), fmt(v.base)], ['lr', 'IVA ' + v.rate + '%', fmt(v.tax)]);
+      });
+    }
     else doc.push(['c', 'IVA incluido']);       // obligatorio en la factura simplificada si no se desglosa
     if (sale && T.showPayment) {
       var pays = salePayments(sale);
@@ -603,6 +678,11 @@
     validRanges: validRanges,
     tarifaFor: tarifaFor,
     priceWith: priceWith,
+    VAT_RATES: VAT_RATES,
+    vatOf: vatOf,
+    vatSplit: vatSplit,
+    saleVats: saleVats,
+    nifCheck: nifCheck,
     sizesOf: sizesOf,
     itemName: itemName,
     qrStatus: qrStatus,

@@ -492,3 +492,30 @@ tr.voided td:last-child, tr.voided td:nth-child(2) { text-decoration: none; }
 .sz-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 12px 0 16px; }
 .sz-grid .btn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 10px; font-size: 17px; min-height: 84px; }
 .sz-grid .btn b { font-size: 18px; }
+/* factura A4 (vista previa en pantalla e impresión) */
+.a4-prev { max-height: 52vh; overflow: auto; border: 1px solid var(--line); border-radius: 6px; background: #e5e7eb; padding: 10px; margin-bottom: 10px; }
+.a4-prev .a4 { background: #fff; padding: 22px; box-shadow: 0 1px 4px rgba(0,0,0,.2); }
+.a4, #print-area.a4 { font: 13px/1.45 Arial, Helvetica, sans-serif; color: #111; }
+.a4 .a4-head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 14px; }
+.a4 .a4-head img { max-height: 70px; max-width: 180px; display: block; margin-bottom: 6px; }
+.a4 h1 { font-size: 20px; margin: 0 0 4px; text-align: left; }
+.a4 h2 { font-size: 18px; margin: 0 0 6px; letter-spacing: 1px; }
+.a4 p { margin: 0; }
+.a4 .a4-num { text-align: right; white-space: nowrap; }
+.a4 .a4-cust { border: 1px solid #999; border-radius: 4px; padding: 8px 12px; margin: 0 0 14px auto; width: 55%; }
+.a4 table { width: 100%; border-collapse: collapse; }
+.a4 th { text-align: left; border-bottom: 1px solid #111; padding: 5px 6px; font-size: 12px; }
+.a4 td { padding: 5px 6px; border-bottom: 1px solid #ddd; vertical-align: top; }
+.a4 .r { text-align: right; white-space: nowrap; }
+.a4 td small { display: block; color: #555; }
+.a4 .a4-foot { display: flex; justify-content: space-between; gap: 30px; align-items: flex-start; margin-top: 18px; }
+.a4 .a4-vat { width: 52%; } .a4 .a4-tot { width: 38%; }
+.a4 .a4-tot .tot td { font-size: 17px; font-weight: 700; border-top: 2px solid #111; border-bottom: 0; }
+.a4 .a4-note { margin-top: 14px; color: #444; font-size: 12px; }
+@media print {
+  #print-area.a4 { width: auto; font: 12pt/1.45 Arial, Helvetica, sans-serif; }
+  #print-area.a4 h1 { text-align: left; font-size: 18pt; }
+  #print-area.a4 td { padding: 5px 6px; }
+  #print-area.a4 img { filter: none; }
+}
+.a4 .a4-lines th:first-child { width: 52%; }

@@ -770,12 +770,17 @@
   }
 
   function summarize(sales) {
-    var s = { count: sales.filter(function (x) { return !x.voided && x.invoiceType !== 'R'; }).length, total: 0, byMethod: {}, byUser: {}, discounts: 0 };
+    var s = { count: sales.filter(function (x) { return !x.voided && x.invoiceType !== 'R'; }).length, total: 0, byMethod: {}, byUser: {}, discounts: 0, vat: {} };
     sales.forEach(function (x) {
       s.total += x.total;
       s.discounts += x.discount || 0;
       P.salePayments(x).forEach(function (p) { s.byMethod[p.method] = round2((s.byMethod[p.method] || 0) + p.amount); });
       s.byUser[x.cashier] = round2((s.byUser[x.cashier] || 0) + x.total);
+      P.saleVats(x, S.settings.vat).forEach(function (v) {
+        var k = 'r' + String(v.rate).replace('.', '_');
+        var g = s.vat[k] || (s.vat[k] = { rate: v.rate, base: 0, tax: 0 });
+        g.base = round2(g.base + v.base); g.tax = round2(g.tax + v.tax);
+      });
     });
     s.total = round2(s.total);
     s.discounts = round2(s.discounts);
@@ -825,6 +830,7 @@
           var tag = x.voided ? ' <small class="bad-t">' + t('caja.voided', { n: esc(x.voided.by) }) + '</small>' : x.invoiceType === 'R' ? ' <small class="muted">' + t('caja.rect', { n: esc(x.rectifies) }) + '</small>' : '';
           return '<tr class="' + (x.voided ? 'voided' : '') + '"><td>' + time(x.closedAt) + '</td><td>' + esc(x.invoice || '—') + tag + '</td><td>' + esc(x.table) + '</td><td>' + esc(x.cashier) + '</td><td>' + P.salePayments(x).map(function (p) { return t('m.' + p.method); }).join(' + ') + '</td><td class="num">' + fmt(x.total) + '</td>' +
             '<td><button class="btn" data-act="reprint" data-id="' + esc(x.id) + '">🖨️</button>' +
+            (x.voided ? '' : ' <button class="btn" data-act="a4" data-id="' + esc(x.id) + '" title="' + t('a4.title') + '">A4</button>') +
             (x.voided || x.invoiceType === 'R' ? '' : ' <button class="btn" data-act="reopen" data-id="' + esc(x.id) + '" title="' + t('reopen.btn') + '">↩</button>') +
             (x.invoiceType === 'R' || x.voided ? '' : x.invoiceType === 'F' || x.fullInvoice ? ' <span class="chip">' + esc(x.invoiceType === 'F' ? x.invoice : x.fullInvoice.invoice) + '</span>'
               : ' <button class="btn" data-act="canje" data-id="' + esc(x.id) + '" title="' + t('cust.canje') + '">📄</button>') + '</td></tr>';
@@ -854,7 +860,7 @@
   var GUARD = {
     pay: 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
-    reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
+    a4: 'reprint', reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', walkout: 'walkout', 'wo-recover': 'pay', orders: 'qrOrders',
     'cash-in': 'cashMoves', 'cash-out': 'cashMoves', 'cash-float': 'cashMoves', 'cash-open': 'caja'
   };
@@ -933,6 +939,7 @@
           table: sale.table, lines: sale.lines, openedAt: sale.openedAt, guests: 0, customer: sale.customer || null,
           promo: sale.promo || null, discountPct: sale.discountPct || 0, discountEur: sale.discountEur || 0, loyalty: sale.loyalty || null,
           total: neg(sale.total), subtotal: neg(sale.subtotal), discount: neg(sale.discount), vatRate: sale.vatRate, base: neg(sale.base), vatAmount: neg(sale.vatAmount),
+          vats: sale.vats ? sale.vats.map(function (v) { return { rate: v.rate, total: neg(v.total), base: neg(v.base), tax: neg(v.tax) }; }) : null,
           method: sale.method, payments: P.salePayments(sale).map(function (x) { return Object.assign({}, x, { amount: neg(x.amount) }); }),
           given: neg(sale.total), change: 0, cashier: S.user.name, closedAt: now, reason: 'reopen'
         };
@@ -1195,6 +1202,7 @@
       var c = S.closures[d.id];
       if (c) printReport('CIERRE Z (copia)', c.summary, c.closedAt, c.cash);
     },
+    a4: function (d) { if (S.sales[d.id]) openA4(S.sales[d.id]); },
     reprint: function (d) {
       var s = S.sales[d.id];
       if (!s) return;
@@ -2247,10 +2255,14 @@
         var full = !!(tk.customer && tk.customer.nif);
         nextInvoice(full).then(function (num) {
           var vat = Number(S.settings.vat) || 0;
-          var base = round2(tot.total / (1 + vat / 100));
+          // IVA: cada línea guarda su tipo y la venta, el desglose por tipo
+          var vlines = vatLines(tk.lines);
+          var vats = P.vatSplit(vlines, tot.total, vat);
+          var base = round2(vats.reduce(function (a, v) { return a + v.base; }, 0));
           var id = Store.newId();
           var sale = Object.assign({}, tk, {
             id: id, invoice: num.invoice, total: tot.total, subtotal: tot.subtotal, discount: tot.discount,
+            lines: vlines, vats: vats,
             vatRate: vat, base: base, vatAmount: round2(tot.total - base),
             method: payments.length > 1 ? 'mixto' : payments[0].method, payments: payments,
             invoiceType: full ? 'F' : 'S', customer: tk.customer || null,
@@ -2555,7 +2567,9 @@
       if (k === 'back') { st.creating = false; return draw(); }
       if (k === 'save') {
         if (!st.f.name.trim()) return toast(t('cust.needName'));
-        var c = Object.assign({}, st.f, { id: Store.newId(), name: st.f.name.trim(), nif: st.f.nif.trim().toUpperCase(), balance: 0, createdAt: Date.now() });
+        var nf = P.nifCheck(st.f.nif);
+        if (st.f.nif.trim() && !nf.ok && !confirm(t('cust.badNif', { n: st.f.nif.trim() }))) return;
+        var c = Object.assign({}, st.f, { id: Store.newId(), name: st.f.name.trim(), nif: nf.ok ? nf.value : st.f.nif.trim().toUpperCase(), balance: 0, createdAt: Date.now() });
         S.customers[c.id] = c;
         Store.set('customers/' + c.id, c);
         closeModal();
@@ -2751,14 +2765,21 @@
   }
 
   function writeCsv(all) {
-    var rows = [['Factura', 'Fecha', 'Hora', 'Mesa', 'Camarero', 'Pago', 'Base', 'IVA %', 'Cuota IVA', 'Descuento', 'Total']];
+    // Una fila por factura y tipo de IVA (si una factura lleva dos tipos, dos filas), con el cliente:
+    // es lo que pide la gestoría para el libro de facturas emitidas.
+    var rows = [['Factura', 'Tipo', 'Fecha', 'Hora', 'Mesa', 'Camarero', 'Cliente', 'NIF cliente', 'Pago', 'Base', 'IVA %', 'Cuota IVA', 'Total', 'Descuento', 'Rectifica a', 'Factura completa']];
+    var TYPE = { F: 'Factura', R: 'Rectificativa', S: 'Simplificada' };
     all.forEach(function (x) {
       var d = new Date(x.closedAt);
-      var vat = x.vatRate != null ? x.vatRate : (Number(S.settings.vat) || 0);
-      var base = x.base != null ? x.base : round2(x.total / (1 + vat / 100));
       var num = function (n) { return round2(n).toFixed(2).replace('.', ','); };
-      rows.push([x.invoice || x.id, d.toLocaleDateString('es-ES'), d.toLocaleTimeString('es-ES'), x.table, x.cashier, P.salePayments(x).map(function (p) { return (METHOD_ES[p.method] || p.method) + (P.salePayments(x).length > 1 ? ' ' + num(p.amount) : ''); }).join(' + '),
-        num(base), vat, num(x.total - base), num(x.discount || 0), num(x.total)]);
+      var cust = (x.fullInvoice && x.fullInvoice.customer) || x.customer || {};
+      var pays = P.salePayments(x);
+      P.saleVats(x, S.settings.vat).forEach(function (v, i) {
+        rows.push([x.invoice || x.id, TYPE[x.invoiceType] || 'Simplificada', d.toLocaleDateString('es-ES'), d.toLocaleTimeString('es-ES'), x.table, x.cashier,
+          cust.name || '', cust.nif || '',
+          pays.map(function (p) { return (METHOD_ES[p.method] || p.method) + (pays.length > 1 ? ' ' + num(p.amount) : ''); }).join(' + '),
+          num(v.base), v.rate, num(v.tax), num(v.total), i ? '' : num(x.discount || 0), x.rectifies || '', (x.fullInvoice && x.fullInvoice.invoice) || '']);
+      });
     });
     var csv = '﻿' + rows.map(function (r) {
       return r.map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(';');
@@ -2903,8 +2924,112 @@
   // (red o USB); imprimiendo desde el navegador lo abre el driver al imprimir.
   function directPrinter() { return Devices.cfg().receipt.mode !== 'browser'; }
 
+  // ---------------------------------------------------------------- factura en A4 / PDF / email
+  // Para clientes que piden la factura «en grande»: se imprime en A4 o se guarda como PDF
+  // desde el diálogo de impresión del navegador. Lleva los mismos datos y número que el ticket.
+  function a4Data(sale) {
+    var rect = sale.invoiceType === 'R', fi = sale.fullInvoice;
+    var full = !rect && (sale.invoiceType === 'F' || fi);
+    return {
+      rect: rect, full: full, sg: rect ? -1 : 1,
+      title: rect ? 'FACTURA RECTIFICATIVA' : full ? 'FACTURA' : 'FACTURA SIMPLIFICADA',
+      number: fi ? fi.invoice : sale.invoice,
+      cust: (fi && fi.customer) || sale.customer || null,
+      vats: P.saleVats(sale, S.settings.vat)
+    };
+  }
+  function a4Html(sale) {
+    var st = S.settings, d = a4Data(sale), sg = d.sg, c = d.cust;
+    var nl = function (x) { return esc(x || '').replace(/\r?\n/g, '<br>'); };
+    var extra = (st.ticket && st.ticket.headerExtra) || '';
+    var rows = (sale.lines || []).map(function (l) {
+      var ex = (l.mods || []).filter(function (m) { return m.type === 'extra'; }).map(function (m) { return m.name; });
+      (l.combo || []).forEach(function (x) { if (x.extra) ex.push(x.choice); });
+      return '<tr><td>' + esc(l.name) + (l.part ? ' (' + esc(l.part) + ')' : '') + (ex.length ? '<small>+ ' + esc(ex.join(', ')) + '</small>' : '') + '</td>' +
+        '<td class="r">' + fmtQty(sg * l.qty) + '</td><td class="r">' + fmt(l.price) + '</td>' +
+        '<td class="r">' + (l.vat != null ? l.vat : d.vats[0].rate) + ' %</td><td class="r">' + fmt(sg * l.price * l.qty) + '</td></tr>';
+    }).join('');
+    var disc = '';
+    if (sale.discount) {
+      var promos = P.promoList(sale.promo), loy = (sale.loyalty && sale.loyalty.amount) || 0;
+      var manual = round2(Math.abs(sale.discount) - promos.reduce(function (a, x) { return a + x.amount; }, 0) - loy);
+      disc = '<tr><td>Subtotal</td><td class="r">' + fmt(sale.subtotal) + '</td></tr>' +
+        promos.map(function (x) { return '<tr><td>' + esc(x.name) + '</td><td class="r">' + fmt(-sg * x.amount) + '</td></tr>'; }).join('') +
+        (manual > 0.004 ? '<tr><td>Descuento</td><td class="r">' + fmt(-sg * manual) + '</td></tr>' : '') +
+        (loy ? '<tr><td>Puntos canjeados</td><td class="r">' + fmt(-sg * loy) + '</td></tr>' : '');
+    }
+    var pays = P.salePayments(sale).map(function (x) { return (METHOD_ES[x.method] || x.method) + (x.ref ? ' ' + x.ref : '') + ' ' + fmt(x.amount); }).join(' · ');
+    return '<div class="a4-head"><div>' + (S.logo ? '<img src="' + S.logo + '" alt="">' : '') + '<h1>' + esc(st.name) + '</h1>' +
+      '<p>' + nl(st.address) + (st.nif ? '<br>NIF ' + esc(st.nif) : '') + (extra ? '<br>' + nl(extra) : '') + '</p></div>' +
+      '<div class="a4-num"><h2>' + d.title + '</h2><p><b>Nº ' + esc(d.number) + '</b><br>Fecha: ' + new Date(sale.closedAt).toLocaleDateString('es-ES') +
+      (d.rect ? '<br>Rectifica a: ' + esc(sale.rectifies) + ' (anulación)' : '') +
+      (sale.fullInvoice ? '<br>Sustituye a la factura simplificada ' + esc(sale.invoice) : '') + '</p></div></div>' +
+      (c ? '<div class="a4-cust"><b>Cliente</b><br>' + esc(c.name) + (c.nif ? '<br>NIF: ' + esc(c.nif) : '') +
+        (c.address ? '<br>' + nl(c.address) : '') + (c.cp || c.city ? '<br>' + esc([c.cp, c.city].filter(Boolean).join(' ')) : '') + '</div>' : '') +
+      '<table class="a4-lines"><tr><th>Descripción</th><th class="r">Cant.</th><th class="r">Precio</th><th class="r">IVA</th><th class="r">Importe</th></tr>' + rows + '</table>' +
+      '<div class="a4-foot"><table class="a4-vat"><tr><th>Tipo IVA</th><th class="r">Base imponible</th><th class="r">Cuota</th></tr>' +
+      d.vats.map(function (v) { return '<tr><td>' + v.rate + ' %</td><td class="r">' + fmt(v.base) + '</td><td class="r">' + fmt(v.tax) + '</td></tr>'; }).join('') + '</table>' +
+      '<table class="a4-tot">' + disc + '<tr class="tot"><td>TOTAL</td><td class="r">' + fmt(sale.total) + '</td></tr></table></div>' +
+      '<p class="a4-note">Precios con IVA incluido. Forma de pago: ' + esc(pays) + '</p>' +
+      (st.footer ? '<p class="a4-note">' + nl(st.footer) + '</p>' : '');
+  }
+  function printA4(sale) {
+    var pa = document.getElementById('print-area');
+    pa.className = 'a4';
+    pa.innerHTML = a4Html(sale);
+    var style = document.createElement('style');
+    style.id = 'a4-page';
+    style.textContent = '@page { size: A4; margin: 14mm; }';
+    document.head.appendChild(style);
+    var done = function () {
+      window.removeEventListener('afterprint', done);
+      if (style.parentNode) style.parentNode.removeChild(style);
+      pa.className = ''; pa.innerHTML = '';
+    };
+    window.addEventListener('afterprint', done);
+    var old = document.title;
+    document.title = a4Data(sale).number + ' ' + (S.settings.name || '');   // nombre del PDF
+    setTimeout(function () { window.print(); document.title = old; setTimeout(done, 60000); }, 80);
+    audit('reprint', 'A4 ' + a4Data(sale).number + ' · ' + fmt(sale.total));
+  }
+  // El navegador no puede adjuntar el PDF: se abre el correo con el texto de la factura y se adjunta a mano.
+  function mailA4(sale) {
+    var d = a4Data(sale), st = S.settings, c = d.cust || {};
+    var cur = S.customers[c.id] || {};
+    var body = [st.name, st.address, st.nif ? 'NIF ' + st.nif : '', '', d.title + ' ' + d.number, 'Fecha: ' + new Date(sale.closedAt).toLocaleDateString('es-ES'), '']
+      .concat((sale.lines || []).map(function (l) { return fmtQty(d.sg * l.qty) + ' x ' + l.name + '  ' + fmt(d.sg * l.price * l.qty); }))
+      .concat([''], d.vats.map(function (v) { return 'Base ' + v.rate + '%: ' + fmt(v.base) + '  IVA: ' + fmt(v.tax); }), ['TOTAL: ' + fmt(sale.total), '', st.footer || '']).filter(function (x) { return x != null; }).join('\n');
+    location.href = 'mailto:' + encodeURIComponent(cur.email || c.email || '') + '?subject=' + encodeURIComponent(d.title.charAt(0) + d.title.slice(1).toLowerCase() + ' ' + d.number + ' · ' + (st.name || '')) + '&body=' + encodeURIComponent(body);
+  }
+  function openA4(sale) {
+    var d = a4Data(sale);
+    function draw() {
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>📄 ' + esc(d.title.charAt(0) + d.title.slice(1).toLowerCase()) + ' ' + esc(d.number) + '</h2>' +
+        '<div class="a4-prev"><div class="a4">' + a4Html(sale) + '</div></div>' +
+        (!d.full && !d.rect ? '<p class="muted">' + t('a4.simple') + '</p>' : '') +
+        '<p class="muted">' + t('a4.help') + '</p>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('close') + '</button>' +
+        '<button class="btn" data-k="MAIL">✉️ ' + t('a4.mail') + '</button>' +
+        '<button class="btn ok" data-k="PRINT" style="flex:1">🖨️ ' + t('a4.print') + '</button></div>';
+    }
+    openModal('a4', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === 'PRINT') return printA4(sale);
+      if (k === 'MAIL') return mailA4(sale);
+    });
+  }
+
+  // tipo de IVA de cada línea, según el producto (los artículos libres, el general)
+  function vatLines(lines) {
+    var def = Number(S.settings.vat) || 0;
+    return (lines || []).map(function (l) {
+      return Object.assign({}, l, { vat: l.pid && !l.free && l.pid !== 'libre' ? P.vatOf(S.menu, l.pid, def) : def });
+    });
+  }
   function printTicket(tk, sale, opts) {
-    var doc = P.receiptDoc(tk, sale, S.settings, { table: tableLabelEs(tk.table), user: S.user.name, logo: S.logo });
+    var vats = sale ? null : P.vatSplit(vatLines(tk.lines), P.ticketTotals(tk).total, S.settings.vat);
+    var doc = P.receiptDoc(tk, sale, S.settings, { table: tableLabelEs(tk.table), user: S.user.name, logo: S.logo, vats: vats });
     var big = !!(S.settings.ticket && S.settings.ticket.big);
     return printDoc(doc, 'receipt', Object.assign({ big: big }, opts));
   }
@@ -2949,6 +3074,9 @@
     Object.keys(s.byMethod).forEach(function (m) { doc.push(['lr', METHOD_ES[m] || m, fmt(s.byMethod[m] || 0)]); });
     doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)]);
     if (s.walkouts) doc.push(['lr', 'Impagados (' + s.walkouts.n + ') sin cobrar', fmt(s.walkouts.total)]);
+    Object.keys(s.vat || {}).map(function (k) { return s.vat[k]; }).sort(function (a, b) { return a.rate - b.rate; }).forEach(function (v) {
+      doc.push(['lr', 'Base ' + v.rate + '%', fmt(v.base)], ['lr', 'IVA ' + v.rate + '%', fmt(v.tax)]);
+    });
     doc.push(['hr']);
     Object.keys(s.byUser).forEach(function (u) { doc.push(['lr', u, fmt(s.byUser[u])]); });
     if (cash) {
