@@ -749,6 +749,7 @@
       act('split', '✂️', t('act.split')) +
       act('move', '⇄', t('act.move')) +
       act('join', '🔗', t('act.join')) +
+      (childrenOf(S.table).length ? act('unjoin-pick', '⛓️‍💥', t('act.unjoin')) : '') +
       act('temp-near', '➕', t('act.tempNear')) +
       act('table-qr', '🔳', t('act.qr')) +
       (S.temp[S.table] && !tk.lines.length ? act('temp-del', '🗑️', t('act.tempDel'), '', 'danger') : '') +
@@ -858,7 +859,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables',
+    pay: 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables', 'unjoin-pick': 'tables', unjoin: 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     a4: 'reprint', reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', walkout: 'walkout', 'wo-recover': 'pay', orders: 'qrOrders',
@@ -1026,7 +1027,8 @@
       if (back) { S.table = back; S.view = 'ticket'; }
       render();
     },
-    unjoin: function (d) { Store.remove('joins/' + d.id); },
+    unjoin: function (d) { unjoinTables([d.id]); },
+    'unjoin-pick': function () { openUnjoin(); },
     'table-qr': function () { window.open('qr.html?mesas=' + encodeURIComponent(S.table), '_blank', 'noopener'); },
     'qr-pause': function () { Store.update('public/qr', { paused: !S.qr.paused }); },
     'kitchen-toggle': function () {
@@ -1357,9 +1359,37 @@
   }
 
   // Juntar `child` a la mesa principal S.joinInto (su cuenta pasa a la principal).
+  // Separar mesas juntadas. La cuenta se queda en la mesa principal (lo pedido ya está junto):
+  // si alguien quiere pagar aparte, se usa «Dividir» o «Cambiar mesa» con sus líneas.
+  function unjoinTables(ids) {
+    var upd = {};
+    ids.forEach(function (c) { upd['joins/' + c] = null; delete S.joins[c]; });
+    Store.update('', upd);
+    toast(t('msg.unjoined', { c: ids.join(', ') }));
+    render();
+  }
+  function openUnjoin() {
+    var kids = childrenOf(S.table);
+    if (!kids.length) return;
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>' + t('unjoin.title', { t: esc(tableLabel(S.table)) }) + '</h2><p class="muted">' + t('unjoin.help') + '</p>' +
+        '<div class="sz-grid">' + kids.map(function (c) { return '<button class="btn" data-k="u:' + esc(c) + '"><span>' + esc(tableLabel(c)) + '</span><b>✕</b></button>'; }).join('') + '</div>' +
+        '<div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button>' +
+        (kids.length > 1 ? '<button class="btn danger" data-k="ALL" style="flex:1">' + t('unjoin.all') + '</button>' : '') + '</div>';
+    }
+    openModal('unjoin', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === 'ALL') { closeModal(); return unjoinTables(kids); }
+      if (k.indexOf('u:') === 0) { closeModal(); return unjoinTables([k.slice(2)]); }
+    });
+  }
+
   function joinTable(child) {
     var main = S.joinInto;
-    if (mainOf(child) === main) return;
+    if (child === main) return;
+    // ya estaba junta: tocarla otra vez la separa
+    if (mainOf(child) === main) return unjoinTables([child]);
     var upd = {};
     var src = S.tickets[child];
     if (src && src.lines.length) {

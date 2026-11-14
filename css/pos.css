@@ -302,7 +302,7 @@ code { background: #f5f6fa; padding: 1px 5px; border-radius: 4px; user-select: t
   .cats { display: flex; overflow-x: auto; flex-wrap: nowrap; padding: 8px; scrollbar-width: none; }
   .cat { flex: 0 0 auto; min-width: 84px; }
   .prods { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 78px; }
-  .actions .act:not(.pay):not([data-act="free"]):not([data-act="mods"]):not([data-act="kitchen"]):not([data-act="join"]):not([data-act="temp-near"]) { display: none; }
+  .actions .act:not(.pay):not([data-act="free"]):not([data-act="mods"]):not([data-act="kitchen"]):not([data-act="join"]):not([data-act="unjoin-pick"]):not([data-act="temp-near"]) { display: none; }
   .actions { position: sticky; bottom: 0; }
   .m-ticket-actions { display: flex; gap: 4px; padding: 8px; overflow-x: auto; background: #fff; border-top: 1px solid var(--line); position: sticky; bottom: 0; }
   .m-ticket-actions .act { min-width: 64px; }
