@@ -519,3 +519,11 @@ tr.voided td:last-child, tr.voided td:nth-child(2) { text-decoration: none; }
   #print-area.a4 img { filter: none; }
 }
 .a4 .a4-lines th:first-child { width: 52%; }
+/* móvil: los botones de abajo en cuadrícula, todos a la vista (antes había que deslizar para ver «Cambiar mesa») */
+@media (max-width: 860px) {
+  .actions { display: grid; grid-template-columns: repeat(5, 1fr); overflow-x: visible; gap: 2px; padding: 6px; }
+  .actions .act { min-width: 0; padding: 6px 2px; font-size: 11px; }
+  .actions .act b { font-size: 19px; }
+  .actions .act.pay { grid-column: 1 / -1; flex-direction: row; justify-content: center; gap: 8px; min-height: 48px; font-size: 16px; }
+  .actions .act[data-act="print-ticket"] { display: flex !important; }
+}
