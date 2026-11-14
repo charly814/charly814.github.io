@@ -40,6 +40,8 @@ A.pRows = () => {
 };
 A.pSelAll = on => $$('.p-sel').forEach(c => { c.checked = on; PF.sel[c.value] = on; });
 let pImg = '';
+// Tras guardar un producto: vuelve a la pantalla actual (y a la ventana de productos si se abrió desde allí).
+function afterProd() { closeModal(); V[VIEW](); if (BRW.back) { BRW.back = false; A.browse(); } }
 A.prodEdit = id => {
   const p = id ? prod(id) : { sku: '', barcode: '', name: '', zh: '', cat: PF.cat || (S.cats[0] || {}).id, price: '', cost: '', stock: 0, min: 3, iva: S.cfg.iva, img: '', active: true, noDisc: false, supplier: '' };
   pImg = p.img || '';
@@ -70,10 +72,10 @@ A.prodSave = id => {
   Object.assign(p, { name, zh: fv('p-z'), sku, barcode: bc, cat: fv('p-c'), price, cost: r2(num(fv('p-o'))), iva: num(fv('p-i')), min: num(fv('p-m')), supplier: fv('p-v'), img: pImg, active: fv('p-a'), noDisc: fv('p-x'), fav: fv('p-fv') });
   dirty('products');
   if (!id) { const k = num(fv('p-k')); if (k) stockMove(p, k, 'in', 'Stock inicial'); }
-  closeModal(); V.products();
+  afterProd();
 };
-A.prodDup = id => { const p = prod(id), nc = newCodes(); S.products.push({ ...p, id: uid(), ...nc, name: p.name + ' (copia)', stock: 0 }); dirty('products'); closeModal(); V.products(); };
-A.prodDel = id => { if (!confirm(L('¿Eliminar el producto? Los tickets antiguos se conservan.', '确定删除该商品?历史单据会保留。'))) return; S.products = S.products.filter(p => p.id !== id); dirty('products'); closeModal(); V.products(); };
+A.prodDup = id => { const p = prod(id), nc = newCodes(); S.products.push({ ...p, id: uid(), ...nc, name: p.name + ' (copia)', stock: 0 }); dirty('products'); afterProd(); };
+A.prodDel = id => { if (!confirm(L('¿Eliminar el producto? Los tickets antiguos se conservan.', '确定删除该商品?历史单据会保留。'))) return; S.products = S.products.filter(p => p.id !== id); dirty('products'); afterProd(); };
 A.stockForm = id => {
   const p = prod(id);
   modal(`<h3>📦 ${esc(p.name)}</h3><p>${L('Stock actual', '当前库存')}: <b>${p.stock}</b></p>
@@ -83,7 +85,7 @@ A.stockForm = id => {
 };
 A.stockSave = id => {
   const p = prod(id), t = fv('s-t'), q = num(fv('s-q')); if (q < 0 || (!q && t !== 'set')) return;
-  stockMove(p, t === 'in' ? q : t === 'out' ? -q : q - p.stock, t === 'set' ? 'inventory' : t, fv('s-n')); closeModal(); V.products();
+  stockMove(p, t === 'in' ? q : t === 'out' ? -q : q - p.stock, t === 'set' ? 'inventory' : t, fv('s-n')); afterProd();
 };
 A.prodCsv = () => download('productos.csv', csv([['referencia', 'codigo_barras', 'nombre', 'nombre_chino', 'categoria', 'pvp', 'coste', 'stock', 'minimo', 'iva', 'proveedor'],
   ...S.products.map(p => [p.sku, p.barcode, p.name, p.zh, (S.cats.find(c => c.id === p.cat) || {}).name, String(p.price).replace('.', ','), String(p.cost).replace('.', ','), p.stock, p.min, p.iva, p.supplier])]), 'text/csv');

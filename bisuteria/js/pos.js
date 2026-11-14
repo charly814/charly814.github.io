@@ -154,7 +154,7 @@ A.scan = raw => {
     <button onclick="closeModal();A.freeItem()">✎ ${L('Vender como artículo libre', '按手输商品卖')}</button></div>${mfoot(btnClose())}`);
 };
 // Ventana para buscar con fotos y categorías (cuando no hay código que escanear)
-let BRW = { q: '', cat: '' };
+let BRW = { q: '', cat: '', back: false };
 A.browse = () => {
   modal(`<h3>🔍 ${L('Productos', '浏览商品')}</h3><input id="br-q" autofocus placeholder="${L('Nombre, referencia, proveedor…', '名称、货号、供应商…')}" value="${esc(BRW.q)}" oninput="BRW.q=this.value;A.brDraw()" onkeydown="if(event.key==='Enter'){event.preventDefault();const t=$('#br-g .tile');if(t)t.click()}">
     <div class="cats" id="br-c" style="margin:8px 0"></div><div class="gridp" id="br-g" style="max-height:56vh"></div>${mfoot(`<button class="pri" onclick="closeModal()">${L('Listo', '完成')}</button>`)}`, true);
@@ -162,10 +162,11 @@ A.browse = () => {
 };
 A.brDraw = () => {
   $('#br-c').innerHTML = `<button class="${BRW.cat ? '' : 'on'}" onclick="BRW.cat='';A.brDraw()">${L('Todo', '全部')}</button>` + S.cats.map(c => `<button class="${BRW.cat === c.id ? 'on' : ''}" onclick="BRW.cat='${c.id}';A.brDraw()">${esc(catName(c.id))}</button>`).join('');
-  const ps = matchProducts(BRW.q, BRW.cat).slice(0, 120);
+  const ps = matchProducts(BRW.q, BRW.cat).slice(0, 120), ed = can('prodEdit'), st = can('stock');
   $('#br-g').innerHTML = ps.length ? ps.map(p => `<button class="tile" onclick="A.add('${p.id}');beep();toast('＋ ' + ${JSON.stringify(pname(p)).replace(/"/g, '&quot;')})">
     <div class="im" ${p.img ? `style="background-image:url(${p.img})"` : ''}>${p.img ? '' : esc(pname(p).slice(0, 1).toUpperCase())}</div>
-    <span class="st ${p.stock <= 0 ? 'low' : ''}">${p.stock}</span><div class="nm">${esc(pname(p))}</div><div class="pr">${eur(p.price)}</div></button>`).join('')
+    <span class="st ${p.stock <= 0 ? 'low' : ''}">${p.stock}</span><div class="nm">${esc(pname(p))}</div><div class="pr">${eur(p.price)}</div>
+    ${ed || st ? `<div class="tedit">${ed ? `<span onclick="event.stopPropagation();BRW.back=true;A.prodEdit('${p.id}')">✏️ ${L('Editar', '修改')}</span>` : ''}${st ? `<span onclick="event.stopPropagation();BRW.back=true;A.stockForm('${p.id}')">📦 ${L('Stock', '库存')}</span>` : ''}</div>` : ''}</button>`).join('')
     : `<div class="empty" style="grid-column:1/-1">${L('Sin resultados', '没有找到商品')}</div>`;
 };
 A.qty = (i, d) => { const l = CART.lines[i]; l.qty += d; HL = i; if (l.qty <= 0) { CART.lines.splice(i, 1); HL = -1; } drawCart(); };
