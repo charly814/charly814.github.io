@@ -817,6 +817,11 @@
       }).join('') + '</table>' : '') + '</div>';
     var wos = Object.keys(S.walkouts || {}).map(function (k) { return S.walkouts[k]; })
       .filter(function (w) { return w.status !== 'paid' || w.at > Date.now() - 7 * 86400000; }).sort(function (a, b) { return b.at - a.at; }).slice(0, 30);
+    var drs = shiftDrawers();
+    var drawerCard = '<div class="card"><h3>💶 ' + t('drawer.title') + ' <span class="muted" style="font-weight:400">· ' + t('drawer.count', { n: drs.length }) + '</span></h3>' +
+      (drs.length ? '<div class="scroll-x"><table class="list">' + drs.slice().reverse().map(function (a) {
+        return '<tr><td>' + time(a.at) + '</td><td>' + esc(a.user) + (a.by && a.by !== a.user ? ' <small class="muted">(' + t('audit.authBy', { n: esc(a.by) }) + ')</small>' : '') + '</td><td class="muted">' + esc(a.detail || '') + '</td></tr>';
+      }).join('') + '</table></div>' : '<p class="muted">' + t('drawer.none') + '</p>') + '</div>';
     var woCard = wos.length ? '<div class="card"><h3>🏃 ' + t('wo.list') + '</h3><div class="scroll-x"><table class="list">' + wos.map(function (w) {
       return '<tr class="' + (w.status === 'paid' ? 'voided' : '') + '"><td>' + new Date(w.at).toLocaleString('es-ES', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) + '</td><td>' + esc(w.table) + '</td><td>' + esc(w.waiter || w.user) +
         '</td><td>' + esc(w.note || '') + '</td><td class="num">' + fmt(w.total) + '</td><td>' +
@@ -834,7 +839,7 @@
       '<button class="btn" data-act="debt-pay">' + t('cust.debtPay') + '</button>' +
       '<button class="btn" data-act="gift">' + t('gift.btn') + '</button>' +
       '<button class="btn danger" data-act="close-z">' + t('caja.closeZ') + '</button></div></div>' +
-      woCard +
+      woCard + drawerCard +
       '<div class="card"><h3>' + t('caja.tickets') + '</h3>' + (sales.length ? '<div class="scroll-x"><table class="list"><tr><th>' + t('caja.time') + '</th><th>' + t('caja.invoice') + '</th><th>' + t('tb.tables') + '</th><th>' + t('caja.waiter') + '</th><th>' + t('caja.method') + '</th><th class="num">' + t('total') + '</th><th></th></tr>' +
         sales.slice().reverse().map(function (x) {
           var tag = x.voided ? ' <small class="bad-t">' + t('caja.voided', { n: esc(x.voided.by) }) + '</small>' : x.invoiceType === 'R' ? ' <small class="muted">' + t('caja.rect', { n: esc(x.rectifies) }) + '</small>' : '';
@@ -1181,6 +1186,7 @@
     'print-x': function () {
       var sx = summarize(salesList()), wo = shiftWalkouts();
       if (wo.length) sx.walkouts = { n: wo.length, total: round2(wo.reduce(function (a, w) { return a + w.total; }, 0)) };
+      sx.drawers = drawerSummary();
       printReport('INFORME X (sin cierre)', sx, Date.now());
     },
     csv: function () { exportCsv(); },
@@ -1202,6 +1208,7 @@
     var c = { id: id, closedAt: Date.now(), user: S.user.name, summary: summarize(sales), cash: cash };
     var wo = shiftWalkouts();
     if (wo.length) c.summary.walkouts = { n: wo.length, total: round2(wo.reduce(function (a, w) { return a + w.total; }, 0)) };
+    c.summary.drawers = drawerSummary();
     // 1) ventas al archivo (IndexedDB + nube)  2) cierre + vaciar turno, de una vez
     Store.archive(id, { id: id, closedAt: c.closedAt, sales: S.sales }).then(function () {
       var upd = { sales: null };
@@ -1230,10 +1237,15 @@
       if (s.fullInvoice) return printDoc(P.receiptDoc(s, s, S.settings, { table: tableLabelEs(s.table), user: s.cashier, logo: S.logo, full: s.fullInvoice }), 'receipt');
       printTicket(s, s);
     },
+    // Abrir el cajón sin venta: queda apuntado siempre (hora y quién), aunque el cajón no responda
     drawer: function () {
       Devices.openDrawer().then(function () {
         audit('drawer', '');
-      }).catch(function (e) { toast(e.message === 'browser' ? t('dev.drawerBrowser') : t('dev.err', { e: e.message })); });
+        toast(t('drawer.logged', { h: time(Date.now()) }));
+      }).catch(function (e) {
+        audit('drawer', e.message === 'browser' ? t('drawer.noDirect') : 'error: ' + e.message);
+        toast(e.message === 'browser' ? t('dev.drawerBrowser') : t('dev.err', { e: e.message }));
+      });
     }
   });
 
@@ -2876,6 +2888,16 @@
   function lastCloseAt() {
     return Object.keys(S.closures || {}).reduce(function (a, k) { return Math.max(a, S.closures[k].closedAt || 0); }, 0);
   }
+  // aperturas del cajón sin venta en este turno (desde el último cierre)
+  function shiftDrawers() {
+    var from = lastCloseAt();
+    return Object.keys(S.audit || {}).map(function (k) { return S.audit[k]; })
+      .filter(function (a) { return a && a.action === 'drawer' && a.at > from; }).sort(function (a, b) { return a.at - b.at; });
+  }
+  function drawerSummary() {
+    var d = shiftDrawers();
+    return d.length ? d.map(function (a) { return { at: a.at, user: a.by && a.by !== a.user ? a.user + ' (' + a.by + ')' : a.user }; }) : null;
+  }
   // impagados de este turno (desde el último cierre) que siguen sin cobrar
   function shiftWalkouts() {
     var from = lastCloseAt();
@@ -3260,6 +3282,9 @@
     Object.keys(s.byMethod).forEach(function (m) { doc.push(['lr', METHOD_ES[m] || m, fmt(s.byMethod[m] || 0)]); });
     doc.push(['lr', 'Descuentos', fmt(s.discounts)], ['lrb', 'TOTAL', fmt(s.total)]);
     if (s.walkouts) doc.push(['lr', 'Impagados (' + s.walkouts.n + ') sin cobrar', fmt(s.walkouts.total)]);
+    var dr = s.drawers || [];
+    doc.push(['lr', 'Aperturas de cajón sin venta', String(dr.length)]);
+    dr.forEach(function (a) { doc.push(['t', '  ' + new Date(a.at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) + ' ' + a.user]); });
     Object.keys(s.vat || {}).map(function (k) { return s.vat[k]; }).sort(function (a, b) { return a.rate - b.rate; }).forEach(function (v) {
       doc.push(['lr', 'Base ' + v.rate + '%', fmt(v.base)], ['lr', 'IVA ' + v.rate + '%', fmt(v.tax)]);
     });

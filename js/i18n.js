@@ -761,6 +761,12 @@
 
     // ---- reabrir ticket cobrado
     'perm.reopen': ['Reabrir tickets ya cobrados', 'Reopen tickets already paid', '重新打开已结账的单'],
+    'audit.authBy': ['autorizó {n}', 'authorised by {n}', '{n} 授权'],
+    'drawer.title': ['Aperturas del cajón sin venta', 'Drawer opened without a sale', '无销售开钱箱记录'],
+    'drawer.count': ['{n} en este turno', '{n} this shift', '本班 {n} 次'],
+    'drawer.none': ['Ninguna en este turno.', 'None this shift.', '本班还没有。'],
+    'drawer.logged': ['💶 Cajón abierto · anotado a las {h}', '💶 Drawer opened · logged at {h}', '💶 已开钱箱 · 已记录 {h}'],
+    'drawer.noDirect': ['impresora no conectada directamente', 'printer not connected directly', '打印机不是直接连接'],
     'undo.paid': ['Deshacer', 'Undo', '撤销'],
     'reopen.btn': ['Reabrir (cobrado por error)', 'Reopen (paid by mistake)', '重新打开（误按已付款）'],
     'reopen.confirm': ['¿Reabrir {n} ({t}, {a})? Se emite una factura rectificativa que la anula y los productos vuelven a la mesa.', 'Reopen {n} ({t}, {a})? A rectifying invoice cancels it and the items go back to the table.', '重新打开 {n}（{t}，{a}）？系统会开一张红字发票（factura rectificativa）冲销它，商品回到桌上。'],
