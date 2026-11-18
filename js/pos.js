@@ -60,6 +60,7 @@
     sel: -1,
     buf: '',
     moveFrom: null,
+    movePick: false,
     showTicket: false,
     conn: Store.mode === 'local' ? 'local' : 'connecting',
     menu: P.DEFAULT_MENU,
@@ -647,6 +648,8 @@
         '<button class="btn ok" data-act="layout-edit">' + t('map.editDone') + '</button></div>'
       : '<div class="map-tools">' +
         '<button class="btn temp-btn" data-act="temp-new">' + t('map.tempAdd') + '</button>' +
+        '<button class="btn" data-act="open-tickets">📋 ' + t('ot.btn') + '</button>' +
+        '<button class="btn" data-act="move-start">' + t('map.moveBtn') + '</button>' +
         '<button class="btn" data-act="join-start">' + t('map.join') + '</button>' +
         qrControls() +
         (isAdmin() ? '<button class="btn" data-act="layout-edit">' + t('map.edit') + '</button>' : '') + '</div>';
@@ -654,6 +657,7 @@
       (S.cashLoaded && !cashIsOpen() ? '<div class="banner warn-banner"><span>💶 ' + t('open.banner') + '</span><button class="btn ok" data-act="cash-open">' + t('open.btn') + '</button></div>' : '') +
       (S.recovery ? '<div style="padding:12px 12px 0">' + recoveryCard() + '</div>' : '') +
       tools +
+      (S.movePick ? '<div class="banner"><span>' + t('map.movePick') + '</span><button class="btn" data-act="move-cancel">' + t('cancel') + '</button></div>' : '') +
       (S.moveFrom ? '<div class="banner"><span>' + t('map.move', { t: '<b>' + esc(tableLabel(S.moveFrom)) + '</b>' }) + '</span><button class="btn" data-act="move-cancel">' + t('cancel') + '</button></div>' : '') +
       (S.joinPick ? '<div class="banner"><span>' + t('map.joinPick') + '</span><button class="btn" data-act="join-done">' + t('cancel') + '</button></div>' : '') +
       (S.joinInto ? '<div class="banner"><span>' + t('map.joinBanner', { t: '<b>' + esc(S.joinInto) + '</b>' }) + '</span><button class="btn ok" data-act="join-done">' + t('done') + '</button></div>' : '') +
@@ -711,8 +715,12 @@
       key('4') + key('5') + key('6') + key('DTO€', 'DTO €', 'fn') +
       key('1') + key('2') + key('3') + key('PREC', 'PREC', 'fn') +
       key('0') + key(',') + key('CLR', 'CLR', 'fn') + key('CANT', 'CANT', 'fn') +
-      // quitar una unidad de la línea elegida: al lado del teclado, que es donde se mira
-      '<button class="minus-key" data-act="qty-minus">❌ ' + t('act.minus') + '</button>' +
+      // atajos al lado del teclado, que es donde se mira
+      '<div class="pad-acts">' +
+      '<button data-act="print-ticket"><b>🧾</b>' + t('act.print') + '</button>' +
+      '<button data-act="pay-cash"><b>💶</b>' + t('act.payCash') + '</button>' +
+      '<button data-act="del-line"><b>🗑️</b>' + t('act.del') + '</button>' +
+      '<button class="minus-key" data-act="qty-minus"><b>❌</b>' + t('act.minus') + '</button></div>' +
       '</div>' +
       '<nav class="m-ticket-actions">' +
       act('print-ticket', '🧾', t('act.print')) + act('mods', '✏️', t('act.mod')) +
@@ -747,6 +755,7 @@
       act('free', '✎', t('act.free')) +
       act('del-line', '🗑️', t('act.del')) +
       act('split', '✂️', t('act.split')) +
+      act('open-tickets', '📋', t('ot.btn')) +
       act('move', '⇄', t('act.move')) +
       act('join', '🔗', t('act.join')) +
       (childrenOf(S.table).length ? act('unjoin-pick', '⛓️‍💥', t('act.unjoin')) : '') +
@@ -859,7 +868,7 @@
 
   // Permiso que necesita cada botón (los que no aparecen, cualquiera)
   var GUARD = {
-    pay: 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', join: 'tables', 'join-start': 'tables', 'unjoin-pick': 'tables', unjoin: 'tables',
+    pay: 'pay', 'pay-cash': 'pay', split: 'pay', gift: 'pay', tarifa: 'price', reopen: 'reopen', free: 'free', 'debt-pay': 'pay', canje: 'reprint', drawer: 'drawer', move: 'tables', 'move-start': 'tables', join: 'tables', 'join-start': 'tables', 'unjoin-pick': 'tables', unjoin: 'tables',
     'temp-new': 'tables', 'temp-near': 'tables', 'qr-pause': 'qrControl', 'kitchen-toggle': 'qrControl',
     a4: 'reprint', reprint: 'reprint', 'reprint-k': 'reprint', 'print-z': 'reprint', 'print-x': 'caja', csv: 'caja',
     'close-z': 'closeZ', 'cancel-ticket': 'cancel', walkout: 'walkout', 'wo-recover': 'pay', orders: 'qrOrders',
@@ -906,6 +915,7 @@
 
     'open-table': function (d) {
       if (S.moveFrom) return moveTo(mainOf(d.id));
+      if (S.movePick) { S.movePick = false; return startMove(mainOf(d.id)); }
       if (S.joinPick) { S.joinPick = false; S.joinInto = mainOf(d.id); return render(); }
       if (S.joinInto) return joinTable(d.id);
       // una mesa juntada abre la cuenta de su mesa principal
@@ -1008,8 +1018,14 @@
     },
     split: function () {
       if (!ticketOf(S.table).lines.length) return toast(t('msg.empty'));
-      openSplit();
+      openSplitMenu();
     },
+    'pay-cash': function () {
+      var tk = ticketOf(S.table);
+      if (!tk.lines.length) return toast(t('msg.empty'));
+      openPay(tk, { quickCash: true });
+    },
+    'open-tickets': function () { openTickets(); },
     'temp-new': function () { openTemp(null); },
     'temp-near': function () { openTemp(S.table); },
     'temp-del': function () {
@@ -1046,7 +1062,9 @@
       Store.remove('floorplan'); S.fp = null;
     },
     'decor-add': function () { openDecorAdd(); },
-    'move-cancel': function () { S.moveFrom = null; render(); },
+    'move-cancel': function () { S.moveFrom = null; S.movePick = false; render(); },
+    // Cambiar mesa desde el plano: primero la mesa con cuenta, luego la de destino
+    'move-start': function () { S.movePick = true; S.joinInto = null; S.joinPick = false; render(); },
     'show-ticket': function () { S.showTicket = true; render(); },
     'hide-ticket': function () { S.showTicket = false; render(); },
 
@@ -1259,7 +1277,7 @@
       var price = round2(a.base + extrasOf(mods) + comboExtra(a.combo));
       var same = tk.lines.filter(function (l) {
         return l.pid === a.pid && l.name === a.name && l.price === price && !l.sent && (l.note || '') === (a.note || '') &&
-          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV && !a.combo && !l.combo && !l.part;
+          sameMods(l.mods, mods) && (l.src || 'pos') === (a.src || 'pos') && (l.dev || DEV) === DEV && !a.combo && !l.combo && !l.part && !l.partOf;
       })[0];
       if (same) { same.qty = round2(same.qty + a.qty); S.lastAdded = { table: tk.table, line: same }; }
       else {
@@ -1337,6 +1355,40 @@
     }
     saveTicket(tk); render();
   }
+
+  function startMove(id) {
+    var tk = S.tickets[id];
+    if (!tk || !(tk.lines || []).length) { toast(t('map.moveEmpty', { t: tableLabel(id) })); return render(); }
+    S.moveFrom = id; render();
+  }
+  // Mantener pulsada una mesa con cuenta en el plano = cambiarla de mesa
+  var lp = null, lpAt = 0, lpUp = 0;
+  app.addEventListener('pointerdown', function (e) {
+    if (S.view !== 'map' || S.editLayout || S.moveFrom || S.movePick || S.joinInto || S.joinPick) return;
+    var el = e.target.closest('[data-act="open-table"]');
+    if (!el) return;
+    var id = mainOf(el.dataset.id), tk = S.tickets[id];
+    if (!tk || !(tk.lines || []).length) return;
+    var x0 = e.clientX, y0 = e.clientY;
+    lp = { x: x0, y: y0, timer: setTimeout(function () {
+      lp = null; lpAt = Date.now();
+      if (navigator.vibrate) navigator.vibrate(30);
+      if (!can('tables')) return allow('tables', function () { startMove(id); });
+      startMove(id);
+    }, 600) };
+  });
+  ['pointerup', 'pointercancel'].forEach(function (ev) {
+    app.addEventListener(ev, function () {
+      if (lp) { clearTimeout(lp.timer); lp = null; }
+      if (lpAt) { lpUp = Date.now(); lpAt = 0; }   // se soltó el dedo de la pulsación larga
+    }, true);
+  });
+  app.addEventListener('pointermove', function (e) {
+    if (lp && Math.abs(e.clientX - lp.x) + Math.abs(e.clientY - lp.y) > 12) { clearTimeout(lp.timer); lp = null; }
+  });
+  // el «clic» que llega al soltar después de mantener pulsado no abre la mesa
+  app.addEventListener('click', function (e) { if (Date.now() - lpUp < 120) { lpUp = 0; e.stopPropagation(); e.preventDefault(); } }, true);
+  app.addEventListener('contextmenu', function (e) { if (e.target.closest('[data-act="open-table"]')) e.preventDefault(); });
 
   function moveTo(target) {
     var from = S.moveFrom;
@@ -2155,7 +2207,8 @@
   // Se puede pagar en varias partes (a partes iguales o con varias formas de pago).
   function openPay(tk, opts) {
     opts = opts || {};
-    var st = { method: opts.account ? 'cuenta' : 'efectivo', given: '', print: !(tk.billAt && directPrinter()), busy: false, multi: false, parts: [], part: '', gift: '', usePts: false };
+    if (opts.quickCash) setTimeout(function () { if (modal.dataset.kind === 'pay' && modalHandler) modalHandler('OK'); }, 0);
+    var st = { method: opts.account ? 'cuenta' : 'efectivo', given: '', print: !(tk.billAt && directPrinter()), busy: false, multi: !!opts.multi, parts: [], part: '', gift: '', usePts: false };
     var LC = P.loyaltyCfg(S.settings);
     var lcust = LC.on && tk.customer && S.customers[tk.customer.id];
     var redeem = lcust ? P.loyaltyRedeem(LC, lcust.points, P.ticketTotals(Object.assign({}, tk, { loyalty: null })).total) : null;
@@ -2328,7 +2381,11 @@
             if (st.print) printTicket(sale, sale, { drawer: drawer });
             else if (drawer) Devices.openDrawer().catch(function () { /* navegador: lo abre el driver al imprimir */ });
             toast(t('msg.paid', { n: fmt(tot.total) }) + (sale.change ? ' · ' + t('msg.change', { n: fmt(sale.change) }) : ''));
-            if (opts.rest && opts.rest.lines.length) { S.tickets[tk.table] = opts.rest; S.sel = -1; render(); return; }
+            if (opts.rest && opts.rest.lines.length) {
+              S.tickets[tk.table] = opts.rest; S.sel = -1; render();
+              if (opts.then) setTimeout(opts.then, 350);
+              return;
+            }
             delete S.tickets[tk.table];
             S.view = 'map'; S.table = null; S.showTicket = false; render();
           });
@@ -2345,10 +2402,22 @@
   // Un plato compartido (p. ej. unas bravas entre 3) se parte en n líneas con el
   // importe repartido al céntimo; cada persona coge la suya. qty = importe / precio,
   // así la suma de cantidades vuelve a ser la original y los informes cuadran.
-  function shareLine(tk, i, n) {
+  function shareLine(tk, i, n, noSave) {
     var l = tk.lines[i], total = round2(l.price * l.qty), cents = Math.round(total * 100);
     var base = Math.floor(cents / n), extra = cents - base * n, grp = Store.newId();
     var parts = [];
+    var whole = l.qty / n;
+    if (whole >= 1 && Math.abs(whole - Math.round(whole)) < 1e-9) {
+      for (var w = 0; w < n; w++) {
+        var cw = Object.assign({}, l, { qty: Math.round(whole), part: null, partOf: grp });
+        delete cw.id; delete cw.ord;
+        parts.push(cw);
+      }
+      tk.lines.splice.apply(tk.lines, [i, 1].concat(parts));
+      if (noSave) return;
+      audit('share', tableLabel(tk.table) + ' · ' + l.name + ' ÷ ' + n);
+      return saveTicket(tk);
+    }
     for (var k = 0; k < n; k++) {
       var amt = (base + (k < extra ? 1 : 0)) / 100;
       var c = Object.assign({}, l, { qty: l.price ? amt / l.price : round2(l.qty / n), part: (l.qty === 1 ? '' : fmtQty(l.qty) + ' · ') + '1/' + n, partOf: grp });
@@ -2356,6 +2425,7 @@
       parts.push(c);
     }
     tk.lines.splice.apply(tk.lines, [i, 1].concat(parts));
+    if (noSave) return;
     audit('share', tableLabel(tk.table) + ' · ' + l.name + ' ÷ ' + n);
     return saveTicket(tk);
   }
@@ -2371,9 +2441,95 @@
     return saveTicket(tk);
   }
 
-  function openSplit() {
+  // ---------------------------------------------------------------- tickets abiertos
+  // Todas las cuentas sin cobrar: mesa, quién la abrió y cuándo, cliente y total. Tocar = abrir.
+  function openTickets() {
+    function rows() {
+      return Object.keys(S.tickets).map(function (k) { return S.tickets[k]; })
+        .filter(function (x) { return x && (x.lines || []).length; })
+        .sort(function (a, b) { return (a.openedAt || 0) - (b.openedAt || 0); });
+    }
+    function draw() {
+      var list = rows(), sum = 0;
+      modalBox.className = 'modal-box wide';
+      modalBox.innerHTML = '<h2>🧾 ' + t('ot.title') + '</h2>' +
+        (list.length ? '<div class="scroll-x"><table class="list ot"><tr><th>' + t('ot.where') + '</th><th>' + t('ot.user') + '</th><th>' + t('ot.cust') + '</th><th class="num">' + t('total') + '</th></tr>' +
+          list.map(function (x) {
+            var tot = P.ticketTotals(x).total; sum += tot;
+            var kids = childrenOf(x.table);
+            return '<tr data-k="go:' + esc(x.table) + '"><td><b>' + esc(tableLabel(x.table)) + '</b>' + (kids.length ? ' <small class="muted">🔗 ' + esc(kids.join(', ')) + '</small>' : '') + (x.billAt ? ' 🧾' : '') + '</td>' +
+              '<td>' + esc(x.user || '') + '<br><small class="muted">' + (x.openedAt ? new Date(x.openedAt).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '') + '</small></td>' +
+              '<td>' + esc((x.customer && x.customer.name) || '') + '</td><td class="num"><b>' + fmt(tot) + '</b></td></tr>';
+          }).join('') + '</table></div><p class="pay-left">' + t('ot.sum', { n: list.length, t: fmt(round2(sum)) }) + '</p>'
+          : '<p class="muted">' + t('ot.none') + '</p>') +
+        '<div class="btn-row"><button class="btn" data-k="X" style="flex:1">' + t('close') + '</button></div>';
+    }
+    openModal('tickets', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k.indexOf('go:') === 0) {
+        closeModal();
+        S.table = k.slice(3); S.view = 'ticket'; S.sel = -1; S.buf = ''; S.showTicket = false; render();
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- dividir: tres maneras
+  function openSplitMenu() {
+    var tk = ticketOf(S.table), n = 2;
+    function draw() {
+      modalBox.className = 'modal-box';
+      modalBox.innerHTML = '<h2>✂️ ' + t('split.menu') + ' · ' + esc(tableLabel(tk.table)) + ' · ' + fmt(P.ticketTotals(tk).total) + '</h2>' +
+        '<div class="split-menu">' +
+        '<button class="sm-opt" data-k="equal"><b>➗ ' + t('split.equalT') + '</b><span>' + t('split.equalD') + '</span></button>' +
+        '<h3>' + t('split.accounts') + '</h3>' +
+        '<div class="sm-opt sm-auto"><b>👥 ' + t('split.autoT') + '</b><span>' + t('split.autoD') + '</span>' +
+        '<div class="stepper-row"><button class="btn" data-k="n-">−</button><b>' + n + '</b><button class="btn" data-k="n+">+</button>' +
+        '<span class="muted">' + t('split.each', { n: fmt(round2(P.ticketTotals(tk).total / n)) }) + '</span>' +
+        '<button class="btn ok" data-k="auto">' + t('split.go') + ' →</button></div></div>' +
+        '<button class="sm-opt" data-k="manual"><b>☑️ ' + t('split.manualT') + '</b><span>' + t('split.manualD') + '</span></button>' +
+        '</div><div class="btn-row"><button class="btn" data-k="X">' + t('cancel') + '</button></div>';
+    }
+    openModal('split-menu', draw, function (k) {
+      if (k === 'X') return closeModal();
+      if (k === 'n-') { n = Math.max(2, n - 1); return draw(); }
+      if (k === 'n+') { n = Math.min(12, n + 1); return draw(); }
+      if (k === 'equal') { closeModal(); return openPay(tk, { multi: true }); }
+      if (k === 'manual') { closeModal(); return openSplit(); }
+      if (k === 'auto') { closeModal(); return splitAuto(tk, n); }
+    });
+  }
+  // Cuentas separadas automáticas: cada producto se reparte entre n (al céntimo) y
+  // se cobra una cuenta detrás de otra; cada una lleva su parte de todo.
+  function splitAuto(tk, n) {
+    for (var i = tk.lines.length - 1; i >= 0; i--) {
+      if (!tk.lines[i].part) shareLine(tk, i, n, true);
+    }
+    saveTicket(tk);
+    audit('share', tableLabel(tk.table) + ' · ' + t('split.autoT') + ' ÷ ' + n);
+    nextAuto();
+  }
+  function nextAuto() {
     var tk = ticketOf(S.table);
-    var pick = tk.lines.map(function () { return 0; });
+    if (!tk.lines.length) return;
+    var seen = {}, k = 0;
+    // una parte de cada plato repartido (y lo que no está repartido, en la última cuenta)
+    var groups = {};
+    tk.lines.forEach(function (l) { if (l.partOf) groups[l.partOf] = (groups[l.partOf] || 0) + 1; });
+    var left = Math.max.apply(null, [0].concat(Object.keys(groups).map(function (g) { return groups[g]; })));
+    var pick = tk.lines.map(function (l) {
+      if (!l.partOf) return left <= 1 ? l.qty : 0;
+      if (seen[l.partOf]) return 0;
+      seen[l.partOf] = true; k++;
+      return l.qty;
+    });
+    if (!k && !pick.some(Boolean)) return openSplit();
+    openSplit({ pick: pick, auto: left });
+  }
+
+  function openSplit(o) {
+    o = o || {};
+    var tk = ticketOf(S.table);
+    var pick = o.pick || tk.lines.map(function () { return 0; });
     var sharing = -1;   // línea con los botones ÷2 ÷3… abiertos
     function part() {
       var lines = [], rest = [];
@@ -2392,18 +2548,18 @@
     function draw() {
       var pr = part();
       modalBox.className = 'modal-box wide';
-      modalBox.innerHTML = '<h2>' + t('split.title', { t: esc(tableLabel(tk.table)) }) + '</h2><p class="muted">' + t('split.help') + '</p>' +
+      modalBox.innerHTML = '<h2>' + t('split.title', { t: esc(tableLabel(tk.table)) }) + (o.auto ? ' · ' + t('split.autoLeft', { n: o.auto }) : '') + '</h2><p class="muted">' + t(o.auto ? 'split.autoHelp' : 'split.help') + '</p>' +
         '<table class="list split">' + tk.lines.map(function (l, i) {
           var amt = round2(l.price * l.qty);
           return '<tr><td>' + esc(lineName(l)) + (l.part ? ' <i class="tag part">÷ ' + esc(l.part) + '</i>' : '') +
-            '<small class="muted"> ' + (l.part ? fmt(amt) : fmt(l.price)) + '</small>' +
+            '<small class="muted"> ' + (l.partOf ? fmt(amt) : fmt(l.price)) + '</small>' +
             (sharing === i ? '<div class="share-pick"><span class="muted">' + t('split.shareAmong') + '</span>' + [2, 3, 4, 5, 6, 8].map(function (n) {
               return '<button class="btn" data-k="n:' + i + ':' + n + '">÷' + n + ' <small>' + fmt(round2(amt / n)) + '</small></button>';
             }).join('') + '</div>' : '') + '</td>' +
             '<td class="num"><span class="stepper-row">' +
-            (l.part ? '<button class="btn" title="' + esc(t('split.unshare')) + '" data-k="u:' + i + '">↩</button>'
+            (l.partOf ? '<button class="btn" title="' + esc(t('split.unshare')) + '" data-k="u:' + i + '">↩</button>'
               : '<button class="btn' + (sharing === i ? ' on' : '') + '" title="' + esc(t('split.share')) + '" data-k="s:' + i + '">÷</button>') +
-            (l.part ? '<button class="btn take' + (pick[i] ? ' on' : '') + '" data-k="a:' + i + '">' + (pick[i] ? '✓ ' : '') + t('split.take') + '</button>'
+            (l.partOf ? '<button class="btn take' + (pick[i] ? ' on' : '') + '" data-k="a:' + i + '">' + (pick[i] ? '✓ ' : '') + t('split.take') + '</button>'
               : '<button class="btn" data-k="m:' + i + '">−</button><b>' + fmtQty(pick[i]) + ' / ' + fmtQty(l.qty) + '</b>' +
               '<button class="btn" data-k="p:' + i + '">+</button><button class="btn" data-k="a:' + i + '">' + t('split.all') + '</button>') + '</span></td></tr>';
         }).join('') + '</table>' +
@@ -2436,7 +2592,7 @@
       var pr = part();
       if (!pr.sub.lines.length) return toast(t('split.none'));
       closeModal();
-      openPay(pr.sub, { rest: pr.rest });
+      openPay(pr.sub, { rest: pr.rest, then: o.auto ? nextAuto : null });
     });
   }
 
