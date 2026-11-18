@@ -2380,7 +2380,7 @@
             var drawer = payments.some(function (x) { return x.method === 'efectivo'; }) && Devices.cfg().drawerOnCash;
             if (st.print) printTicket(sale, sale, { drawer: drawer });
             else if (drawer) Devices.openDrawer().catch(function () { /* navegador: lo abre el driver al imprimir */ });
-            toast(t('msg.paid', { n: fmt(tot.total) }) + (sale.change ? ' · ' + t('msg.change', { n: fmt(sale.change) }) : ''));
+            toastUndo(t('msg.paid', { n: fmt(tot.total) }) + (sale.change ? ' · ' + t('msg.change', { n: fmt(sale.change) }) : ''), id);
             if (opts.rest && opts.rest.lines.length) {
               S.tickets[tk.table] = opts.rest; S.sel = -1; render();
               if (opts.then) setTimeout(opts.then, 350);
@@ -3324,7 +3324,22 @@
   });
 
   var toastTimer;
+  // Aviso de «cobrado» con botón para deshacerlo (por si se pulsó cobrar sin querer):
+  // es la misma reapertura de Caja (factura rectificativa y los productos vuelven a la mesa).
+  function toastUndo(msg, saleId) {
+    var el = document.getElementById('toast');
+    el.innerHTML = '<span>' + esc(msg) + '</span> <button class="toast-undo" type="button">↩ ' + esc(t('undo.paid')) + '</button>';
+    el.classList.remove('hidden');
+    el.classList.add('has-btn');
+    el.querySelector('.toast-undo').onclick = function () {
+      el.classList.add('hidden'); el.classList.remove('has-btn');
+      allow('reopen', function () { ACTIONS.reopen({ id: saleId }); });
+    };
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.add('hidden'); el.classList.remove('has-btn'); }, 12000);
+  }
   function toast(msg) {
+    document.getElementById('toast').classList.remove('has-btn');
     var el = document.getElementById('toast');
     el.textContent = msg;
     el.classList.remove('hidden');

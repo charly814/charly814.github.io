@@ -548,3 +548,6 @@ table.ot tr[data-k]:hover td { background: #f5f6fa; }
   .ticket-view .actions .act { flex: 1 0 74px; }
   .ticket-view .actions .act.pay { flex: 2 0 150px; }
 }
+/* aviso «cobrado» con botón deshacer */
+.toast.has-btn { display: flex; align-items: center; gap: 12px; pointer-events: auto; padding-right: 8px; }
+.toast .toast-undo { border: 0; background: #fff; color: var(--ink); border-radius: 999px; padding: 6px 14px; font-weight: 700; font-size: 15px; cursor: pointer; }

@@ -761,6 +761,7 @@
 
     // ---- reabrir ticket cobrado
     'perm.reopen': ['Reabrir tickets ya cobrados', 'Reopen tickets already paid', '重新打开已结账的单'],
+    'undo.paid': ['Deshacer', 'Undo', '撤销'],
     'reopen.btn': ['Reabrir (cobrado por error)', 'Reopen (paid by mistake)', '重新打开（误按已付款）'],
     'reopen.confirm': ['¿Reabrir {n} ({t}, {a})? Se emite una factura rectificativa que la anula y los productos vuelven a la mesa.', 'Reopen {n} ({t}, {a})? A rectifying invoice cancels it and the items go back to the table.', '重新打开 {n}（{t}，{a}）？系统会开一张红字发票（factura rectificativa）冲销它，商品回到桌上。'],
     'reopen.done': ['Reabierto en {t} · rectificativa {n}', 'Reopened on {t} · rectifying invoice {n}', '已在 {t} 重新打开 · 红字发票 {n}'],
