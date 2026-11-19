@@ -20,10 +20,25 @@
   var AUTH_KEY = 'platet-auth:' + root;
   var auth = '';
   try { auth = localStorage.getItem(AUTH_KEY) || ''; } catch (e) { /* sin almacenamiento */ }
+  // Enlace de emparejamiento (QR que enseña la app del ordenador de caja): …/pos.html#k=<clave>
+  try {
+    var hk = /[#&]k=([^&]+)/.exec(location.hash);
+    if (hk) {
+      auth = decodeURIComponent(hk[1]);
+      localStorage.setItem(AUTH_KEY, auth);
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  } catch (e) { /* sin almacenamiento */ }
 
-  var KEY = 'platet-db:' + root;
-  var SEQ_KEY = 'platet-seq:' + root;
-  var OUT_KEY = 'platet-outbox:' + root;
+  // Con servidor (nube o el ordenador de caja), cada página guarda su propia copia: el
+  // servidor es quien manda y así el TPV y la gestión abiertos a la vez no se pisan.
+  // El TPV usa el nombre de siempre. Sin servidor (modo local) todas comparten una sola,
+  // porque es la única manera de que se vean entre ellas.
+  var page = (location.pathname.split('/').pop() || 'pos.html').replace(/\.html$/, '');
+  var SUF = base && page !== 'pos' && page !== 'index' ? ':' + page : '';
+  var KEY = 'platet-db:' + root + SUF;
+  var SEQ_KEY = 'platet-seq:' + root + SUF;
+  var OUT_KEY = 'platet-outbox:' + root + SUF;
 
   function parts(p) { return String(p || '').split('/').filter(Boolean); }
   function clone(v) { return v == null ? null : JSON.parse(JSON.stringify(v)); }
@@ -62,10 +77,15 @@
 
   // ---------------------------------------------------------------- copia local
 
-  var mem = null;
+  // Varias páginas abiertas a la vez (TPV + gestión) comparten esta copia: antes de leer o
+  // escribir se mira si otra la ha cambiado (contador SEQ) y, si es así, se vuelve a leer.
+  // Si no, una página podía guardar encima su copia vieja y borrar lo último de la otra.
+  var mem = null, memSeq = -1;
   function load() {
-    if (mem) return mem;
+    var sq = seq();
+    if (mem && sq === memSeq) return mem;
     try { mem = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { mem = {}; }
+    memSeq = sq;
     return mem;
   }
   function seq() { return Number(localStorage.getItem(SEQ_KEY)) || 0; }
@@ -86,6 +106,7 @@
       localStorage.setItem(KEY, JSON.stringify(mem));
       if (outbox) localStorage.setItem(OUT_KEY, JSON.stringify(outbox));
       localStorage.setItem(SEQ_KEY, String(n));
+      memSeq = n;
     } catch (e) {
       emit('platet-storage-error', e.message);
     }
@@ -94,7 +115,7 @@
 
   // Otra pestaña ha cambiado los datos.
   window.addEventListener('storage', function (e) {
-    if (e.key === KEY) { mem = null; fire(); }
+    if (e.key === KEY || e.key === SEQ_KEY) { mem = null; memSeq = -1; fire(); }
     if (e.key === OUT_KEY) emit('platet-pending', loadOutbox().length);
   });
 
@@ -127,7 +148,7 @@
       return new Promise(function (resolve) {
         var tx;
         try { tx = d.transaction('snap', 'readwrite', { durability: 'strict' }); } catch (e) { tx = d.transaction('snap', 'readwrite'); }
-        tx.objectStore('snap').put({ seq: seq(), db: load(), outbox: loadOutbox(), at: Date.now() }, 'last');
+        tx.objectStore('snap').put({ seq: seq(), db: load(), outbox: loadOutbox(), at: Date.now() }, 'last' + SUF);
         tx.oncomplete = tx.onerror = tx.onabort = function () { resolve(); };
       });
     }).catch(function () { /* sin IndexedDB: queda localStorage */ }).then(function () {
@@ -138,7 +159,7 @@
   // Recuperación al arrancar
   var ready = idb().then(function (d) {
     return new Promise(function (resolve) {
-      var g = d.transaction('snap', 'readonly').objectStore('snap').get('last');
+      var g = d.transaction('snap', 'readonly').objectStore('snap').get('last' + SUF);
       g.onsuccess = function () { resolve(g.result); };
       g.onerror = function () { resolve(null); };
     });
@@ -148,6 +169,7 @@
       localStorage.setItem(KEY, JSON.stringify(mem));
       localStorage.setItem(OUT_KEY, JSON.stringify(snap.outbox || []));
       localStorage.setItem(SEQ_KEY, String(snap.seq));
+      memSeq = snap.seq;
       emit('platet-restored', { seq: snap.seq, at: snap.at });
       fire();
       flush();
@@ -252,7 +274,7 @@
         });
       });
     };
-    if (navigator.locks && navigator.locks.request) navigator.locks.request('platet-flush-' + root, run);
+    if (navigator.locks && navigator.locks.request) navigator.locks.request('platet-flush-' + root + SUF, run);
     else run();
   }
   window.addEventListener('online', function () { delay = 2000; flush(); });
@@ -270,8 +292,40 @@
     return db || {};
   }
   var streams = {};
+  // Ordenador de caja (app de Windows): el servidor es este mismo ordenador por HTTP/1.1 y el
+  // navegador solo abre 6 conexiones con él; todas las rutas van por una sola conexión.
+  var multi = { paths: [], es: null, timer: null };
+  function applyEvent(p, kind, m) {
+    var db = load();
+    if (kind === 'put') db = setAt(db, parts(p).concat(parts(m.path)), m.data);
+    else Object.keys(m.data || {}).forEach(function (k) { db = setAt(db, parts(p).concat(parts(m.path), parts(k)), m.data[k]); });
+    persist(reapplyPending(db || {}), null);
+    fire();
+  }
+  function multiOpen() {
+    multi.timer = null;
+    if (multi.es) multi.es.close();
+    var es = new EventSource(base + '/__platet/stream?' + multi.paths.map(function (x) { return 'p=' + encodeURIComponent(x); }).join('&') +
+      (auth ? '&auth=' + encodeURIComponent(auth) : ''));
+    multi.es = es;
+    ['put', 'patch'].forEach(function (kind) {
+      es.addEventListener(kind, function (e) {
+        var m = JSON.parse(e.data);
+        applyEvent(m.sub, kind, m);
+        if (kind === 'put') { connOk(); flush(); }
+      });
+    });
+    es.onerror = function () { connLost(!navigator.onLine); };
+  }
   function subscribe(p) {
     if (!base) return;
+    if (cfg.desktop) {
+      var k = parts(p).join('/');
+      if (multi.paths.indexOf(k) >= 0) return;
+      multi.paths.push(k);
+      if (!multi.timer) multi.timer = setTimeout(multiOpen, 30);
+      return;
+    }
     var key = parts(p).join('/');
     if (streams[key]) return;
     var es = new EventSource(url(p));
