@@ -1,0 +1,35 @@
+# Instalador de Windows del TPV (desktop/). Se construye en un Windows de GitHub y se
+# publica como «Release»: la app instalada lo ve y se actualiza sola.
+# Para sacar una versión nueva: subir "version" en desktop/package.json y llevarlo a main.
+name: TPV Windows
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/package.json']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Instalar
+        working-directory: desktop
+        run: npm ci
+      - name: Probar el servidor del local
+        working-directory: desktop
+        run: node -e "require('./server.js'); console.log('server ok')"
+      - name: Construir y publicar
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist

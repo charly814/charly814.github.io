@@ -852,11 +852,24 @@
 
   // ---------------------------------------------------------------- impresoras y cajón
 
+  // app de Windows: lista de impresoras instaladas (se pide una vez)
+  var deskPrinters = null;
   function secDevices() {
     var c = Devices.cfg();
+    if (window.platetDesktop && deskPrinters === null) {
+      deskPrinters = [];
+      window.platetDesktop.printers().then(function (l) { deskPrinters = l || []; render(); }).catch(function () { /* sin lista */ });
+    }
+    function printerSel(which, d) {
+      var list = (deskPrinters || []).slice();
+      if (d.printer && list.map(function (x) { return x.name; }).indexOf(d.printer) < 0) list.unshift({ name: d.printer });
+      return '<div class="field"><label>' + t('dev.winPrinter') + '</label><select data-dev="' + which + '.printer">' +
+        (d.mode === 'browser' ? '<option value="">' + t('dev.winDefault') + '</option>' : '<option value="">—</option>') +
+        list.map(function (x) { return '<option value="' + esc(x.name) + '"' + (d.printer === x.name ? ' selected' : '') + '>' + esc(x.name) + (x.isDefault ? ' ★' : '') + '</option>'; }).join('') + '</select></div>';
+    }
     function block(which) {
       var d = c[which];
-      var modes = (which === 'kitchen' ? ['same'] : []).concat(['browser', 'epos', 'serial']);
+      var modes = (which === 'kitchen' ? ['same'] : []).concat(window.platetDesktop ? ['desktop', 'browser', 'epos'] : ['browser', 'epos', 'serial']);
       return '<div class="card"><h3>' + t('dev.' + which) + '</h3>' +
         '<div class="field"><label>' + t('dev.mode') + '</label><select data-dev="' + which + '.mode">' + modes.map(function (m) {
           return '<option value="' + m + '"' + (d.mode === m ? ' selected' : '') + '>' + t('dev.m.' + m) + '</option>';
@@ -864,11 +877,16 @@
         (d.mode === 'epos' ? '<div class="form-grid"><div class="field"><label>' + t('dev.ip') + '</label><input type="text" data-dev="' + which + '.ip" value="' + esc(d.ip) + '" placeholder="192.168.1.50"></div>' +
           '<div class="field"><label>' + t('dev.width') + '</label><select data-dev="' + which + '.width"><option value="48"' + (+d.width === 48 ? ' selected' : '') + '>80 mm</option><option value="32"' + (+d.width === 32 ? ' selected' : '') + '>58 mm</option></select></div></div>' +
           '<label><input type="checkbox" data-dev="' + which + '.https"' + (d.https ? ' checked' : '') + '> ' + t('dev.https') + '</label>' : '') +
+        (window.platetDesktop && (d.mode === 'desktop' || d.mode === 'browser') ? '<div class="form-grid">' + printerSel(which, d) +
+          (d.mode === 'desktop' ? '<div class="field"><label>' + t('dev.width') + '</label><select data-dev="' + which + '.width"><option value="48"' + (+d.width === 48 ? ' selected' : '') + '>80 mm</option><option value="32"' + (+d.width === 32 ? ' selected' : '') + '>58 mm</option></select></div>' : '') + '</div>' +
+          (d.mode === 'desktop' ? '<p class="muted">' + t('dev.deskHelp') + '</p>' : '') : '') +
         (d.mode === 'serial' ? '<div class="form-grid"><div class="field"><label>' + t('dev.width') + '</label><select data-dev="' + which + '.width"><option value="48"' + (+d.width === 48 ? ' selected' : '') + '>80 mm</option><option value="32"' + (+d.width === 32 ? ' selected' : '') + '>58 mm</option></select></div></div>' +
           (Devices.hasSerial ? '<button class="btn" data-act="dev-connect">' + t('dev.connect') + '</button>' : '<p class="warn">' + t('dev.noSerial') + '</p>') : '') +
         '</div>';
     }
-    var html = '<p class="muted">' + t('dev.help') + '</p>' + block('receipt') + block('kitchen') +
+    var html = '<p class="muted">' + t('dev.help') + '</p>' +
+      (window.platetDesktop ? '<div class="card"><h3>📱 ' + t('dev.pairT') + '</h3><p class="muted">' + t('dev.pairD') + '</p><button class="btn primary" data-act="dev-pair">' + t('dev.pairBtn') + '</button></div>' : '') +
+      block('receipt') + block('kitchen') +
       '<div class="card"><label><input type="checkbox" data-dev="drawerOnCash"' + (c.drawerOnCash ? ' checked' : '') + '> ' + t('dev.drawerOnCash') + '</label>' +
       (c.receipt.mode === 'browser' ? '<p class="muted">' + t('dev.drawerBrowser') + '</p>' : '') +
       '<div class="btn-row" style="margin-top:12px"><button class="btn" data-act="dev-test" data-w="receipt">' + t('dev.testReceipt') + '</button>' +
@@ -2019,6 +2037,7 @@
       A.impUndo = null;
       toast(t('imp.undone'));
     },
+    'dev-pair': function () { if (window.platetDesktop) window.platetDesktop.showPair(); },
     'dev-connect': function () {
       Devices.connectSerial().then(function () { toast(t('dev.connected')); }).catch(function (e) { if (e.name !== 'NotFoundError') toast(t('dev.err', { e: e.message })); });
     },
@@ -2026,7 +2045,7 @@
       var doc = d.w === 'kitchen'
         ? [['h1', 'COMANDA #0'], ['cb', 'PRUEBA'], ['hr'], ['kitem', '2 x', 'Caña', []], ['kitem', '1 x', 'Hamburguesa Básica', ['SIN Cebolla · EXTRA Bacon', 'Al punto']]]
         : [['h1', A.settings.name], ['c', A.settings.address], ['hr'], ['b', 'PRUEBA DE IMPRESIÓN · ñ á é í ó ú €'], ['item', '2', 'Caña', [], '3,00 €'], ['hr'], ['lrb', 'TOTAL', '3,00 €']];
-      Devices.print(doc, d.w).then(function () { toast(t('dev.sent')); }).catch(function (e) { toast(t('dev.err', { e: e.message })); });
+      Devices.print(doc, d.w).then(function () { toast(t('dev.sent')); }).catch(function (e) { toast(t('dev.err', { e: e.message === 'no-printer' ? t('dev.e.no-printer') : e.message })); });
     },
     'dev-drawer': function () {
       Devices.openDrawer().then(function () { toast(t('dev.sent')); }).catch(function (e) { toast(e.message === 'browser' ? t('dev.drawerBrowser') : t('dev.err', { e: e.message })); });

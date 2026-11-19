@@ -1,0 +1,49 @@
+{
+  "name": "platet-tpv",
+  "productName": "Platet TPV",
+  "version": "1.0.0",
+  "description": "TPV Platet para Windows: caja, comanderos en la WiFi del local y datos en el ordenador",
+  "author": "Platet",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "prepare-app": "node copy-app.js",
+    "start": "npm run prepare-app && electron .",
+    "server": "node server.js",
+    "dist": "npm run prepare-app && electron-builder --win nsis --x64 --publish always",
+    "dist:local": "npm run prepare-app && electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.11"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "es.platet.tpv",
+    "productName": "Platet TPV",
+    "copyright": "Platet",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["main.js", "preload.js", "server.js", "app/**/*", "package.json"],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png",
+      "artifactName": "Platet-TPV-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Platet TPV",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
+    },
+    "publish": [{ "provider": "github", "owner": "charly814", "repo": "charly814.github.io", "releaseType": "release" }]
+  }
+}

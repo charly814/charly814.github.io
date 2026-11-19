@@ -9,6 +9,9 @@
 //     abre el cajón
 //   - serial:  impresora térmica por USB/serie con Web Serial (Chrome/Edge en
 //     ordenador): comandos ESC/POS directos, corta papel y abre el cajón
+//   - desktop: solo en la app de Windows (window.platetDesktop): ESC/POS directo a
+//     una impresora instalada en Windows (USB, red o compartida), sin diálogo,
+//     corta papel y abre el cajón. En la app, «browser» también imprime sin diálogo.
 //
 // Documento: lista de filas
 //   ['h1', texto]            título grande centrado
@@ -24,8 +27,8 @@
 
   var KEY = 'platet-devices';
   var DEFAULT = {
-    receipt: { mode: 'browser', ip: '', https: true, width: 48 },
-    kitchen: { mode: 'same', ip: '', https: true, width: 48 },
+    receipt: { mode: 'browser', ip: '', https: true, width: 48, printer: '' },
+    kitchen: { mode: 'same', ip: '', https: true, width: 48, printer: '' },
     drawerOnCash: true
   };
 
@@ -76,7 +79,14 @@
     if (!pa) { pa = document.createElement('div'); pa.id = 'print-area'; document.body.appendChild(pa); }
     pa.className = (Number(t && t.width) === 32 ? 'w58' : '') + (opts && opts.big ? ' bigtext' : '');
     pa.innerHTML = toHtml(doc);
+    // app de Windows: sin diálogo, a la impresora elegida (o la predeterminada)
+    if (window.platetDesktop) return new Promise(function (r) { setTimeout(r, 50); }).then(function () { return window.platetDesktop.printPage({ printer: (t && t.printer) || '' }); });
     return new Promise(function (resolve) { setTimeout(function () { window.print(); resolve(); }, 50); });
+  }
+  function sendDesktop(t, bytes) {
+    if (!window.platetDesktop) return Promise.reject(new Error('no-desktop'));
+    if (!t.printer) return Promise.reject(new Error('no-printer'));
+    return window.platetDesktop.raw(t.printer, Array.prototype.slice.call(bytes));
   }
 
   // ---------------------------------------------------------------- maquetación en columnas
@@ -296,6 +306,7 @@
     var W = Number(t.width) || 48;
     if (t.mode === 'epos') return prepare(doc, W).then(function (d) { return sendEpos(t, eposXml(d, W, opts)); });
     if (t.mode === 'serial') return prepare(doc, W).then(function (d) { return sendSerial(escpos(d, W, opts)); });
+    if (t.mode === 'desktop') return prepare(doc, W).then(function (d) { return sendDesktop(t, escpos(d, W, opts)); });
     return printBrowser(doc, t, opts);
   }
 
@@ -303,6 +314,7 @@
     var t = target('receipt');
     if (t.mode === 'epos') return sendEpos(t, eposXml(null, 48, { drawer: true }));
     if (t.mode === 'serial') return sendSerial(new Uint8Array(DRAWER));
+    if (t.mode === 'desktop') return sendDesktop(t, new Uint8Array(DRAWER));
     return Promise.reject(new Error('browser'));
   }
 
@@ -313,6 +325,7 @@
     openDrawer: openDrawer,
     connectSerial: connectSerial,
     hasSerial: 'serial' in navigator,
+    isDesktop: !!window.platetDesktop,
     toHtml: toHtml,
     rasterize: rasterize,
     // para pruebas

@@ -3109,7 +3109,7 @@
   // según la configuración de este dispositivo). Errores de impresora: aviso.
   function printDoc(doc, which, opts) {
     return Devices.print(doc, which, opts).catch(function (e) {
-      toast(t('dev.err', { e: e.message === 'no-port' ? t('dev.connect') : e.message }));
+      toast(t('dev.err', { e: e.message === 'no-port' ? t('dev.connect') : e.message === 'no-printer' ? t('dev.e.no-printer') : e.message }));
     });
   }
 

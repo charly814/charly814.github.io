@@ -254,6 +254,12 @@ function createServer(opts) {
       return handleDb(req, res, url, ps).catch((e) => { log('Error: ' + e.message); json(res, 500, { error: e.message }); });
     }
     if (url.pathname === '/__platet/stream') return multiStream(req, res, url);
+    if (url.pathname === '/__platet/pair') {
+      // código QR para los móviles de los camareros: solo desde el propio ordenador (lleva la clave)
+      if (!/^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || '')) { res.writeHead(403); return res.end(); }
+      res.writeHead(200, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store' });
+      return res.end(pairPage());
+    }
     if (url.pathname === '/__platet/info') {
       // solo desde el propio ordenador: lleva la clave
       const local = /^(::1|127\.|::ffff:127\.)/.test(req.socket.remoteAddress || '');
@@ -262,6 +268,23 @@ function createServer(opts) {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
     serveFile(req, res, url);
   });
+
+  function pairPage() {
+    const links = lanAddresses().map((ip) => 'http://' + ip + ':' + port + '/pos.html#k=' + key);
+    const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    return '<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Conectar móviles</title>' +
+      '<style>body{font-family:system-ui,sans-serif;background:#eef1f5;color:#273c55;margin:0;padding:20px}h1{font-size:22px;margin:0 0 6px}.card{background:#fff;border-radius:12px;padding:18px;margin:14px 0;box-shadow:0 1px 4px rgba(0,0,0,.1)}' +
+      'ol{padding-left:20px;line-height:1.7}.qr{display:flex;justify-content:center;margin:12px 0}.url{font:13px monospace;word-break:break-all;color:#555;text-align:center}.warn{background:#fff3cd;padding:10px 14px;border-radius:8px;font-size:14px}</style></head><body>' +
+      '<h1>📱 连接服务员手机 · Conectar móviles</h1>' +
+      '<div class="card"><ol><li>手机连上<b>店里的 WiFi</b>（和这台收银电脑同一个网络）。<br><small>El móvil en la WiFi del local (la misma que este ordenador).</small></li>' +
+      '<li>用手机相机扫下面的二维码，打开后输入自己的 PIN 登录。<br><small>Escanea el código con la cámara y entra con tu PIN.</small></li>' +
+      '<li>浏览器菜单里选「添加到主屏幕」，以后点图标直接打开。<br><small>Menú del navegador → «Añadir a pantalla de inicio».</small></li></ol>' +
+      '<p class="warn">⚠️ 这个二维码里有店里的密钥，只给自己的员工扫。 · Este código lleva la clave del local: solo para tu personal.</p></div>' +
+      (links.length ? links.map((u, i) => '<div class="card"><div class="qr" id="q' + i + '"></div><div class="url">' + esc(u.replace(/#k=.*/, '')) + '</div></div>').join('')
+        : '<div class="card warn">这台电脑没有连上网络（WiFi 或网线）。 · Este ordenador no está conectado a ninguna red.</div>') +
+      '<script src="/js/vendor/qrcode.min.js"></script><script>' + JSON.stringify(links) + '.forEach(function(u,i){new QRCode(document.getElementById("q"+i),{text:u,width:260,height:260,correctLevel:QRCode.CorrectLevel.M});});</script>' +
+      '</body></html>';
+  }
 
   return {
     get port() { return port; },
