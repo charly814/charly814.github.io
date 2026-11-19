@@ -6,7 +6,7 @@ name: TPV Windows
 on:
   push:
     branches: [main]
-    paths: ['desktop/package.json']
+    paths: ['desktop/package.json', '.github/workflows/desktop.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,8 +28,26 @@ jobs:
       - name: Probar el servidor del local
         working-directory: desktop
         run: node -e "require('./server.js'); console.log('server ok')"
+      # GitHub solo publica una «Release» sobre una etiqueta que exista (v1.0.0, v1.0.1…)
+      - name: Etiqueta de la versión
+        shell: bash
+        run: |
+          V="v$(node -p "require('./desktop/package.json').version")"
+          if git ls-remote --exit-code --tags origin "refs/tags/$V" > /dev/null; then
+            echo "La etiqueta $V ya existe"
+          else
+            git tag "$V" && git push origin "$V"
+          fi
       - name: Construir y publicar
         working-directory: desktop
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run dist
+      # copia del instalador en la ejecución (por si la publicación fallara)
+      - name: Guardar el instalador
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Platet-TPV-instalador
+          path: desktop/dist/*.exe
+          if-no-files-found: ignore
